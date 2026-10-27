@@ -128,7 +128,10 @@ verificado antes de que este proyecto reclamara cualquier novedad.
 
 ```mermaid
 flowchart TD
-    A[ProposedAction] --> C{"check_mandate\n(alcance, vigencia, revocación)"}
+    M0["Muse Spark\n(Standard mode)"] --> M1["ProposedActionCandidate\n(validado por schema, sin confianza)"]
+    M1 -.->|"reasoning: solo para mostrar,\nnunca lo leen los chequeos de abajo"| A
+    M1 --> A[ProposedAction]
+    A --> C{"check_mandate\n(alcance, vigencia, revocación)"}
     A --> D{"check_evidence\n(digest + verificación independiente)"}
     C --> E{decide}
     D --> E
@@ -141,6 +144,12 @@ flowchart TD
     K --> L[Receipt encadenado]
     J --> L
 ```
+
+Muse nunca tiene un camino hacia la autoridad: su salida es un candidato
+tipado, rechazado directamente si no cumple el schema, y todavía tiene
+que pasar por `check_mandate`/`check_evidence` igual que una acción
+armada a mano — confirmado en vivo contra la API real de Meta en
+`demo/run_case_001_with_muse.py`, no simulado.
 
 Dos fases, no una: `prepare_evidence_package` decide y toma el snapshot;
 `execute_prepared_action` no confía en nada de ese snapshot sin

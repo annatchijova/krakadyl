@@ -119,7 +119,10 @@ verified before this project claimed any novelty.
 
 ```mermaid
 flowchart TD
-    A[ProposedAction] --> C{"check_mandate\n(scope, validity, revocation)"}
+    M0["Muse Spark\n(Standard mode)"] --> M1["ProposedActionCandidate\n(schema-validated, untrusted)"]
+    M1 -.->|"reasoning: display-only,\nnever read by the checks below"| A
+    M1 --> A[ProposedAction]
+    A --> C{"check_mandate\n(scope, validity, revocation)"}
     A --> D{"check_evidence\n(digest + independent verification)"}
     C --> E{decide}
     D --> E
@@ -132,6 +135,12 @@ flowchart TD
     K --> L[Chained Receipt]
     J --> L
 ```
+
+Muse never has a path to authority: its output is a typed candidate,
+rejected outright if it doesn't match the schema, and still has to pass
+`check_mandate`/`check_evidence` exactly like a hand-built action would —
+confirmed live against the real Meta Model API in
+`demo/run_case_001_with_muse.py`, not simulated.
 
 Two phases, not one: `prepare_evidence_package` decides and snapshots;
 `execute_prepared_action` trusts nothing from that snapshot without
