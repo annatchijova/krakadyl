@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -94,6 +94,30 @@ def _current_mandate(case_id: str) -> Mandate:
     if mandate is None:
         raise HTTPException(404, "case has no mandate")
     return mandate
+
+
+def _assert_principal(mandate: Mandate, asserted_principal: str) -> None:
+    """Found by red-team review: `Mandate.principal` existed as a field
+    but was read NOWHERE in the codebase — identity was never part of
+    the authorization decision at the one layer (this HTTP API) where a
+    caller could actually be someone other than who they claim, despite
+    the architecture's own stated invariant that permissions are bound
+    to identity, resource, operation, destination, and validity.
+
+    This is CALLER-ASSERTED identity, not cryptographically verified —
+    there is no login/session system yet, so a caller can still lie
+    about who they are. That remaining gap is real and is documented in
+    docs/red-team-api-and-frontend.md, not hidden behind this check.
+    What this closes is narrower but real: the mandate's principal is
+    now actually consulted, instead of being a decorative field no code
+    path ever reads.
+    """
+    if asserted_principal != mandate.principal:
+        raise HTTPException(
+            403,
+            f"this mandate is scoped to principal '{mandate.principal}'; "
+            f"request asserted '{asserted_principal or '(none)'}'",
+        )
 
 
 def _observation_files(case_id: str, observations: list[Observation]) -> dict[str, Path]:
@@ -200,6 +224,7 @@ class CaseOverview(BaseModel):
 
 
 class PrepareRequest(BaseModel):
+    principal: str
     allowed_device: str = "device-A"
     destination: str = "reviewer-authorized"
 
@@ -207,6 +232,10 @@ class PrepareRequest(BaseModel):
 class PrepareResponse(BaseModel):
     decision: Decision
     prepared: Optional[PreparedAction]
+
+
+class MuseProposeRequest(BaseModel):
+    principal: str
 
 
 class MuseProposeResponse(BaseModel):
@@ -219,6 +248,7 @@ class MuseProposeResponse(BaseModel):
 
 
 class ExecuteRequest(BaseModel):
+    principal: str
     prepared_action_id: str
 
 
@@ -228,6 +258,7 @@ class ExecuteResponse(BaseModel):
 
 
 class RecoverRequest(BaseModel):
+    principal: str
     allowed_device: str = "device-A"
     destination: str = "reviewer-authorized"
 
@@ -325,6 +356,7 @@ def get_prepared(case_id: str, prepared_action_id: str) -> PrepareResponse:
 def prepare(case_id: str, body: PrepareRequest) -> PrepareResponse:
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
+    _assert_principal(mandate, body.principal)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
@@ -353,7 +385,7 @@ def prepare(case_id: str, body: PrepareRequest) -> PrepareResponse:
 
 
 @app.post("/api/cases/{case_id}/actions/propose-with-muse", response_model=MuseProposeResponse)
-def propose_with_muse(case_id: str) -> MuseProposeResponse:
+def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResponse:
     """A real, billed call to Muse Spark (Standard mode) — a separate,
     explicitly-chosen endpoint, never triggered by `prepare` or any
     other flow. Muse proposes from the CURRENT live case state (see
@@ -362,8 +394,16 @@ def propose_with_muse(case_id: str) -> MuseProposeResponse:
     through the exact same `prepare_evidence_package` the hand-built
     path uses — Muse has no path to authority here, same as everywhere
     else in this codebase.
+
+    The principal check runs BEFORE the billed call, not after — found
+    by red-team review: checking identity after an expensive external
+    call would still let an unauthorized caller trigger (and pay for)
+    the call itself, even if its result were then discarded.
     """
     _case_or_404(case_id)
+    mandate = _current_mandate(case_id)
+    _assert_principal(mandate, body.principal)
+
     mission_summary, mandate_summary, case_summary = _case_summaries(case_id)
     try:
         candidate = propose_action(
@@ -374,7 +414,6 @@ def propose_with_muse(case_id: str) -> MuseProposeResponse:
     except MuseAdapterError as exc:
         raise HTTPException(502, f"Muse call failed or returned an invalid response: {exc}")
 
-    mandate = _current_mandate(case_id)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
@@ -441,6 +480,7 @@ def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
     requirements = [r for r in _load_requirements(case_id) if r.observation_id not in excluded_ids]
     files = _observation_files(case_id, observations)
     mandate = _current_mandate(case_id)
+    _assert_principal(mandate, body.principal)
     consumed = store.consumed_nonces()
     out_dir = DATA_DIR / case_id / "packages" / prepared.id
 
@@ -479,6 +519,7 @@ def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
 def recover(case_id: str, body: RecoverRequest) -> RecoverResponse:
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
+    _assert_principal(mandate, body.principal)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
@@ -513,17 +554,31 @@ def recover(case_id: str, body: RecoverRequest) -> RecoverResponse:
 
 
 # --- dev-only endpoints: simulate the staleness Level 2 exists to
-# catch, so the mechanism can be demonstrated from the UI. A real
-# deployment gates or removes this router; it is never a path an
-# investigator would use on a real case. ---
+# catch, so the mechanism can be demonstrated from the UI. Gated behind
+# KRAKADYL_ENABLE_DEV_ROUTES (default on, for local/demo convenience) —
+# found by red-team review (docs/red-team-api-and-frontend.md): the
+# comment here used to just ASSERT "a real deployment gates or removes
+# this router" without the code actually providing a gate to use.
+# Setting KRAKADYL_ENABLE_DEV_ROUTES=0 is that gate now. It is never a
+# path an investigator would use on a real case.
+
+dev_router = APIRouter()
 
 
-@app.post("/api/dev/cases/{case_id}/tamper")
+@dev_router.post("/api/dev/cases/{case_id}/tamper")
 def dev_tamper(case_id: str, body: TamperRequest) -> dict:
     _case_or_404(case_id)
+    # Validated against the case's own known observation ids, not just
+    # "a file happens to exist at this path" — found by red-team review:
+    # observation_file_path() interpolates observation_id into a path
+    # unsanitized, so a crafted id containing "../" resolves OUTSIDE the
+    # case's data directory (confirmed by induction). Requiring the id to
+    # be a real, already-known observation closes that off structurally,
+    # rather than trying to blocklist "../" and similar patterns.
+    known_ids = {o.id for o in _load_observations(case_id)}
+    if body.observation_id not in known_ids:
+        raise HTTPException(404, "no such observation in this case")
     path = observation_file_path(DATA_DIR, case_id, body.observation_id)
-    if not path.exists():
-        raise HTTPException(404, "no such observation file")
     path.write_bytes(b"TAMPERED: this no longer matches the acquired digest")
     store.log_event(
         case_id,
@@ -535,7 +590,7 @@ def dev_tamper(case_id: str, body: TamperRequest) -> dict:
     return {"ok": True}
 
 
-@app.post("/api/dev/cases/{case_id}/revoke-mandate")
+@dev_router.post("/api/dev/cases/{case_id}/revoke-mandate")
 def dev_revoke_mandate(case_id: str, body: RevokeMandateRequest) -> dict:
     _case_or_404(case_id)
     current = _current_mandate(case_id)
@@ -561,7 +616,7 @@ def dev_revoke_mandate(case_id: str, body: RevokeMandateRequest) -> dict:
     return {"ok": True}
 
 
-@app.post("/api/dev/cases/{case_id}/unresolve-hypothesis-requirement")
+@dev_router.post("/api/dev/cases/{case_id}/unresolve-hypothesis-requirement")
 def dev_unresolve_requirement(case_id: str) -> dict:
     _case_or_404(case_id)
     req = store.get(case_id, "requirement", "req-timestamp-check", EvidenceRequirement)
@@ -586,8 +641,13 @@ def dev_unresolve_requirement(case_id: str) -> dict:
     return {"ok": True}
 
 
-@app.post("/api/dev/cases/{case_id}/reset")
+@dev_router.post("/api/dev/cases/{case_id}/reset")
 def dev_reset(case_id: str) -> dict:
     store.reset_case(case_id)
     ensure_seeded(store, DATA_DIR)
     return {"ok": True}
+
+
+DEV_ROUTES_ENABLED = os.environ.get("KRAKADYL_ENABLE_DEV_ROUTES", "1") != "0"
+if DEV_ROUTES_ENABLED:
+    app.include_router(dev_router)

@@ -572,7 +572,36 @@ file, revoke a mandate, make a hypothesis's requirement unresolvable)
 exists only to demonstrate the mechanism on demand and is clearly
 separated in the UI and in the route prefix — a real deployment gates
 or removes it, it is never a path an investigator would use on a real
-case.
+case. **Correction, same day, by the Round 3 red-team review below**:
+that last sentence used to describe a comment's wish, not a mechanism
+— see `docs/red-team-api-and-frontend.md` finding F2.
+
+## Red team, round 3: the API, persistence, and frontend (2026-10-27)
+
+Full report: `docs/red-team-api-and-frontend.md` — threat model,
+epistemic levels per finding, discarded (non-exploitable) vectors, and
+what's deliberately still open. Six findings; the two most serious,
+both confirmed by induction rather than architectural guesswork:
+
+- **`Mandate.principal` was a declared field nothing in the codebase
+  ever read** — identity was not actually part of any authorization
+  decision at the API boundary, despite the project's own stated
+  invariant that permissions are bound to identity among other
+  dimensions. Confirmed by grepping every consuming read and finding
+  none. Fixed: every action endpoint now requires a `principal` field
+  and rejects a mismatch with 403 — caller-asserted, not
+  cryptographically authenticated (there is still no login/session
+  system; that gap is named, not hidden, in the report).
+- **The dev router's safety claim ("a real deployment gates or removes
+  it") was a comment, not a mechanism** — no env flag existed to act on
+  it. Fixed with `KRAKADYL_ENABLE_DEV_ROUTES`.
+
+A narrow, confirmed path-traversal primitive in observation file paths
+and a same-timestamp ordering tiebreak were also found and fixed; a
+cost-exposure gap on the billed Muse endpoint and the single shared
+SQLite connection under concurrent requests were found, judged out of
+this round's proportion to fix, and recorded rather than left
+unmentioned. 83/83 tests passing after all fixes.
 
 ## Muse wired into the visible workspace (2026-10-27, same day)
 
@@ -611,6 +640,8 @@ the ambiguity impossible to produce in the first place. Re-confirmed
 live after the fix: `allowed`, executed, real receipt. 79/79 tests
 passing (`tests/test_api.py` covers the endpoint's wiring against a
 fake adapter call — no test spends real API credits).
+
+### Level 3 — Active perception
 
 SAM 3.1 for regions/tracking in photos and video tied to the case's
 observations and their provenance; requesting a new, specific capture

@@ -75,6 +75,24 @@ def test_nonce_consumption_survives_a_new_store_instance(tmp_path):
     assert store2.consume_nonce("abc123") is False
 
 
+def test_list_breaks_ties_by_insertion_order_not_just_timestamp(tmp_path):
+    """Found by red-team review: ORDER BY updated_at alone has no
+    defined tiebreak for two objects written with the identical
+    timestamp string — a real, if narrow, risk for callers like
+    api/app.py's get_case(), which reads list(...)[-1] as "the most
+    recently created." rowid (SQLite's implicit insertion-order column)
+    makes that order well-defined instead of accidental.
+    """
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+    same_ts = NOW.isoformat()
+    store.put("case-001", "mandate", _mandate(id="mandate-A", revision="1"), same_ts)
+    store.put("case-001", "mandate", _mandate(id="mandate-B", revision="1"), same_ts)
+    store.put("case-001", "mandate", _mandate(id="mandate-C", revision="1"), same_ts)
+
+    ordered = store.list("case-001", "mandate", Mandate)
+    assert [m.id for m in ordered] == ["mandate-A", "mandate-B", "mandate-C"]
+
+
 def test_events_are_recorded_in_order(tmp_path):
     store = KrakadylStore(tmp_path / "krakadyl.db")
     store.log_event("case-001", "prepared", "Action prepared", {"id": "prep-1"}, NOW.isoformat())

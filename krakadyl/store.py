@@ -79,8 +79,14 @@ class KrakadylStore:
         return model.model_validate_json(row[0]) if row else None
 
     def list(self, case_id: str, kind: str, model: Type[T]) -> list[T]:
+        # Tie-broken by rowid (SQLite's implicit insertion-order column),
+        # not just updated_at — found by red-team review: two objects
+        # written within the same ISO-timestamp tick would otherwise have
+        # no defined order, and callers that read list(...)[-1] as "the
+        # most recent" (api/app.py's get_case) would get an unstable
+        # answer under that tie, not just a theoretical one.
         rows = self._conn.execute(
-            "SELECT json FROM objects WHERE case_id=? AND kind=? ORDER BY updated_at",
+            "SELECT json FROM objects WHERE case_id=? AND kind=? ORDER BY updated_at, rowid",
             (case_id, kind),
         ).fetchall()
         return [model.model_validate_json(r[0]) for r in rows]
