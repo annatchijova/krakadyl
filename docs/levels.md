@@ -641,6 +641,81 @@ live after the fix: `allowed`, executed, real receipt. 79/79 tests
 passing (`tests/test_api.py` covers the endpoint's wiring against a
 fake adapter call — no test spends real API credits).
 
+## Laya wired in as the typed semantic sensor (2026-10-27, same day)
+
+Invariant 2 ("Laya as a typed semantic sensor that informs what to
+check; it never grants authority by itself") was true of the
+architecture's intent since Level 1, but nothing in the codebase
+actually called Laya until now. Before `pip install laya`, its supply
+chain got checked — an anomalous star/fork ratio for a five-week-old
+repo (~34,460 stars) was investigated rather than either trusted
+blindly or dismissed outright. Full trail in
+`docs/red-team-laya-integration.md`: every anomaly traced to a real
+cause (a funded startup founder with a 2019 GitHub history, a genuine
+Hacker News launch), no supply-chain red flags, pinned to the exact
+version reviewed (`laya==0.4.15`).
+
+`krakadyl/adapters/laya.py::analyze_handoff_note` turns free text (a
+handoff note, a chat message) into three typed, bounded signals —
+`claims_independent_verification` and `claims_task_complete` (both
+`noul`: a probability in [0, 1]) and `urgency` (a bounded `score`) —
+via Laya's `Router.predict()`. Nothing in `krakadyl.core` reads this
+module's output, and the new `/api/cases/{id}/analyze-note` endpoint
+has no path to write to any `EvidenceRequirement`, `TaskResponsibility`,
+`Decision`, or `PreparedAction` — confirmed by a test that calls it and
+asserts the case's evidence and hypotheses are byte-identical before
+and after. The frontend's "Handoff note (Laya)" panel renders the
+signals as bars with an explicit "Laya never marks anything verified"
+label, the same "informational, not authoritative" framing already
+used for Muse's reasoning.
+
+**Confirmed live, same day, on real hardware — not simulated**: the
+first real call to `analyze_handoff_note` immediately surfaced a real
+bug, the same way the first live Muse call did. `HANDOFF_QUESTIONS`'s
+`urgency` question used a `legend` field (copying the shape Laya's
+*output* uses for a score answer); the real validator in
+`laya/agent.py::_check_question` requires `criteria` as a list of level
+descriptions for a `score` question, and rejected the malformed
+question outright rather than silently guessing. Fixed at the source
+— `criteria: ["no urgency conveyed", "some urgency, but not immediate",
+"immediately urgent, must be acted on now"]` — not by reverse-engineering
+a workaround. Re-run after the fix:
+`claims_independent_verification=0.56, claims_task_complete=0.75,
+urgency=0.44`, on a note that said "done, packaged it, nobody else
+looked at it yet" — a plausible reading, though the checkpoint's own
+runtime warning ("this checkpoint ships invalid temperatures... treat
+confidence from the affected entries as uncalibrated") means the
+*confidence* numbers shouldn't be over-trusted yet; noted honestly
+rather than presented as more precise than it is. GPU usage confirmed
+by sampling `nvidia-smi` across the run: memory rose from a ~282–298MiB
+baseline to **2042MiB** on the RTX 3090 while the model was loaded,
+and fell back to baseline after — Laya's own device autodetection
+(`laya/agent.py`: `if torch.cuda.is_available(): self.device =
+torch.device("cuda")`) picked the GPU with no extra configuration
+needed from this codebase.
+
+Laya runs locally (a ModernBERT-family classifier, no billing), so the
+lazy-import design matters for a different reason than Muse's: a
+deployment without the optional `laya` extra installed loses this one
+signal (`analyze-note` returns 503) without the rest of the product
+being affected — `honest-degradation`'s "an absent optional component
+degrades the feature, never the core," demonstrated by a real test
+(`test_missing_package_raises_a_clear_adapter_error`) that simulates
+the package being absent via `sys.modules`.
+
+Also found, while setting up a dedicated virtualenv to isolate Laya's
+heavier dependencies (`torch`/`transformers`) from this machine's other
+projects sharing the system Python: `pyproject.toml` had never actually
+been installable (`pip install -e .` failed — newer `setuptools`
+refuses to guess which top-level directory is "the package" once
+`demo/`, `docs/`, `frontend/`, `out/`, and `visual/` all exist alongside
+`krakadyl/`). This gap was latent, not newly introduced — the project
+had only ever been run via `sys.path` tricks in the demo scripts and
+pytest's own rootdir resolution. Fixed with an explicit
+`[tool.setuptools.packages.find]` scoping to `krakadyl*`; the full test
+suite (90/90) passes identically under both the system interpreter and
+the new isolated venv.
+
 ### Level 3 — Active perception
 
 SAM 3.1 for regions/tracking in photos and video tied to the case's

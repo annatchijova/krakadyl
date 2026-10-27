@@ -28,6 +28,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from krakadyl.adapters.laya import LayaAdapterError, analyze_handoff_note
 from krakadyl.adapters.muse import MuseAdapterError, propose_action
 from krakadyl.api.seed import CASE_ID, ensure_seeded, observation_file_path
 from krakadyl.core.continuity import evidence_state_from_requirement, next_move
@@ -247,6 +248,17 @@ class MuseProposeResponse(BaseModel):
     prepared: Optional[PreparedAction]
 
 
+class AnalyzeNoteRequest(BaseModel):
+    principal: str
+    note_text: str
+
+
+class AnalyzeNoteResponse(BaseModel):
+    claims_independent_verification: float
+    claims_task_complete: float
+    urgency: float
+
+
 class ExecuteRequest(BaseModel):
     principal: str
     prepared_action_id: str
@@ -455,6 +467,49 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
         muse_reasoning=candidate.reasoning,
         decision=decision,
         prepared=prepared,
+    )
+
+
+@app.post("/api/cases/{case_id}/analyze-note", response_model=AnalyzeNoteResponse)
+def analyze_note(case_id: str, body: AnalyzeNoteRequest) -> AnalyzeNoteResponse:
+    """Laya as a typed semantic sensor — docs/levels.md invariant 2:
+    informs what a human should check, never grants authority. This
+    endpoint does not touch any EvidenceRequirement, TaskResponsibility,
+    Decision, or PreparedAction — it has no path to do so. Runs locally
+    (no billing), but returns 503 rather than crashing the request if
+    the optional `laya` dependency isn't available — an absent optional
+    component degrades this one feature, not the rest of the case.
+    """
+    _case_or_404(case_id)
+    mandate = _current_mandate(case_id)
+    _assert_principal(mandate, body.principal)
+
+    try:
+        signals = analyze_handoff_note(body.note_text)
+    except LayaAdapterError as exc:
+        raise HTTPException(503, f"Laya signal unavailable: {exc}")
+
+    store.log_event(
+        case_id,
+        "laya_signal",
+        (
+            f"Laya analyzed a note: claims_independent_verification="
+            f"{signals.claims_independent_verification:.2f}, "
+            f"claims_task_complete={signals.claims_task_complete:.2f}, "
+            f"urgency={signals.urgency:.2f}"
+        ),
+        {
+            "note_text": body.note_text,
+            "claims_independent_verification": signals.claims_independent_verification,
+            "claims_task_complete": signals.claims_task_complete,
+            "urgency": signals.urgency,
+        },
+        now().isoformat(),
+    )
+    return AnalyzeNoteResponse(
+        claims_independent_verification=signals.claims_independent_verification,
+        claims_task_complete=signals.claims_task_complete,
+        urgency=signals.urgency,
     )
 
 

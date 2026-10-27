@@ -13,6 +13,7 @@ import { EvidencePanel } from "./components/EvidencePanel";
 import { NextMovePanel } from "./components/NextMovePanel";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { DevPanel } from "./components/DevPanel";
+import { LayaNotePanel } from "./components/LayaNotePanel";
 import { Logo } from "./components/Logo";
 
 const CASE_ID = "case-001";
@@ -115,6 +116,9 @@ function App() {
           <CaseSidebar overview={overview} />
           <div>
             <EvidencePanel evidence={overview.evidence} />
+            <div className="section-gap">
+              <LayaNotePanel busy={busy} onAnalyze={(noteText) => api.analyzeNote(CASE_ID, noteText)} />
+            </div>
             <div className="section-gap">
               <DevPanel
                 busy={busy}

@@ -17,10 +17,26 @@ api = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
 ]
+laya = [
+    # Pinned exact, not >=, per the project's own supply-chain
+    # discipline (docs/levels.md's "Untrusted content and supply
+    # chain" section) — reviewed before pinning: see
+    # docs/red-team-laya-integration.md for the due-diligence trail.
+    "laya==0.4.15",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Without this, newer setuptools refuses to guess which top-level
+# directory is "the package" once demo/, docs/, frontend/, out/, and
+# visual/ exist alongside krakadyl/ — found while setting up a venv for
+# the Laya integration; this repo was never actually `pip install -e`d
+# before, only run via sys.path tricks in the demo scripts and pytest's
+# own rootdir resolution, so the gap was latent, not newly introduced.
+include = ["krakadyl*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

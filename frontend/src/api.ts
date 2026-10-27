@@ -173,6 +173,12 @@ export interface MuseProposeResponse {
   prepared: PreparedAction | null;
 }
 
+export interface LayaSignals {
+  claims_independent_verification: number;
+  claims_task_complete: number;
+  urgency: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -205,6 +211,11 @@ export const api = {
     request<MuseProposeResponse>(`/api/cases/${caseId}/actions/propose-with-muse`, {
       method: "POST",
       body: JSON.stringify({ principal: ACTING_PRINCIPAL }),
+    }),
+  analyzeNote: (caseId: string, noteText: string) =>
+    request<LayaSignals>(`/api/cases/${caseId}/analyze-note`, {
+      method: "POST",
+      body: JSON.stringify({ principal: ACTING_PRINCIPAL, note_text: noteText }),
     }),
   execute: (caseId: string, preparedActionId: string) =>
     request<ExecuteResponse>(`/api/cases/${caseId}/actions/execute`, {

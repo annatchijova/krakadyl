@@ -15,6 +15,25 @@ Backend (from the repo root, with the `api` extra installed —
 KRAKADYL_DATA_DIR=out/api uvicorn krakadyl.api.app:app --port 8000
 ```
 
+The "Ask Muse" and "Handoff note (Laya)" panels need their own extras
+(`pip install -e '.[api,laya]'`) plus `META_API_KEY` in `.env` for
+Muse. Without the `laya` extra installed, "Analyze with Laya" returns
+a clear 503 rather than breaking anything else — see
+`docs/red-team-laya-integration.md` for why `laya` is pinned to an
+exact reviewed version, not a range. Laya runs locally (no billing,
+but the first real call downloads a model checkpoint from
+HuggingFace); Muse makes a real, billed call to the Meta Model API
+every time "Ask Muse" is clicked — a separate button from the free
+"Prepare" on purpose, same reasoning as `docs/levels.md`'s Muse
+section.
+
+Running the API without any venv isolation is fine if you only need
+`prepare`/`execute`/`recover`/`propose-with-muse`. The `laya` extra
+pulls in `torch`/`transformers`, which is worth isolating in its own
+virtualenv if this machine runs other Python projects with their own
+pinned versions of those — exactly the reasoning documented in
+`docs/levels.md`'s Laya section.
+
 If port 8000 is already taken on your machine by something else,
 start uvicorn on another port and point the frontend at it:
 

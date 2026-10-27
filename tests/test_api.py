@@ -169,6 +169,70 @@ def test_dev_routes_are_absent_when_disabled(monkeypatch, tmp_path):
         importlib.reload(app_module)
 
 
+def test_analyze_note_returns_typed_signals_never_touching_case_state(client, monkeypatch):
+    """No model load: krakadyl.api.app.analyze_handoff_note is
+    monkeypatched, the same pattern as the Muse/Laya adapter tests one
+    layer down. This test is about the endpoint's own wiring — identity
+    check, event logging, and that nothing here mutates evidence or
+    hypotheses — not about Laya's classification itself.
+    """
+    import krakadyl.api.app as app_module
+    from krakadyl.adapters.laya import LayaSignals
+
+    def fake_analyze(note_text: str) -> LayaSignals:
+        assert "handoff" in note_text
+        return LayaSignals(
+            claims_independent_verification=0.1,
+            claims_task_complete=0.95,
+            urgency=0.3,
+            raw={"routing": {"model": "fake"}},
+        )
+
+    monkeypatch.setattr(app_module, "analyze_handoff_note", fake_analyze)
+
+    before = client.get("/api/cases/case-001").json()
+
+    resp = client.post(
+        "/api/cases/case-001/analyze-note",
+        json={"principal": "investigator-A", "note_text": "handoff: obs-a1 done, nobody else checked"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["claims_independent_verification"] == pytest.approx(0.1)
+    assert body["claims_task_complete"] == pytest.approx(0.95)
+
+    after = client.get("/api/cases/case-001").json()
+    assert before["evidence"] == after["evidence"]
+    assert before["hypotheses"] == after["hypotheses"]
+
+    events = client.get("/api/cases/case-001/activity").json()
+    assert any(e["kind"] == "laya_signal" for e in events)
+
+
+def test_analyze_note_surfaces_adapter_failure_as_503(client, monkeypatch):
+    import krakadyl.api.app as app_module
+    from krakadyl.adapters.laya import LayaAdapterError
+
+    def failing_analyze(note_text: str):
+        raise LayaAdapterError("the 'laya' package is not installed")
+
+    monkeypatch.setattr(app_module, "analyze_handoff_note", failing_analyze)
+
+    resp = client.post(
+        "/api/cases/case-001/analyze-note",
+        json={"principal": "investigator-A", "note_text": "anything"},
+    )
+    assert resp.status_code == 503
+
+
+def test_analyze_note_requires_the_right_principal(client):
+    resp = client.post(
+        "/api/cases/case-001/analyze-note",
+        json={"principal": "someone-else", "note_text": "anything"},
+    )
+    assert resp.status_code == 403
+
+
 def test_wrong_principal_is_rejected_on_every_action_endpoint(client):
     """Found by red-team review: Mandate.principal existed but nothing
     ever read it. Now it's actually enforced at the API boundary — a
