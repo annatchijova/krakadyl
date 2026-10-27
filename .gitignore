@@ -6,3 +6,6 @@ node_modules/
 .env
 .DS_Store
 *.log
+.venv/
+*.egg-info/
+.pytest_cache/
