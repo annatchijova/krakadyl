@@ -320,11 +320,29 @@ real chained receipt. Device B is excluded from the package because the
 mandate says so, not because the demo was scripted to leave it out; a
 tampered file is caught because its digest is recomputed, not assumed.
 
-**Still not done**: no Meta Model API call has been made from this
-codebase, and there is no agent loop proposing actions — the executor
-above is wired to run on a `ProposedAction` built by hand in the demo,
-not one a model generated. That's the one piece left before Level 1 is
-fully complete, not a re-opening of the acceptance criterion above.
+**In progress (2026-10-27, later the same day)**: `krakadyl/adapters/muse.py`
+calls Muse Spark (`muse-spark-1.3`, Standard mode — Contributor mode is
+never the default here, per the project's own API-budget note: it trades
+discounted pricing for Meta's right to train on the content sent, not an
+acceptable default for anything touching case evidence) and validates its
+response against `ProposedActionCandidate` before anything downstream
+sees it. Per the same invariant 1 that already governs Laya's output,
+the candidate is never trusted directly — it still goes through
+`check_mandate`/`check_evidence`/`decide()` exactly like the hand-built
+`ProposedAction` in `demo/run_case_001.py`; `reasoning` is display-only
+and nothing in `krakadyl.core` reads it. `tests/test_muse_adapter.py`
+exercises the validation boundary against a fake transport (schema
+rejection, missing-key refusal, Standard-mode-is-the-default) — none of
+it makes a network call. `demo/run_case_001_with_muse.py` wires this into
+the same two-device case, generating the `ProposedAction` from a real
+Muse call instead of by hand.
+
+**Not yet true, stated precisely**: no real network call to the Meta
+Model API has actually been made and confirmed against this codebase —
+the adapter is built and unit-tested against a fake transport, not yet
+run live. That live confirmation (one real call, read, and checked
+against the schema and the deterministic pipeline) is what actually
+closes Level 1's last gap — not the code existing.
 
 ### Level 2 — The case stays alive: contradictions, staleness, recovery
 
