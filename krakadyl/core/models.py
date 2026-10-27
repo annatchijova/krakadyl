@@ -1,9 +1,11 @@
 """Domain contracts for KRAKADYL — Level 1.
 
-Custody (owner + claimed-vs-verified) and the evidence/authority dual
-state are present on every object that can be "done" by someone, per
-docs/levels.md invariant 4: nothing defaults to "someone probably did
-this already."
+Two things are present on every object that can be "done" or "held" by
+someone, per docs/levels.md invariant 4: nothing defaults to "someone
+probably did this already," and task responsibility is never conflated
+with evidence custody — they are different concepts, tracked separately
+(correction from the Oct 27 review: a completed task does not, by
+itself, demonstrate custody of its result).
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TaskStatus(str, Enum):
@@ -24,23 +26,17 @@ class TaskStatus(str, Enum):
     outcomes too, and a status enum that can't represent them gets
     abused to represent them anyway.
 
-    Three things this status machine refuses to do, on purpose:
+    Enforced today in the one place that currently sets this state
+    (TaskResponsibility itself, via the validator below) — not yet
+    proven against every possible mutation path, persistence, or
+    serialization, which is still open work:
     - ASSIGNED is not ACKNOWLEDGED. Handing a task to someone is not the
-      same fact as that person having taken responsibility for it —
-      assigning without an explicit, separate acknowledgment is exactly
-      how "I thought he had it" happens. This is a distinct enum value,
-      not a side timestamp, so "how many tasks are assigned but nobody
-      has acknowledged yet" is a direct query, not something that
-      requires remembering to check a field.
+      same fact as that person having taken responsibility for it.
     - REPORTED_DONE is never read as VERIFIED_DONE by anything
       downstream (see continuity.py::evidence_state_from_requirement).
-      "Someone said they did it" and "it's verified" are different
-      states, not different labels for the same state.
-    - Neither of the above ever collapses back into UNASSIGNED or
-      "unknown." A reported-but-unverified claim is uncertainty that
-      gets preserved as its own state, not information that gets
-      discarded because it wasn't confirmed. See
-      docs/terminal-first-and-blame.md and docs/levels.md for why.
+    - Neither collapses back into UNASSIGNED or "unknown" — a
+      reported-but-unverified claim is uncertainty that gets preserved
+      as its own state. See docs/terminal-first-and-blame.md.
     """
 
     UNASSIGNED = "unassigned"
@@ -76,11 +72,14 @@ class AuthorityVerdict(str, Enum):
     FORBIDDEN = "forbidden"
 
 
-class Custody(BaseModel):
-    """Who owns a piece of work, who accepted it, and its real status.
+class TaskResponsibility(BaseModel):
+    """Who owns a piece of WORK, who accepted it, and its real status.
 
-    Embedded in every object a person or the agent can mark "done," so
-    "done" never means more than what this field actually says.
+    This is about tasks — assignment, acceptance, execution of a step —
+    not about evidence. See EvidenceCustody below for the chain-of-
+    custody concept this used to be conflated with (renamed from
+    `Custody` on 2026-10-27, per the Oct 27 review: completing a task
+    does not, by itself, demonstrate custody of whatever it produced).
     """
 
     owner: str
@@ -92,7 +91,36 @@ class Custody(BaseModel):
     reported_done_at: Optional[datetime] = None
     verified_by: Optional[str] = None
     verified_at: Optional[datetime] = None
+    verification_method: Optional[str] = None
+    verified_against: Optional[str] = None
     due_at: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def _verified_done_requires_independent_verification(self) -> "TaskResponsibility":
+        """Reaching VERIFIED_DONE must record what was checked, how, and
+        that the check was independent of whoever reported it done.
+
+        "Independent" doesn't require a second human — it requires the
+        verifier not to be the same act of self-report. A verification_
+        method prefixed "tool:" (an automated, separate-from-the-agent
+        check) counts as independent even if verified_by happens to
+        equal reported_done_by; anything else needs a different actor.
+        """
+        if self.status != TaskStatus.VERIFIED_DONE:
+            return self
+        if not self.verified_by or not self.verification_method:
+            raise ValueError(
+                "VERIFIED_DONE requires verified_by and verification_method — "
+                "a status label alone is not a verification"
+            )
+        is_automated_check = self.verification_method.startswith("tool:")
+        if not is_automated_check and self.verified_by == self.reported_done_by:
+            raise ValueError(
+                "VERIFIED_DONE requires independent verification: verified_by "
+                "must differ from reported_done_by, or verification_method "
+                "must denote an automated check (prefixed 'tool:')"
+            )
+        return self
 
     @property
     def is_verified(self) -> bool:
@@ -108,6 +136,37 @@ class Custody(BaseModel):
         must be able to ask this question and get True.
         """
         return self.status == TaskStatus.REPORTED_DONE
+
+
+class CustodyTransfer(BaseModel):
+    from_holder: str
+    to_holder: str
+    at: datetime
+    method: Optional[str] = None
+
+
+class CustodyTransformation(BaseModel):
+    operation: str
+    performed_by: str
+    at: datetime
+    resulting_digest: Optional[str] = None
+
+
+class EvidenceCustody(BaseModel):
+    """Chain of custody for an artifact — a different concept from
+    TaskResponsibility. Acquisition, who has held it, what was done to
+    it, and whether its integrity is checked, independent of whether
+    any particular task tracking it is marked done.
+    """
+
+    acquired_by: str
+    acquired_at: datetime
+    acquisition_method: str
+    possessors: list[CustodyTransfer] = Field(default_factory=list)
+    transformations: list[CustodyTransformation] = Field(default_factory=list)
+    integrity_digest: Optional[str] = None
+    integrity_verified: bool = False
+    integrity_verified_by: Optional[str] = None
 
 
 class Mandate(BaseModel):
@@ -140,7 +199,7 @@ class Observation(BaseModel):
     event_time: Optional[datetime] = None
     actor: str
     visual_region: Optional[str] = None
-    custody: Custody
+    evidence_custody: EvidenceCustody
 
 
 class Claim(BaseModel):
@@ -149,26 +208,59 @@ class Claim(BaseModel):
     supporting_observation_ids: list[str] = Field(default_factory=list)
     epistemic_status: str  # e.g. "asserted" | "corroborated" | "contradicted"
     verification_method: Optional[str] = None
-    custody: Custody
+    responsibility: TaskResponsibility
+
+
+class RecoveryWindowKind(str, Enum):
+    KNOWN = "known"  # a concrete, confirmed deadline
+    ESTIMATED = "estimated"  # a deadline inferred from a stated basis, not confirmed
+    CONDITIONAL = "conditional"  # closes when an event happens, timing unknown
+    UNKNOWN = "unknown"  # genuinely no information — not the same as "no risk"
 
 
 class RecoveryWindow(BaseModel):
     """Whether, and how, this evidence could still be lost irreversibly.
 
     The six questions that matter, made explicit fields instead of left
-    to be inferred: until when can it be obtained, what hypotheses need
-    it, what's uncertain about its relevance, what it costs to acquire,
-    and what's lost if it's missed. Authority ("is it allowed now") is
-    deliberately NOT a field here — it comes from Decision/decide(), so
-    there is exactly one place that fact lives, not two that could
-    disagree.
+    to be inferred: until when (if known or estimated) or under what
+    condition (if event-triggered) can it be obtained, what hypotheses
+    need it, what's uncertain about its relevance, what it costs to
+    acquire, and what's lost if it's missed. Authority ("is it allowed
+    now") is deliberately NOT a field here — it comes from
+    Decision/decide(), so there is exactly one place that fact lives.
+
+    `kind` exists because "no known expiry" (UNKNOWN) and "closes when
+    the device powers off, timing unknown" (CONDITIONAL) are different
+    situations that a single optional `until` datetime cannot represent
+    without silently treating both as "not urgent" — correction from
+    the Oct 27 review.
     """
 
-    until: Optional[datetime] = None  # None: no known expiry
+    kind: RecoveryWindowKind = RecoveryWindowKind.UNKNOWN
+    until: Optional[datetime] = None
+    estimate_basis: Optional[str] = None
+    condition: Optional[str] = None
     what_is_lost_if_missed: str
     acquisition_cost: Optional[str] = None
     depends_on_hypothesis_ids: list[str] = Field(default_factory=list)
     uncertainty_note: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _kind_matches_fields(self) -> "RecoveryWindow":
+        if self.kind in (RecoveryWindowKind.KNOWN, RecoveryWindowKind.ESTIMATED):
+            if self.until is None:
+                raise ValueError(f"'{self.kind.value}' recovery window requires 'until'")
+        if self.kind == RecoveryWindowKind.ESTIMATED and not self.estimate_basis:
+            raise ValueError(
+                "estimated recovery window requires estimate_basis "
+                "(the source and confidence behind the estimate)"
+            )
+        if self.kind == RecoveryWindowKind.CONDITIONAL and not self.condition:
+            raise ValueError(
+                "conditional recovery window requires 'condition' "
+                "(the event that closes it, e.g. 'device power-off')"
+            )
+        return self
 
 
 class EvidenceRequirement(BaseModel):
@@ -182,12 +274,13 @@ class EvidenceRequirement(BaseModel):
     recovery_window: Optional[RecoveryWindow] = None
     blocked_by_authority: bool = False
     blocked_reason: Optional[str] = None
-    custody: Custody
+    responsibility: TaskResponsibility
 
 
 class Hypothesis(BaseModel):
     id: str
     explanation: str
+    status: str = "proposed"  # "proposed" | "accepted" | "rejected"
     supporting_claim_ids: list[str] = Field(default_factory=list)
     contradicting_claim_ids: list[str] = Field(default_factory=list)
     discriminating_requirement_id: Optional[str] = None

@@ -31,21 +31,40 @@ why the product exists at all.
 3. **Evidence state and authority state are separate dimensions**
    (`SUFFICIENT/MISSING/CONFLICTING/STALE` × `GRANTED/NEEDS_CONSENT/
    DENIED/EXPIRED`) — established 2026-10-26.
-4. **Custody is explicit, never assumed, and has a real lifecycle.**
-   Every `EvidenceRequirement` and `ProposedAction` carries a `Custody`
-   with a full status (`UNASSIGNED -> ASSIGNED -> ACKNOWLEDGED ->
-   IN_PROGRESS -> REPORTED_DONE -> VERIFIED_DONE`, plus
-   `BLOCKED/EXPIRED/CANCELLED/UNKNOWN`), implemented in
-   `krakadyl/core/models.py`. The current code routes all three
-   conflations below through one place each, and today's tests confirm
-   they're refused there — that is narrower than "structurally
-   impossible" (a corrected overclaim from an earlier version of this
-   doc): a full structural guarantee would also need validators on
-   direct state mutation, a persistence/serialization audit, and
-   coverage of every code path that can write `Custody`, none of which
-   exist yet. Treat the three points below as "enforced today, in the
-   one place that currently sets this state" — not yet as a proof that
-   no other path could violate them:
+4. **Task responsibility and evidence custody are explicit, never
+   assumed, and never the same thing.** Correction from the Oct 27
+   review: an earlier version of `models.py` had one `Custody` object
+   doing both jobs — tracking whether a *task* got done, and standing in
+   for whether an *artifact* was properly chain-of-custodied. Completing
+   a task does not, by itself, demonstrate custody of what it produced,
+   so these are now two separate contracts:
+   - **`TaskResponsibility`** (on `EvidenceRequirement`, `Claim`): owner,
+     acceptance, and a full status (`UNASSIGNED -> ASSIGNED ->
+     ACKNOWLEDGED -> IN_PROGRESS -> REPORTED_DONE -> VERIFIED_DONE`,
+     plus `BLOCKED/EXPIRED/CANCELLED/UNKNOWN`). Reaching `VERIFIED_DONE`
+     requires `verified_by` and `verification_method` — a status label
+     alone is rejected by a validator, not just discouraged by
+     convention — and requires genuine independence: `verified_by` must
+     differ from `reported_done_by`, unless `verification_method` names
+     an automated check (prefixed `tool:`), since "independent" doesn't
+     have to mean "a second human," it has to mean "not the same act as
+     the self-report."
+   - **`EvidenceCustody`** (on `Observation`): acquisition, who has held
+     the artifact and when it changed hands, what transformations were
+     performed on it, and its integrity digest — the actual
+     chain-of-custody concept, tracked on its own.
+
+   What's enforced today, stated at the precision it deserves: the
+   validator above runs at construction time for `TaskResponsibility`,
+   and `krakadyl/core/continuity.py::evidence_state_from_requirement` is
+   the one place `REPORTED_DONE` gets turned into an evidence state
+   (always `MISSING`, never `SUFFICIENT`). That is narrower than
+   "structurally impossible" (a corrected overclaim from an earlier
+   version of this doc): a full structural guarantee would also need a
+   persistence/serialization audit and coverage of every code path that
+   can write either object, neither of which exists yet. Three things
+   this is designed to refuse, not yet proven against every mutation
+   path:
    - `ASSIGNED` is not `ACKNOWLEDGED`. Handing a task to someone is a
      different fact from that person having taken responsibility for
      it — this is its own enum value, not a side timestamp, so "who
@@ -126,10 +145,10 @@ the system grows:
 This is not a "mode" that turns on for ADHD users. It's a property of
 the system — useful the same way for an exhausted investigator at hour
 14 of a shift, an emergency-response team, or anyone operating under
-repeated interruption, which (see the Oct 12–21, 2026 wave of critical
-vulnerabilities across PHP, Next.js, Node.js, and GitLab — four
-independently confirmed incidents inside ten days) is most people
-working in this field most of the time, not an edge case.
+repeated interruption, which is most people working in this field most
+of the time, not an edge case. See the sourced incident list at the end
+of "Untrusted content and supply chain" below for why that's not a
+rhetorical claim.
 
 ## Anticipating irreversible evidence loss
 
@@ -139,20 +158,43 @@ piece of evidence that could still be lost:
 
 | Concept | Question | Field |
 |---|---|---|
-| Recovery window | Until when can this still be obtained? | `until` |
+| Recovery window | Until when (if known/estimated) can this still be obtained? | `until`, gated by `kind` |
 | Investigative dependency | Which hypotheses need this source? | `depends_on_hypothesis_ids` |
 | Uncertainty | What's unknown about its relevance? | `uncertainty_note` |
 | Acquisition cost | What does preserving it require? | `acquisition_cost` |
 | Irreversibility | What's lost if we wait? | `what_is_lost_if_missed` |
 | Authority | Is it allowed right now? | *not a field here* — comes from `Decision`/`decide()`, the single place that fact lives |
 
-This is not probabilistic planning, and isn't meant to be yet — `next_move()`
-ranks open requirements by recovery-window urgency and how many
-hypotheses depend on them, both explicit, auditable, rule-based
-comparisons. It's a real, verifiable capability from Level 1
-(`tests/test_continuity.py`), with the explicit room to grow into
-planning under uncertainty later if a measurable model for that ever
-earns its way in — not before.
+**`kind` exists because not every window is a known deadline.**
+Correction from the Oct 27 review: a single optional `until` datetime
+can't distinguish "no known expiry" from "closes on an event, timing
+unknown" (the device gets powered off, a log rotates, a session is
+lost) without silently treating both as equally non-urgent.
+`RecoveryWindowKind` has four values — `KNOWN`, `ESTIMATED` (requires
+`estimate_basis`: the source and confidence behind the number),
+`CONDITIONAL` (requires `condition`: the event that closes it), and
+`UNKNOWN` — and `next_move()` keeps anything `CONDITIONAL`/`UNKNOWN`
+visible in a separate `conditional_watch` list instead of letting it
+sink to the bottom of a time-ranked list it can't honestly be ranked
+against.
+
+This is not probabilistic planning, and isn't meant to be yet —
+`next_move()` ranks open requirements on recovery-window urgency alone.
+**Correction from the Oct 27 review**: hypothesis-dependent count used
+to be a silent secondary ranking key; it no longer is. A source tied to
+five trivial hypotheses is not more important than one decisive for a
+single hypothesis, and the old behavior could have let an agent that
+generates more hypotheses silently inflate a source's priority. The
+count is still computed (deduplicated — a repeated hypothesis id no
+longer inflates it) and exposed as `dependents_count`, but purely as
+information for a human to weigh, never as something that picks the
+primary recommendation. **Known, tracked gap, not claimed solved**: it
+still counts whatever hypothesis ids are listed, not only ones marked
+"accepted" — doing that needs `Hypothesis` objects passed into
+`next_move()`, which it doesn't take yet. It's a real, verifiable
+capability from Level 1 (`tests/test_continuity.py`), with explicit room
+to grow into planning under uncertainty later if a measurable model for
+that ever earns its way in — not before.
 
 ## Untrusted content and supply chain
 
@@ -163,15 +205,39 @@ and installable dependencies are four separate categories that never
 merge. A malicious document in a case does not become an operational
 instruction by being summarized by Muse Spark or classified by Laya.
 
-This is not abstract caution: the project's own dependencies sit inside
-the exact wave of incidents referenced above (Oct 12–21, 2026 — PHP,
-Next.js, Node.js, GitLab, all independently confirmed). Concrete
-consequence: KRAKADYL pins its own dependency versions deliberately
-(not just "latest"), and the TypeScript frontend's Node/Next.js versions
-get checked against that list before each level that touches them —
-being the thing that investigates incidents and also being vulnerable to
-one from an unpinned dependency is the kind of irony worth actively
-avoiding.
+This is not abstract caution. In the ten days before this hackathon's
+building period began, four independently confirmed critical
+vulnerabilities hit widely used dev infrastructure — sourced, not
+asserted:
+
+- **PHP** — CVE-2026-109618 (OOM memory corruption) and CVE-2026-109619
+  (use-after-free), unauthenticated RCE, CVSS 9.2. Affected 8.2 before
+  8.2.35, 8.3 before 8.3.36, 8.4 before 8.4.27, 8.5 before 8.5.12;
+  exploited in the wild from Oct 17, patched Oct 21, 2026.
+  ([Unit 42 threat brief](https://unit42.paloaltonetworks.com/cve-2026-109618-cve-2026-109619/))
+- **Next.js** — two critical unauthenticated RCEs, CVSS 9.5: a `use
+  cache` flaw (App Router, Cache Components) and a `librsvg`/`sharp` SVG
+  memory-safety bug reached via the Image Optimization API. Affected
+  10.0.0–15.5.27 and 16.0.0–16.4.0; patched in 16.4.1 / 15.5.28, Oct 14,
+  2026. ([The Hacker News](https://thehackernews.com/2026/10/nextjs-ships-out-of-band-patch-for-two.html))
+- **Node.js** — CVE-2026-111497, an out-of-bounds write in the bundled
+  Brotli decoder, RCE via malformed compressed input. Affected all
+  supported branches (22.x/24.x/26.x); patched in 22.23.4, 24.22.1,
+  26.12.1 as part of a 10-CVE security release, Oct 21, 2026.
+  ([The Hacker News](https://thehackernews.com/2026/10/nodejs-brotli-decoder-bug-could-allow.html))
+- **GitLab** — CVE-2026-110264, integer overflow in regex compilation,
+  unauthenticated RCE, CVSS 10.0, affecting code dating back to GitLab
+  7.0 (2014). Patched Oct 21, 2026 (19.5.1, 19.4.3, 19.3.6, 19.2.9,
+  19.1.9, 19.0.10, 18.11.13) — note servers patched Oct 12 for an
+  earlier, related regex flaw (CVE-2026-97229) still needed this second
+  update. ([The Hacker News](https://thehackernews.com/2026/10/critical-gitlab-flaw-cvss-100-could.html))
+
+Concrete consequence for this project: KRAKADYL pins its own dependency
+versions deliberately (not just "latest"), and the TypeScript frontend's
+Node/Next.js versions get checked against the patched versions above
+before each level that touches them — being the thing that investigates
+incidents and also being vulnerable to one from an unpinned dependency
+is the kind of irony worth actively avoiding.
 
 ## No individual blame, by construction — not just by policy
 
@@ -231,20 +297,22 @@ one of these six, it is not a level of this product.
 
 ### Level 1 — A complete investigable case
 
-`Mission`, `Mandate`, `Observation`, `Claim`, `EvidenceRequirement`
-(with its `RecoveryWindow`), `Hypothesis`, `ProposedAction`,
-`PreparedAction`, `Decision`, `Receipt` — all with the full custody
-lifecycle and a real `next_move()` (primary/alternatives/uncertain/
-blocked, never a fabricated single answer) from day one, not added
-after the "real" version works. One real domain action actually
+`Mission`, `Mandate`, `Observation` (with `EvidenceCustody`),
+`Claim`/`EvidenceRequirement` (with `TaskResponsibility`), `Hypothesis`,
+`ProposedAction`, `PreparedAction`, `Decision`, `Receipt` — all with the
+full task-responsibility lifecycle, a separate evidence-custody record,
+and a real `next_move()` (primary/alternatives/uncertain/blocked/
+conditional-watch, never a fabricated single answer) from day one, not
+added after the "real" version works. One real domain action actually
 executed (e.g., assembling a verifiable local evidence package), not
 simulated. This alone is a complete, demonstrable product — later
 levels extend it, they don't replace it.
 
 **Status as of 2026-10-27, stated precisely, not rounded up**: the
 contracts, the policy engine, the receipt chain + independent verifier,
-and the continuity/custody mechanism are implemented and tested (17/17
-passing). **Not yet done, and therefore Level 1 is not complete**: no
+and the continuity/task-responsibility mechanism are implemented and
+tested (23/23 passing). **Not yet done, and therefore Level 1 is not
+complete**: no
 Meta Model API call has been made from this codebase, there is no agent
 loop proposing actions, and no real domain action has been executed
 end-to-end — which is this level's own stated acceptance criterion.

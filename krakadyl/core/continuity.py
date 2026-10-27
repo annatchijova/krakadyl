@@ -17,20 +17,20 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from krakadyl.core.models import EvidenceRequirement, EvidenceState, TaskStatus
+from krakadyl.core.models import EvidenceRequirement, EvidenceState, RecoveryWindowKind, TaskStatus
 
 
 def evidence_state_from_requirement(req: EvidenceRequirement) -> EvidenceState:
     """The one place "reported done" gets turned into an evidence state.
 
     REPORTED_DONE without verification stays MISSING — a claim is not a
-    fact. This is deliberate, not a bug: see Custody.is_only_claimed.
+    fact. This is deliberate, not a bug: see TaskResponsibility.is_only_claimed.
     """
     if req.unresolvable:
         return EvidenceState.MISSING
-    if req.resolved and req.custody.is_verified:
+    if req.resolved and req.responsibility.is_verified:
         return EvidenceState.SUFFICIENT
-    if req.custody.status == TaskStatus.VERIFIED_DONE and not req.resolved:
+    if req.responsibility.status == TaskStatus.VERIFIED_DONE and not req.resolved:
         return EvidenceState.CONFLICTING
     return EvidenceState.MISSING
 
@@ -38,7 +38,7 @@ def evidence_state_from_requirement(req: EvidenceRequirement) -> EvidenceState:
 class UrgentDiscrepancy(BaseModel):
     requirement_id: str
     reason: str
-    minutes_left: float
+    minutes_left: Optional[float] = None  # None when the window is CONDITIONAL — flagged anyway
 
 
 def find_urgent_discrepancies(
@@ -48,33 +48,54 @@ def find_urgent_discrepancies(
 ) -> list[UrgentDiscrepancy]:
     """The mandatory adversarial scenario, as a general check.
 
-    Flags any requirement that is only CLAIMED (not verified), while its
-    recovery window is about to close — the exact shape of "an
-    investigator reports a critical source preserved, a teammate closes
-    the task, and no acquisition receipt exists while the source has
-    twenty minutes left." This never silently lets the case file present
-    that evidence as preserved.
+    Flags any requirement that is only CLAIMED (not verified):
+    - KNOWN/ESTIMATED window: flagged once it's within `urgency_window`.
+    - CONDITIONAL window (closes on an event, timing unknown): flagged
+      unconditionally while only-claimed — we can't compute "how close,"
+      so the honest response is to always surface it rather than
+      silently treat unknown timing as "not urgent."
+    - UNKNOWN window: not flagged. This is a known, documented gap —
+      there is genuinely no information to act on, not a judgment that
+      no risk exists. Tracked, not silently claimed to be handled.
     """
     found: list[UrgentDiscrepancy] = []
     for req in requirements:
-        if not req.custody.is_only_claimed:
+        if not req.responsibility.is_only_claimed:
             continue
-        if req.recovery_window is None or req.recovery_window.until is None:
+        rw = req.recovery_window
+        if rw is None:
             continue
-        minutes_left = (req.recovery_window.until - now).total_seconds() / 60
-        if timedelta(minutes=minutes_left) <= urgency_window:
+
+        if rw.kind in (RecoveryWindowKind.KNOWN, RecoveryWindowKind.ESTIMATED) and rw.until:
+            minutes_left = (rw.until - now).total_seconds() / 60
+            if timedelta(minutes=minutes_left) <= urgency_window:
+                basis = f" (estimated — {rw.estimate_basis})" if rw.kind == RecoveryWindowKind.ESTIMATED else ""
+                found.append(
+                    UrgentDiscrepancy(
+                        requirement_id=req.id,
+                        reason=(
+                            f"'{req.predicate}' was reported done by "
+                            f"{req.responsibility.reported_done_by}, but no verification exists, "
+                            f"and {rw.what_is_lost_if_missed} in {minutes_left:.0f} minutes{basis}."
+                        ),
+                        minutes_left=minutes_left,
+                    )
+                )
+        elif rw.kind == RecoveryWindowKind.CONDITIONAL:
             found.append(
                 UrgentDiscrepancy(
                     requirement_id=req.id,
                     reason=(
                         f"'{req.predicate}' was reported done by "
-                        f"{req.custody.reported_done_by}, but no verification exists, "
-                        f"and {req.recovery_window.what_is_lost_if_missed} "
-                        f"in {minutes_left:.0f} minutes."
+                        f"{req.responsibility.reported_done_by}, but no verification exists, "
+                        f"and {rw.what_is_lost_if_missed} if {rw.condition} happens — "
+                        "timing unknown, flagged regardless."
                     ),
-                    minutes_left=minutes_left,
+                    minutes_left=None,
                 )
             )
+        # UNKNOWN kind: deliberately not flagged — see docstring.
+
     return found
 
 
@@ -82,34 +103,36 @@ class NextMove(BaseModel):
     """What the invariant actually guarantees: a clear answer, never a
     fabricated single priority where none is defensible.
 
-    - primary set, alternatives possibly non-empty, uncertain False:
-      the normal case — one defensible recommendation, ranked on
-      recovery-window urgency alone (see note on `dependents_count`
-      below for why nothing else auto-decides this).
+    - primary set: one defensible recommendation, ranked on
+      recovery-window urgency alone (KNOWN/ESTIMATED windows only —
+      see `conditional_watch` for what can't be time-ranked).
     - primary None, uncertain True: two or more candidates share the
-      same most-urgent recovery window — the honest answer is "no
-      single defensible priority," not an arbitrary pick. All tied
-      candidates are in `alternatives`.
-    - primary None, uncertain False, alternatives empty: nothing open.
-    - `blocked` always lists requirements with a legitimate claim on
-      attention that the agent currently has no authorized path for —
-      visible, not hidden, even though they're not actionable now.
+      same most-urgent window — the honest answer is "no single
+      defensible priority," not an arbitrary pick.
+    - `conditional_watch`: open requirements whose recovery window is
+      CONDITIONAL or UNKNOWN — they can't be time-ranked against the
+      others, so instead of silently sinking to the bottom of a
+      priority list they stay visible here, separately.
+    - `blocked`: requirements with a legitimate claim on attention that
+      the agent currently has no authorized path for.
 
-    `dependents_count` (requirement id -> count) is exposed alongside
-    the ranking, never folded into it. Correction from the Oct 27 review:
-    the number of hypotheses that depend on a source is not a validated
-    measure of evidentiary relevance — a source tied to five trivial
-    hypotheses is not more important than one decisive for a single
-    hypothesis, and ranking as if it were would be a real, silent wrong
-    incentive. It stays visible, separate information for a human to
-    weigh, not an automatic tiebreaker, until there's a validated
-    relevance measure and sensitivity tests to back using it that way.
+    `dependents_count` (requirement id -> count of *distinct*
+    hypothesis ids) is exposed alongside the ranking, never folded into
+    it — see the Oct 27 correction below. **Known, tracked limitation,
+    not silently claimed solved**: this counts whatever hypothesis ids
+    are listed, not only ones a human or the policy engine has marked
+    "accepted" — an agent that generates many superficial hypotheses
+    could still inflate the number shown here, even though it can no
+    longer change which requirement gets picked as primary. Filtering
+    to accepted hypotheses needs Hypothesis objects passed in, which
+    this function doesn't take yet.
     """
 
     primary: Optional[str] = None  # requirement id
     alternatives: list[str] = []
     uncertain: bool = False
     blocked: list[tuple[str, str]] = []  # (requirement id, reason)
+    conditional_watch: list[str] = []
     dependents_count: dict[str, int] = {}
 
 
@@ -129,13 +152,46 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
     def dependents(r: EvidenceRequirement) -> int:
         if r.recovery_window is None:
             return 0
-        return len(r.recovery_window.depends_on_hypothesis_ids)
+        # Deduplicated — correction from the Oct 27 review: a repeated
+        # id must not inflate the count.
+        return len(set(r.recovery_window.depends_on_hypothesis_ids))
 
     dependents_count = {r.id: dependents(r) for r in open_candidates}
 
+    def is_rankable(r: EvidenceRequirement) -> bool:
+        rw = r.recovery_window
+        return rw is not None and rw.kind in (RecoveryWindowKind.KNOWN, RecoveryWindowKind.ESTIMATED) and rw.until is not None
+
+    def is_watch_only(r: EvidenceRequirement) -> bool:
+        # No recovery_window at all is treated the same as UNKNOWN: real
+        # open work, but nothing to time-rank it against — stays visible
+        # in conditional_watch instead of silently vanishing.
+        rw = r.recovery_window
+        return rw is None or rw.kind in (RecoveryWindowKind.CONDITIONAL, RecoveryWindowKind.UNKNOWN)
+
+    conditional_watch = [r.id for r in open_candidates if is_watch_only(r)]
+    rankable = [r for r in open_candidates if is_rankable(r)]
+
     if not open_candidates:
         return NextMove(
-            primary=None, alternatives=[], uncertain=False, blocked=blocked, dependents_count={}
+            primary=None,
+            alternatives=[],
+            uncertain=False,
+            blocked=blocked,
+            conditional_watch=[],
+            dependents_count={},
+        )
+
+    if not rankable:
+        # Everything open is CONDITIONAL/UNKNOWN — nothing to time-rank,
+        # but there is open work. Honest answer: uncertain, not empty.
+        return NextMove(
+            primary=None,
+            alternatives=[r.id for r in open_candidates],
+            uncertain=True,
+            blocked=blocked,
+            conditional_watch=conditional_watch,
+            dependents_count=dependents_count,
         )
 
     def urgency_rank(r: EvidenceRequirement) -> float:
@@ -143,9 +199,9 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
             return float("inf")
         return r.recovery_window.until.timestamp()
 
-    # Urgency is the ONLY automatic ranking key — see class docstring for
-    # why hypothesis-dependent count is deliberately not a tiebreaker.
-    ranked = sorted(open_candidates, key=lambda r: (urgency_rank(r), r.id))
+    # Urgency is the ONLY automatic ranking key — hypothesis-dependent
+    # count is deliberately not a tiebreaker, see class docstring.
+    ranked = sorted(rankable, key=lambda r: (urgency_rank(r), r.id))
     top = ranked[0]
     tied_with_top = [r for r in ranked if urgency_rank(r) == urgency_rank(top)]
 
@@ -155,6 +211,7 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
             alternatives=[r.id for r in ranked],
             uncertain=True,
             blocked=blocked,
+            conditional_watch=conditional_watch,
             dependents_count=dependents_count,
         )
 
@@ -163,5 +220,6 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
         alternatives=[r.id for r in ranked[1:]],
         uncertain=False,
         blocked=blocked,
+        conditional_watch=conditional_watch,
         dependents_count=dependents_count,
     )
