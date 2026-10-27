@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:api-types": "node tools/openapi-codegen/node_modules/openapi-typescript/bin/cli.js http://localhost:8000/openapi.json -o src/api-generated.ts"
   },
   "dependencies": {
     "react": "^19.3.1",

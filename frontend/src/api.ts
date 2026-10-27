@@ -1,9 +1,9 @@
-// Hand-written to mirror krakadyl/api/app.py's response models exactly.
-// Not code-generated from the Python schema yet — docs/language-decision.md
-// names that as the eventual approach ("TypeScript types are generated
-// from the Python schema, never hand-duplicated"); this is the honest
-// interim state, not a claim that generation already happens. Keep this
-// file in lockstep with app.py's Pydantic models by hand until it does.
+import type { components, paths } from "./api-generated";
+
+// Regenerate named API schemas with `npm run gen:api-types` while the
+// backend serves its OpenAPI document. Activity events and execution
+// manifests are refined below because FastAPI currently exposes those
+// two endpoint-local shapes only as generic dictionaries.
 
 // Port 8000 is the FastAPI/uvicorn default; this project's own dev
 // instructions (frontend/README.md) run it there. If something else on
@@ -11,173 +11,45 @@
 // override this at build time instead of hand-editing it here.
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
-export interface EvidenceCustody {
-  acquired_by: string;
-  acquired_at: string;
-  acquisition_method: string;
-  possessors: unknown[];
-  transformations: unknown[];
-  integrity_digest: string | null;
-  integrity_verified: boolean;
-  integrity_verified_by: string | null;
-}
+type Schemas = components["schemas"];
 
-export interface Observation {
-  id: string;
-  source: string;
-  digest: string;
-  captured_at: string;
-  event_time: string | null;
-  actor: string;
-  visual_region: string | null;
-  evidence_custody: EvidenceCustody;
-}
+export type EvidenceCustody = Schemas["EvidenceCustody"];
+export type Observation = Schemas["Observation"];
+export type EvidenceItem = Schemas["EvidenceItem"];
+export type Hypothesis = Schemas["Hypothesis"];
+export type HypothesisItem = Schemas["HypothesisItem"];
+export type Mission = Schemas["Mission"];
+export type Mandate = Schemas["Mandate"];
+export type ExclusionRecord = Schemas["ExclusionRecord"];
+export type PreparedAction = Schemas["PreparedAction"];
+export type Decision = Schemas["Decision"];
+export type Receipt = Schemas["Receipt"];
+export type CaseOverview = Schemas["CaseOverview"];
+export type PrepareResponse = Schemas["PrepareResponse"];
+export type RecoverResponse = Schemas["RecoverResponse"];
+export type MuseProposeResponse = Schemas["MuseProposeResponse"];
+export type LayaSignals = Schemas["AnalyzeNoteResponse"];
 
-export interface EvidenceItem {
-  observation: Observation;
-  in_mandate_scope: boolean;
-  integrity_ok: boolean;
-  requirement_id: string | null;
-  requirement_status: string | null;
-  independently_verified: boolean;
-}
+type GeneratedActivity =
+  paths["/api/cases/{case_id}/activity"]["get"]["responses"][200]["content"]["application/json"];
 
-export interface Hypothesis {
-  id: string;
-  explanation: string;
-  status: "proposed" | "accepted" | "rejected";
-  supporting_claim_ids: string[];
-  contradicting_claim_ids: string[];
-  discriminating_requirement_id: string | null;
-}
-
-export interface HypothesisItem {
-  hypothesis: Hypothesis;
-  needs_review: boolean;
-  review_reason: string | null;
-}
-
-export interface Mission {
-  id: string;
-  objective: string;
-  domain: string;
-  mandate_id: string;
-  termination_criteria: string;
-  created_at: string;
-}
-
-export interface Mandate {
-  id: string;
-  issuer: string;
-  principal: string;
-  resources: string[];
-  operations: string[];
-  destinations: string[];
-  valid_from: string;
-  valid_until: string | null;
-  revoked: boolean;
-  revoked_reason: string | null;
-  revision: string;
-}
-
-export interface ExclusionRecord {
-  resource_id: string;
-  reason: string;
-}
-
-export interface PreparedAction {
-  id: string;
-  proposed_action_id: string;
-  payload_digest: string;
-  resource: string;
-  operation: string;
-  destination: string;
-  resources_touched: string[];
-  excluded_sources: string[];
-  excluded_resource_reasons: ExclusionRecord[];
-  source_revision_checked: string;
-  mandate_revision_checked: string;
-  expires_at: string;
-  nonce: string;
-}
-
-export interface Decision {
-  id: string;
-  proposed_action_id: string;
-  verdict: "allowed" | "confirm" | "gather_evidence" | "forbidden";
-  evidence_state: string;
-  authority_state: string;
-  reasons: string[];
-  supporting_refs: string[];
-  decided_at: string;
-}
-
-export interface Receipt {
-  id: string;
-  proposed_action_id: string;
-  decision_id: string;
-  executed: boolean;
-  observed_effect: string | null;
-  uncertain_outcome: boolean;
-  prev_hash: string | null;
-  hash: string;
-  created_at: string;
-}
-
-export interface CaseOverview {
-  mission: Mission;
-  mandate: Mandate;
-  evidence: EvidenceItem[];
-  hypotheses: HypothesisItem[];
-  latest_prepared_action: PreparedAction | null;
-  latest_decision: Decision | null;
-}
-
-export interface ActivityEvent {
+export type ActivityEvent = GeneratedActivity[number] & {
   ts: string;
   kind: string;
   summary: string;
   detail: Record<string, unknown>;
-}
+};
 
-export interface PrepareResponse {
-  decision: Decision;
-  prepared: PreparedAction | null;
-}
+type GeneratedExecuteResponse = Schemas["ExecuteResponse"];
+type GeneratedManifest = NonNullable<GeneratedExecuteResponse["manifest"]>;
 
-export interface ExecuteResponse {
-  receipt: Receipt;
-  manifest: {
-    device: string | null;
-    destination: string;
-    excluded_devices: string[];
-    excluded_resources: ExclusionRecord[];
-    included: unknown[];
-  } | null;
-}
-
-export interface RecoverResponse {
-  attempted: boolean;
-  excluded_resources: string[];
-  decision: Decision | null;
-  prepared: PreparedAction | null;
-  closed_reason: string | null;
-}
-
-export interface MuseProposeResponse {
-  muse_operation: string;
-  muse_allowed_device: string;
-  muse_destination: string;
-  muse_reasoning: string;
-  decision: Decision;
-  prepared: PreparedAction | null;
-}
-
-export interface LayaSignals {
-  claims_independent_verification: number;
-  claims_task_complete: number;
-  urgency: number;
-}
+export type ExecuteResponse = Omit<GeneratedExecuteResponse, "manifest"> & {
+  manifest:
+    | (GeneratedManifest & {
+        excluded_resources: ExclusionRecord[];
+      })
+    | null;
+};
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
