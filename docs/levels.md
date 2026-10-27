@@ -507,6 +507,19 @@ gained a fourth, literal run of the three-investigators scenario: an
 intact file whose requirement is only `REPORTED_DONE` — `FORBIDDEN`,
 confirmed by actually running it. 51/51 tests passing.
 
+**Level 2 end-to-end demo (2026-10-27)**: `demo/run_case_002_level2.py`
+runs the whole level as one real, unmocked sequence rather than leaving
+it as unit tests in isolation — prepare → tamper → execute catches the
+staleness → `propose_recovery_route` excludes exactly the tampered
+resource → the recovered action executes for real and its manifest
+names the excluded resource and why → a revoked mandate, separately,
+where recovery correctly refuses to attempt and closes honestly instead
+→ an already-`ACCEPTED` `Hypothesis` flagged for review once its
+discriminating requirement turns out unresolvable. All six steps
+confirmed by actually running the script, not asserted from its source.
+This is Level 2's own version of Level 1's acceptance criterion: a real
+domain sequence executed end-to-end, not simulated. 63/63 tests passing.
+
 ### Level 3 — Active perception
 
 SAM 3.1 for regions/tracking in photos and video tied to the case's
