@@ -63,7 +63,12 @@ _CANDIDATE_SCHEMA = {
         },
         "allowed_device": {
             "type": "string",
-            "description": "The single device or source this step is scoped to.",
+            "description": (
+                "The bare device/source identifier this step is scoped to — "
+                "e.g. 'device-A'. Never a full resource path and never prefixed "
+                "with the mission or case id (not 'case-001/device-A') — the "
+                "caller builds the full resource path itself from this value."
+            ),
         },
         "destination": {
             "type": "string",

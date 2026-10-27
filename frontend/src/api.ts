@@ -164,6 +164,15 @@ export interface RecoverResponse {
   closed_reason: string | null;
 }
 
+export interface MuseProposeResponse {
+  muse_operation: string;
+  muse_allowed_device: string;
+  muse_destination: string;
+  muse_reasoning: string;
+  decision: Decision;
+  prepared: PreparedAction | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -181,6 +190,11 @@ export const api = {
   getActivity: (caseId: string) => request<ActivityEvent[]>(`/api/cases/${caseId}/activity`),
   prepare: (caseId: string) =>
     request<PrepareResponse>(`/api/cases/${caseId}/actions/prepare`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  proposeWithMuse: (caseId: string) =>
+    request<MuseProposeResponse>(`/api/cases/${caseId}/actions/propose-with-muse`, {
       method: "POST",
       body: JSON.stringify({}),
     }),

@@ -24,6 +24,7 @@ function App() {
   const [prepared, setPrepared] = useState<PreparedAction | null>(null);
   const [recoverInfo, setRecoverInfo] = useState<RecoverResponse | null>(null);
   const [executeResult, setExecuteResult] = useState<ExecuteResponse | null>(null);
+  const [museReasoning, setMuseReasoning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +58,17 @@ function App() {
       setPrepared(res.prepared);
       setRecoverInfo(null);
       setExecuteResult(null);
+      setMuseReasoning(null);
+    });
+
+  const handleAskMuse = () =>
+    guarded(async () => {
+      const res = await api.proposeWithMuse(CASE_ID);
+      setDecision(res.decision);
+      setPrepared(res.prepared);
+      setRecoverInfo(null);
+      setExecuteResult(null);
+      setMuseReasoning(res.muse_reasoning);
     });
 
   const handleExecute = (preparedActionId: string) =>
@@ -85,6 +97,7 @@ function App() {
       setPrepared(null);
       setRecoverInfo(null);
       setExecuteResult(null);
+      setMuseReasoning(null);
     });
 
   return (
@@ -118,8 +131,10 @@ function App() {
               prepared={prepared}
               recoverInfo={recoverInfo}
               executeResult={executeResult}
+              museReasoning={museReasoning}
               busy={busy}
               onPrepare={handlePrepare}
+              onAskMuse={handleAskMuse}
               onExecute={handleExecute}
               onRecover={handleRecover}
             />

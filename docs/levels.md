@@ -574,7 +574,43 @@ separated in the UI and in the route prefix — a real deployment gates
 or removes it, it is never a path an investigator would use on a real
 case.
 
-### Level 3 — Active perception
+## Muse wired into the visible workspace (2026-10-27, same day)
+
+Per Anna's own stated sequence ("después integraría Meta y Laya sobre
+ese flujo visible"): a new, separate `POST /api/cases/{id}/actions/
+propose-with-muse` endpoint and a distinct "Ask Muse" button in the
+frontend — never folded into the existing `prepare` endpoint/button,
+so the deterministic, free path stays available and nothing accidental
+triggers a billed call. Muse Spark (Standard mode) receives a summary
+built from the CURRENT live case state (`_case_summaries` in
+`krakadyl/api/app.py` — real integrity/verification facts, never
+Muse's own prior output fed back in), proposes a candidate, and that
+candidate goes through the exact same `prepare_evidence_package` the
+hand-built path uses. The UI shows Muse's reasoning in a panel labeled
+"not authoritative," separate from the deterministic verdict below it.
+
+**Found and fixed by the first live call, not by any test**: Muse
+returned `allowed_device: "case-001/device-A"` — the full resource
+path — instead of the bare device identifier the schema asked for in
+one ambiguous sentence. `prepare_evidence_package` builds its resource
+string as `f"{mission_id}/{allowed_device}"`, so this silently doubled
+into `"case-001/case-001/device-A"` and got correctly rejected as
+outside mandate scope — the deterministic check did exactly its job,
+catching a malformed candidate, but the candidate was malformed because
+the schema let it be. Root-caused by abduction (surprising fact:
+`forbidden` when evidence and mandate both check out; hypothesis: the
+device field carries a full path; confirmed by reading the exact
+rejected-resource string back). Fixed at the source — tightened
+`ProposedActionCandidate`'s `allowed_device` schema description with an
+explicit counter-example, and stopped showing Muse the raw
+`"mission_id/device"` resource string in `mandate_summary` at all
+(`_case_summaries` now says "Allowed device(s): device-A", never the
+combined path) — not by guessing and stripping a prefix after the fact,
+which would mean silently correcting model output instead of making
+the ambiguity impossible to produce in the first place. Re-confirmed
+live after the fix: `allowed`, executed, real receipt. 79/79 tests
+passing (`tests/test_api.py` covers the endpoint's wiring against a
+fake adapter call — no test spends real API credits).
 
 SAM 3.1 for regions/tracking in photos and video tied to the case's
 observations and their provenance; requesting a new, specific capture

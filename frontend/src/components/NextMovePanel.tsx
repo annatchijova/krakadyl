@@ -10,8 +10,10 @@ export function NextMovePanel({
   prepared,
   recoverInfo,
   executeResult,
+  museReasoning,
   busy,
   onPrepare,
+  onAskMuse,
   onExecute,
   onRecover,
 }: {
@@ -19,8 +21,10 @@ export function NextMovePanel({
   prepared: PreparedAction | null;
   recoverInfo: RecoverResponse | null;
   executeResult: ExecuteResponse | null;
+  museReasoning: string | null;
   busy: boolean;
   onPrepare: () => void;
+  onAskMuse: () => void;
   onExecute: (preparedActionId: string) => void;
   onRecover: () => void;
 }) {
@@ -36,12 +40,25 @@ export function NextMovePanel({
         <button className="button-primary" onClick={onPrepare} disabled={busy}>
           Prepare package_export
         </button>
+        <button className="button-secondary" onClick={onAskMuse} disabled={busy} title="Real Muse Spark call — costs a few cents">
+          Ask Muse
+        </button>
         {canExecute && (
           <button className="button-secondary" onClick={() => onExecute(prepared!.id)} disabled={busy}>
             {isRecoveryReview ? "Execute this recovery" : "Execute"}
           </button>
         )}
       </div>
+
+      {museReasoning && (
+        <div className="recovery-card" style={{ borderColor: "var(--signal)", background: "rgba(214,255,127,0.06)" }}>
+          <h3 style={{ color: "var(--signal)" }}>Muse says (not authoritative)</h3>
+          <p style={{ margin: 0, fontSize: "0.85rem" }}>{museReasoning}</p>
+          <p className="reason-text">
+            Still checked against the real mandate and evidence below — this is a proposal, not a decision.
+          </p>
+        </div>
+      )}
 
       {decision && (
         <div className="section-gap">

@@ -28,6 +28,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from krakadyl.adapters.muse import MuseAdapterError, propose_action
 from krakadyl.api.seed import CASE_ID, ensure_seeded, observation_file_path
 from krakadyl.core.continuity import evidence_state_from_requirement, next_move
 from krakadyl.core.executor import (
@@ -109,6 +110,56 @@ def _proposed_action(case_id: str, allowed_device: str, destination: str) -> Pro
     )
 
 
+def _case_summaries(case_id: str) -> tuple[str, str, str]:
+    """Builds Muse's three inputs from the CURRENT live case state, not
+    a hardcoded narrative — the whole point of wiring Muse into the
+    workspace instead of a fixed demo script. Only facts already
+    verifiable through this module's own checks go in; nothing here is
+    Muse's own prior output (no feedback loop where a model's words
+    become the next model call's "fact").
+    """
+    mission = store.get(case_id, "mission", case_id, Mission)
+    mandate = _current_mandate(case_id)
+    observations = _load_observations(case_id)
+    requirements = _load_requirements(case_id)
+    files = _observation_files(case_id, observations)
+    requirements_by_obs = {r.observation_id: r for r in requirements if r.observation_id}
+
+    mission_summary = mission.objective if mission else case_id
+
+    # Devices are named bare ("device-A"), never as the combined
+    # "mission_id/device" resource path — found by self-red-teaming the
+    # first live Muse call wired into this endpoint: showing the raw
+    # path here led Muse to copy it verbatim into allowed_device,
+    # which prepare_evidence_package then doubled into
+    # "case-001/case-001/device-A" and rejected as out of scope.
+    allowed_devices = sorted({r.rsplit("/", 1)[-1] for r in mandate.resources})
+    mandate_summary = (
+        f"Allowed device(s): {', '.join(allowed_devices)}. Operations: {', '.join(mandate.operations)}. "
+        f"Destinations: {', '.join(mandate.destinations)}."
+    )
+    if mandate.revoked:
+        mandate_summary += f" REVOKED: {mandate.revoked_reason}."
+
+    lines = []
+    for o in observations:
+        req = requirements_by_obs.get(o.id)
+        integrity = (
+            "integrity ok"
+            if verify_observation_integrity(o, files.get(o.id, Path("/nonexistent")))
+            else "INTEGRITY FAILED (file no longer matches its acquired digest)"
+        )
+        verified = (
+            "independently verified"
+            if (req is not None and evidence_state_from_requirement(req) == EvidenceState.SUFFICIENT)
+            else "NOT independently verified"
+        )
+        lines.append(f"{o.id} ({o.source}): {integrity}, {verified}")
+    case_summary = "\n".join(lines) if lines else "no observations recorded"
+
+    return mission_summary, mandate_summary, case_summary
+
+
 def _persist_prepare_result(
     case_id: str, proposed_action: ProposedAction, decision: Decision, prepared: Optional[PreparedAction]
 ) -> None:
@@ -154,6 +205,15 @@ class PrepareRequest(BaseModel):
 
 
 class PrepareResponse(BaseModel):
+    decision: Decision
+    prepared: Optional[PreparedAction]
+
+
+class MuseProposeResponse(BaseModel):
+    muse_operation: str
+    muse_allowed_device: str
+    muse_destination: str
+    muse_reasoning: str
     decision: Decision
     prepared: Optional[PreparedAction]
 
@@ -290,6 +350,73 @@ def prepare(case_id: str, body: PrepareRequest) -> PrepareResponse:
         now().isoformat(),
     )
     return PrepareResponse(decision=decision, prepared=prepared)
+
+
+@app.post("/api/cases/{case_id}/actions/propose-with-muse", response_model=MuseProposeResponse)
+def propose_with_muse(case_id: str) -> MuseProposeResponse:
+    """A real, billed call to Muse Spark (Standard mode) — a separate,
+    explicitly-chosen endpoint, never triggered by `prepare` or any
+    other flow. Muse proposes from the CURRENT live case state (see
+    `_case_summaries`); its candidate is validated against
+    `ProposedActionCandidate`'s schema by the adapter, then goes
+    through the exact same `prepare_evidence_package` the hand-built
+    path uses — Muse has no path to authority here, same as everywhere
+    else in this codebase.
+    """
+    _case_or_404(case_id)
+    mission_summary, mandate_summary, case_summary = _case_summaries(case_id)
+    try:
+        candidate = propose_action(
+            mission_summary=mission_summary,
+            mandate_summary=mandate_summary,
+            case_summary=case_summary,
+        )
+    except MuseAdapterError as exc:
+        raise HTTPException(502, f"Muse call failed or returned an invalid response: {exc}")
+
+    mandate = _current_mandate(case_id)
+    observations = _load_observations(case_id)
+    requirements = _load_requirements(case_id)
+    files = _observation_files(case_id, observations)
+    proposed_action = ProposedAction(
+        id=f"action-{uuid.uuid4().hex[:10]}",
+        operation=candidate.operation,
+        arguments={"device": candidate.allowed_device, "destination": candidate.destination},
+        expected_effect=candidate.reasoning,
+        mission_id=case_id,
+    )
+
+    decision, prepared = prepare_evidence_package(
+        proposed_action=proposed_action,
+        mandate=mandate,
+        observations=observations,
+        requirements=requirements,
+        observation_files=files,
+        allowed_device=candidate.allowed_device,
+        destination=candidate.destination,
+        now=now(),
+        ttl=DEFAULT_PREPARED_ACTION_TTL,
+    )
+    _persist_prepare_result(case_id, proposed_action, decision, prepared)
+    store.log_event(
+        case_id,
+        "muse_proposed",
+        f"Muse proposed '{candidate.operation}' on {candidate.allowed_device} — verdict {decision.verdict.value}",
+        {
+            "proposed_action_id": proposed_action.id,
+            "muse_reasoning": candidate.reasoning,
+            "reasons": decision.reasons,
+        },
+        now().isoformat(),
+    )
+    return MuseProposeResponse(
+        muse_operation=candidate.operation,
+        muse_allowed_device=candidate.allowed_device,
+        muse_destination=candidate.destination,
+        muse_reasoning=candidate.reasoning,
+        decision=decision,
+        prepared=prepared,
+    )
 
 
 @app.post("/api/cases/{case_id}/actions/execute", response_model=ExecuteResponse)

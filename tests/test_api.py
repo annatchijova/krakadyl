@@ -135,6 +135,52 @@ def test_replay_is_refused_even_through_the_api(client):
     assert "replay" in second["receipt"]["observed_effect"]
 
 
+def test_propose_with_muse_wires_a_real_adapter_call_through_the_real_pipeline(client, monkeypatch):
+    """No network call: krakadyl.api.app.propose_action is monkeypatched
+    to a fake, the same way tests/test_muse_adapter.py fakes the
+    transport one layer down — this test is about the endpoint's own
+    wiring (building summaries, persisting, the candidate still going
+    through prepare_evidence_package unchanged), not about Muse itself.
+    """
+    import krakadyl.api.app as app_module
+    from krakadyl.adapters.muse import ProposedActionCandidate
+
+    def fake_propose_action(*, mission_summary, mandate_summary, case_summary, **kwargs):
+        assert "device-A" in mandate_summary
+        assert "obs-a1" in case_summary
+        return ProposedActionCandidate(
+            operation="package_export",
+            allowed_device="device-A",
+            destination="reviewer-authorized",
+            reasoning="obs-a1 and obs-a2 are verified; package them for the reviewer.",
+        )
+
+    monkeypatch.setattr(app_module, "propose_action", fake_propose_action)
+
+    resp = client.post("/api/cases/case-001/actions/propose-with-muse", json={})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["muse_operation"] == "package_export"
+    assert body["decision"]["verdict"] == "allowed"
+    assert body["prepared"] is not None
+
+    events = client.get("/api/cases/case-001/activity").json()
+    assert any(e["kind"] == "muse_proposed" for e in events)
+
+
+def test_propose_with_muse_surfaces_an_adapter_failure_as_502(client, monkeypatch):
+    import krakadyl.api.app as app_module
+    from krakadyl.adapters.muse import MuseAdapterError
+
+    def failing_propose_action(**kwargs):
+        raise MuseAdapterError("Muse response did not match the expected schema")
+
+    monkeypatch.setattr(app_module, "propose_action", failing_propose_action)
+
+    resp = client.post("/api/cases/case-001/actions/propose-with-muse", json={})
+    assert resp.status_code == 502
+
+
 def test_state_survives_reloading_the_app_against_the_same_data_dir(tmp_path, monkeypatch):
     data_dir = str(tmp_path / "api")
     monkeypatch.setenv("KRAKADYL_DATA_DIR", data_dir)
