@@ -335,6 +335,45 @@ proposes a still-legitimate route forward — or closes honestly with
 "this can no longer be resolved." This engine is general — Level 4
 reuses it rather than inventing a second one.
 
+**Status as of 2026-10-27**: the core piece of this — staleness
+detection for a `PreparedAction` — is implemented and tested
+(`krakadyl/core/invalidation.py`, `krakadyl/core/executor.py`'s
+`prepare_evidence_package`/`execute_prepared_action` split, 42/42 tests
+passing). `execute_prepared_action` revalidates against the *current*
+mandate and resource digests immediately before acting — a mandate
+revoked or a file changed in the gap between prepare and execute is
+caught, not trusted from the earlier ALLOWED verdict.
+
+**Found by self-red-teaming this build, fixed in the same pass, not
+carried forward**: `TaskResponsibility`'s independent-verification
+validator and `RecoveryWindow`'s kind-consistency validator only ran at
+construction — a plain attribute assignment after the fact bypassed
+both entirely (`validate_assignment=True` now closes this). `Mandate`
+could be mutated in place (`mandate.revoked = True`) without bumping
+`revision`, which would have silently defeated the invalidation engine
+this level depends on (`frozen=True` now forces a new object, and
+therefore a real revision bump, for any change). `PreparedAction` itself
+was a mutable "snapshot" (also now `frozen=True`). All four have
+regression tests in `tests/test_model_invariants.py` proving the bypass
+stays closed, not just that it was closed once.
+
+**Known, deliberately deferred limitations — not silently unaddressed**:
+there is a real time-of-check-to-time-of-use gap between
+`execute_prepared_action`'s digest recheck and the actual file copy
+(not exploitable in the current single-threaded, single-process demo;
+becomes real once Level 4 adds concurrent investigators touching the
+same case). There is also no replay/idempotency protection — nothing
+yet stops `execute_prepared_action` from being called twice on the same
+still-valid `PreparedAction`, producing two receipts for one logical
+action. Both are tracked here, not claimed solved.
+
+Not yet built: hypothesis invalidation (the other half of this level —
+when a supporting observation goes stale, the hypotheses that depended
+on it need the same treatment PreparedActions just got) and the
+"propose a still-legitimate route forward" half (today, staleness stops
+at "don't execute, re-propose" — it doesn't yet suggest what the
+re-proposal should look like).
+
 ### Level 3 — Active perception
 
 SAM 3.1 for regions/tracking in photos and video tied to the case's

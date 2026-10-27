@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TaskStatus(str, Enum):
@@ -80,7 +80,16 @@ class TaskResponsibility(BaseModel):
     custody concept this used to be conflated with (renamed from
     `Custody` on 2026-10-27, per the Oct 27 review: completing a task
     does not, by itself, demonstrate custody of whatever it produced).
+
+    `validate_assignment=True` — found by self-red-teaming the Level 2
+    build: without it, `resp.status = TaskStatus.VERIFIED_DONE` after
+    construction bypassed the independent-verification validator below
+    entirely (Pydantic only runs validators at construction by default).
+    Reproduced, then fixed here — the earlier claim that this was
+    "enforced at construction time" was true but incomplete.
     """
+
+    model_config = ConfigDict(validate_assignment=True)
 
     owner: str
     status: TaskStatus
@@ -170,6 +179,24 @@ class EvidenceCustody(BaseModel):
 
 
 class Mandate(BaseModel):
+    """Mandates are immutable snapshots, not mutated in place — a change
+    (new resources, revocation, a tightened scope) is a NEW Mandate
+    object with a bumped `revision`. This is what Level 2's invalidation
+    engine compares a PreparedAction's `mandate_revision_checked`
+    against, to catch "this was approved under a mandate that no longer
+    exists in that form."
+
+    `frozen=True` — found by self-red-teaming the Level 2 build: without
+    it, `mandate.revoked = True` silently mutated an existing Mandate
+    without bumping `revision`, which would have silently defeated the
+    invalidation engine (it compares revision strings, not field
+    contents). Reproduced, then fixed here. A caller that needs to
+    change a Mandate must now construct a new one — which is the only
+    way `revision` gets a chance to be bumped honestly.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
     id: str
     issuer: str
     principal: str
@@ -180,6 +207,7 @@ class Mandate(BaseModel):
     valid_until: Optional[datetime] = None
     revoked: bool = False
     revoked_reason: Optional[str] = None
+    revision: str = "1"
 
 
 class Mission(BaseModel):
@@ -234,7 +262,14 @@ class RecoveryWindow(BaseModel):
     situations that a single optional `until` datetime cannot represent
     without silently treating both as "not urgent" — correction from
     the Oct 27 review.
+
+    `validate_assignment=True` for the same reason as TaskResponsibility:
+    without it, `kind`/`until`/`condition` could be reassigned post-
+    construction without re-checking `_kind_matches_fields`, silently
+    producing an internally inconsistent window.
     """
+
+    model_config = ConfigDict(validate_assignment=True)
 
     kind: RecoveryWindowKind = RecoveryWindowKind.UNKNOWN
     until: Optional[datetime] = None
@@ -296,11 +331,22 @@ class ProposedAction(BaseModel):
 
 
 class PreparedAction(BaseModel):
+    """A frozen snapshot of 'this is safe to do, checked against this
+    revision of the mandate and these resource digests' — frozen=True
+    so nothing downstream can mutate `resources_touched`,
+    `source_revision_checked`, etc. after the fact to make a stale
+    action look current again. Found missing by self-red-teaming the
+    Level 2 build; a mutable "snapshot" is not a snapshot.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
     id: str
     proposed_action_id: str
     payload_digest: str
     destination: str
     resources_touched: list[str]
+    excluded_sources: list[str] = Field(default_factory=list)
     source_revision_checked: str
     mandate_revision_checked: str
     expires_at: datetime
