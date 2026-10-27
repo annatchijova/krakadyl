@@ -320,7 +320,7 @@ real chained receipt. Device B is excluded from the package because the
 mandate says so, not because the demo was scripted to leave it out; a
 tampered file is caught because its digest is recomputed, not assumed.
 
-**In progress (2026-10-27, later the same day)**: `krakadyl/adapters/muse.py`
+**Built (2026-10-27, later the same day)**: `krakadyl/adapters/muse.py`
 calls Muse Spark (`muse-spark-1.3`, Standard mode — Contributor mode is
 never the default here, per the project's own API-budget note: it trades
 discounted pricing for Meta's right to train on the content sent, not an
@@ -337,12 +337,19 @@ it makes a network call. `demo/run_case_001_with_muse.py` wires this into
 the same two-device case, generating the `ProposedAction` from a real
 Muse call instead of by hand.
 
-**Not yet true, stated precisely**: no real network call to the Meta
-Model API has actually been made and confirmed against this codebase —
-the adapter is built and unit-tested against a fake transport, not yet
-run live. That live confirmation (one real call, read, and checked
-against the schema and the deterministic pipeline) is what actually
-closes Level 1's last gap — not the code existing.
+**Confirmed live, same day**: `demo/run_case_001_with_muse.py` run against
+the real Meta Model API (`muse-spark-1.3`, Standard mode). Muse proposed
+`package_export` on `device-A` to `reviewer-authorized` with its own
+reasoning ("Device-A items obs-a1 and obs-a2 are verified and ready...");
+the candidate passed `ProposedActionCandidate`'s schema, then went through
+`check_mandate`/`check_evidence`/`decide()` unchanged — verdict `ALLOWED`,
+executed, real manifest digest and chained receipt hash produced. **This
+closes Level 1's last gap**: the contracts, the policy engine, the
+receipt chain, the continuity/custody mechanism, the executor, and now a
+real model-generated `ProposedAction` running through all of it,
+end-to-end, not simulated. 57/57 tests passing (none of them making a
+network call — the live run above is the one and only call this closes
+on).
 
 ### Level 2 — The case stays alive: contradictions, staleness, recovery
 
