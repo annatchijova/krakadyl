@@ -19,6 +19,8 @@ import hashlib
 import json
 from typing import Optional
 
+from krakadyl.core.models import EvidenceRequirement, Hypothesis, HypothesisStatus
+
 
 def compute_combined_revision(resource_digests: dict[str, str]) -> str:
     """A single revision string standing in for the state of every
@@ -50,3 +52,48 @@ def staleness_reason(
     if source_revision_checked != current_source_revision:
         return "one or more source resources changed since this action was prepared"
     return None
+
+
+def find_hypotheses_needing_review(
+    hypotheses: list[Hypothesis],
+    requirements: list[EvidenceRequirement],
+) -> list[tuple[str, str]]:
+    """The other half of Level 2: a Hypothesis whose discriminating
+    requirement stopped being resolved (or became unresolvable) needs
+    human re-review — the observation that discriminated it may no
+    longer support that discrimination. A rejected hypothesis is
+    skipped (already closed, re-flagging it is noise); an accepted one
+    is NOT skipped — accepting something based on evidence that later
+    turns out unresolvable is exactly the case this exists to catch.
+
+    Pure query, same style as find_urgent_discrepancies/next_move: it
+    surfaces what needs attention, it doesn't mutate anything.
+    """
+    requirements_by_id = {r.id: r for r in requirements}
+    flagged: list[tuple[str, str]] = []
+
+    for h in hypotheses:
+        if h.status == HypothesisStatus.REJECTED:
+            continue
+        if h.discriminating_requirement_id is None:
+            continue
+
+        req = requirements_by_id.get(h.discriminating_requirement_id)
+        if req is None:
+            flagged.append(
+                (
+                    h.id,
+                    f"discriminating requirement '{h.discriminating_requirement_id}' "
+                    "no longer exists in this case",
+                )
+            )
+            continue
+        if req.unresolvable:
+            flagged.append(
+                (h.id, f"discriminating requirement '{req.id}' became unresolvable: {req.unresolvable_reason}")
+            )
+            continue
+        if not req.resolved:
+            flagged.append((h.id, f"discriminating requirement '{req.id}' is no longer resolved"))
+
+    return flagged

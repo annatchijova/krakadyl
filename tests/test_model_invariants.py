@@ -9,7 +9,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from krakadyl.core.models import Mandate, RecoveryWindow, RecoveryWindowKind, TaskResponsibility, TaskStatus
+from krakadyl.core.models import (
+    EvidenceRequirement,
+    Hypothesis,
+    Mandate,
+    RecoveryWindow,
+    RecoveryWindowKind,
+    TaskResponsibility,
+    TaskStatus,
+)
 
 NOW = datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc)
 
@@ -67,3 +75,28 @@ def test_recovery_window_validates_kind_consistency_on_assignment():
     rw = RecoveryWindow(kind=RecoveryWindowKind.UNKNOWN, what_is_lost_if_missed="x")
     with pytest.raises(ValidationError):
         rw.kind = RecoveryWindowKind.ESTIMATED  # no estimate_basis set
+
+
+def test_requirement_cannot_be_both_resolved_and_unresolvable():
+    """Regression for: a requirement used to accept resolved=True and
+    unresolvable=True simultaneously — a logical contradiction that
+    find_hypotheses_needing_review's unresolvable-first check would
+    have reported, masking that the requirement also claimed to be
+    resolved."""
+    with pytest.raises(ValidationError):
+        EvidenceRequirement(
+            id="r1",
+            predicate="x",
+            acceptable_source_class="y",
+            resolved=True,
+            unresolvable=True,
+            responsibility=TaskResponsibility(owner="a", status=TaskStatus.UNASSIGNED),
+        )
+
+
+def test_hypothesis_status_rejects_unrecognized_values():
+    """Regression for: Hypothesis.status used to accept any string — a
+    typo or case mismatch ('Rejected' vs 'rejected') would silently
+    fail to match find_hypotheses_needing_review's rejected-skip check."""
+    with pytest.raises(ValidationError):
+        Hypothesis(id="h1", explanation="x", status="ACEPTADO con typo")

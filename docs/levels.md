@@ -367,12 +367,44 @@ yet stops `execute_prepared_action` from being called twice on the same
 still-valid `PreparedAction`, producing two receipts for one logical
 action. Both are tracked here, not claimed solved.
 
-Not yet built: hypothesis invalidation (the other half of this level —
-when a supporting observation goes stale, the hypotheses that depended
-on it need the same treatment PreparedActions just got) and the
-"propose a still-legitimate route forward" half (today, staleness stops
-at "don't execute, re-propose" — it doesn't yet suggest what the
-re-proposal should look like).
+**Cycle 2 (same session, 2026-10-27)**: hypothesis invalidation is now
+built — `invalidation.py::find_hypotheses_needing_review` flags a
+`Hypothesis` whose `discriminating_requirement_id` points at a
+requirement that stopped being resolved, became unresolvable, or no
+longer exists. Deliberately **not** exempting `accepted` hypotheses
+(only `rejected` ones are skipped): a hypothesis accepted on grounds
+that later turn out unresolvable is exactly the case this exists to
+catch, not a case to ignore because it was already decided.
+
+**Found by self-red-teaming this build, fixed in the same pass**:
+`EvidenceRequirement` used to accept `resolved=True` and
+`unresolvable=True` simultaneously — a logical contradiction that would
+have made `find_hypotheses_needing_review`'s unresolvable-first check
+report the requirement as permanently dead while it also claimed to be
+resolved. Fixed with a validator making the two mutually exclusive.
+`Hypothesis.status` was a plain, unvalidated string — a typo or case
+mismatch (`"Rejected"` vs `"rejected"`) would have silently failed to
+match the skip check, flagging an already-dismissed hypothesis as
+needing review. Fixed by turning it into a real `HypothesisStatus` enum
+with `validate_assignment=True`. Both have regression tests in
+`tests/test_model_invariants.py`.
+
+50/50 tests passing. Demo re-run end-to-end after both cycles, confirmed
+still working.
+
+**Still not built**: the "propose a still-legitimate route forward"
+half — today, staleness stops at "don't execute / needs review,
+re-propose" for both PreparedActions and Hypotheses; neither yet
+suggests what the re-proposal should look like. That's the natural
+Cycle 3 target, not started in this session.
+
+**Cross-module check, not yet done**: both cycles above red-teamed the
+piece just built in isolation. A red-team pass across the accumulated
+modules together (does `invalidation.py` interact correctly with
+`continuity.py`'s `next_move`/`find_urgent_discrepancies` when both are
+looking at the same case state? does a requirement flagged stale by one
+also get surfaced correctly by the other?) has not been run yet and is
+explicitly owed before this level is called done.
 
 ### Level 3 — Active perception
 

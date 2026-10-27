@@ -299,6 +299,14 @@ class RecoveryWindow(BaseModel):
 
 
 class EvidenceRequirement(BaseModel):
+    """`resolved` and `unresolvable` are deliberately mutually exclusive
+    — found contradictory (both True at once, meaning "resolved AND
+    permanently unresolvable" simultaneously) while self-red-teaming
+    the Level 2 build. Reproduced, then fixed with the validator below.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
+
     id: str
     predicate: str
     acceptable_source_class: str
@@ -311,11 +319,36 @@ class EvidenceRequirement(BaseModel):
     blocked_reason: Optional[str] = None
     responsibility: TaskResponsibility
 
+    @model_validator(mode="after")
+    def _resolved_and_unresolvable_are_exclusive(self) -> "EvidenceRequirement":
+        if self.resolved and self.unresolvable:
+            raise ValueError(
+                "a requirement cannot be both 'resolved' and 'unresolvable' — "
+                "these are mutually exclusive outcomes"
+            )
+        return self
+
+
+class HypothesisStatus(str, Enum):
+    PROPOSED = "proposed"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
 
 class Hypothesis(BaseModel):
+    """`status` was a plain, unvalidated string until self-red-teaming
+    the Level 2 build showed it accepted any value (a typo or case
+    mismatch would silently fail to match the 'rejected' check in
+    invalidation.py::find_hypotheses_needing_review). Now a real enum,
+    validated on assignment too, for the same reason TaskResponsibility
+    and RecoveryWindow got validate_assignment=True.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
+
     id: str
     explanation: str
-    status: str = "proposed"  # "proposed" | "accepted" | "rejected"
+    status: HypothesisStatus = HypothesisStatus.PROPOSED
     supporting_claim_ids: list[str] = Field(default_factory=list)
     contradicting_claim_ids: list[str] = Field(default_factory=list)
     discriminating_requirement_id: Optional[str] = None
