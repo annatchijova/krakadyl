@@ -376,6 +376,19 @@ class PreparedAction(BaseModel):
     `source_revision_checked`, etc. after the fact to make a stale
     action look current again. Found missing by self-red-teaming the
     Level 2 build; a mutable "snapshot" is not a snapshot.
+
+    `resources_touched`/`excluded_sources` are `tuple[str, ...]`, not
+    `list[str]` — found by the Oct 27 follow-up review: `frozen=True`
+    only blocks field *reassignment* (`prepared.x = y`), it does not
+    deep-freeze a mutable field's contents, so
+    `prepared.resources_touched.append(...)` silently succeeded despite
+    the model being "frozen." A tuple has no `.append` to bypass with.
+
+    `resource` is the exact resource string checked against the mandate
+    at prepare time (e.g. `"case-001/device-A"`) — stored so
+    `execute_prepared_action` can re-run the *full* mandate check
+    (scope, validity window, revocation) against it, not just compare
+    revision strings.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -383,9 +396,11 @@ class PreparedAction(BaseModel):
     id: str
     proposed_action_id: str
     payload_digest: str
+    resource: str
+    operation: str
     destination: str
-    resources_touched: list[str]
-    excluded_sources: list[str] = Field(default_factory=list)
+    resources_touched: tuple[str, ...]
+    excluded_sources: tuple[str, ...] = ()
     source_revision_checked: str
     mandate_revision_checked: str
     expires_at: datetime

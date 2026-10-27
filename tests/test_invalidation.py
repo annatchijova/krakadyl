@@ -142,8 +142,10 @@ def test_prepared_action_executes_when_nothing_changed(tmp_path):
         decision=decision,
         proposed_action=_action(),
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         current_mandate=mandate,
+        consumed_nonces=set(),
         out_dir=tmp_path / "package",
         now=NOW + timedelta(minutes=2),
     )
@@ -182,14 +184,17 @@ def test_mandate_revoked_between_prepare_and_execute_blocks_execution(tmp_path):
         decision=decision,
         proposed_action=_action(),
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         current_mandate=mandate_now,
+        consumed_nonces=set(),
         out_dir=tmp_path / "package",
         now=NOW + timedelta(minutes=5),
     )
 
     assert receipt.executed is False
-    assert "mandate revision changed" in receipt.observed_effect
+    assert "mandate no longer grants this action" in receipt.observed_effect
+    assert "revoked" in receipt.observed_effect
     assert not (tmp_path / "package" / "manifest.json").exists()
 
 
@@ -224,14 +229,17 @@ def test_source_file_changed_between_prepare_and_execute_blocks_execution(tmp_pa
         decision=decision,
         proposed_action=_action(),
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         current_mandate=mandate,
+        consumed_nonces=set(),
         out_dir=tmp_path / "package",
         now=NOW + timedelta(minutes=3),
     )
 
     assert receipt.executed is False
-    assert "source resources changed" in receipt.observed_effect
+    assert "evidence no longer sufficient" in receipt.observed_effect
+    assert "integrity check failed" in receipt.observed_effect
 
 
 def test_expired_prepared_action_blocks_execution_even_if_nothing_else_changed(tmp_path):
@@ -259,8 +267,10 @@ def test_expired_prepared_action_blocks_execution_even_if_nothing_else_changed(t
         decision=decision,
         proposed_action=_action(),
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         current_mandate=mandate,
+        consumed_nonces=set(),
         out_dir=tmp_path / "package",
         now=NOW + timedelta(minutes=10),  # past the 5-minute TTL
     )
@@ -297,11 +307,14 @@ def test_source_file_deleted_between_prepare_and_execute_is_caught(tmp_path):
         decision=decision,
         proposed_action=_action(),
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         current_mandate=mandate,
+        consumed_nonces=set(),
         out_dir=tmp_path / "package",
         now=NOW + timedelta(minutes=2),
     )
 
     assert receipt.executed is False
-    assert "source resources changed" in receipt.observed_effect
+    assert "evidence no longer sufficient" in receipt.observed_effect
+    assert "integrity check failed" in receipt.observed_effect
