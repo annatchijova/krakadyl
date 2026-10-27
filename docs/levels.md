@@ -398,13 +398,31 @@ re-propose" for both PreparedActions and Hypotheses; neither yet
 suggests what the re-proposal should look like. That's the natural
 Cycle 3 target, not started in this session.
 
-**Cross-module check, not yet done**: both cycles above red-teamed the
-piece just built in isolation. A red-team pass across the accumulated
-modules together (does `invalidation.py` interact correctly with
-`continuity.py`'s `next_move`/`find_urgent_discrepancies` when both are
-looking at the same case state? does a requirement flagged stale by one
-also get surfaced correctly by the other?) has not been run yet and is
-explicitly owed before this level is called done.
+**Cross-module red team (same session, 2026-10-27) — a real, significant
+finding, not yet fixed**: `krakadyl/core/executor.py` and the
+custody/continuity mechanism built across Level 1 and this level's two
+cycles are two parallel systems that were never actually wired
+together. `prepare_evidence_package()` computes `evidence_state` purely
+by recomputing an `Observation`'s file digest — it never imports or
+consults `EvidenceRequirement`, its `TaskResponsibility` lifecycle, or
+`continuity.py::evidence_state_from_requirement` at all (confirmed: zero
+references). Concretely, as the code stands today: **if a file on disk
+matches its stored digest, the executor will package it — even if the
+`EvidenceRequirement` tracking its acquisition is still sitting in
+`REPORTED_DONE`, never independently verified.** That is exactly the gap
+the three-investigators scenario in the README exists to close, and the
+executor built in this level's two cycles does not yet respect it.
+
+This is a design decision, not a one-line fix — it changes
+`prepare_evidence_package`'s signature (taking `EvidenceRequirement`
+objects alongside or instead of raw `Observation`s) and needs a decision
+on who updates a requirement's status when the executor runs (does a
+successful execution mark it `VERIFIED_DONE` itself — with what counts
+as the "independent" check, given the executor is the thing proposing
+the action? or does it stay strictly read-only and refuse to execute
+unless the requirement is already independently verified by something
+else?). Flagged here, deliberately not fixed in this pass without
+Anna's input on the approach.
 
 ### Level 3 — Active perception
 
