@@ -15,16 +15,44 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class CustodyStatus(str, Enum):
-    """Whether a claimed piece of work has been independently verified.
+class TaskStatus(str, Enum):
+    """Full lifecycle of a piece of investigative work.
 
-    CLAIMED is the only state anyone can set by saying "I did it."
-    VERIFIED requires evidence attached — a second observation, a
-    signature, a tool's own confirmation. The two are never conflated.
+    UNASSIGNED -> ASSIGNED -> ACKNOWLEDGED -> IN_PROGRESS -> REPORTED_DONE
+    -> VERIFIED_DONE is the expected happy path. BLOCKED/EXPIRED/
+    CANCELLED/UNKNOWN exist because real investigations have those
+    outcomes too, and a status enum that can't represent them gets
+    abused to represent them anyway.
+
+    Three things this status machine refuses to do, on purpose:
+    - ASSIGNED is not ACKNOWLEDGED. Handing a task to someone is not the
+      same fact as that person having taken responsibility for it —
+      assigning without an explicit, separate acknowledgment is exactly
+      how "I thought he had it" happens. This is a distinct enum value,
+      not a side timestamp, so "how many tasks are assigned but nobody
+      has acknowledged yet" is a direct query, not something that
+      requires remembering to check a field.
+    - REPORTED_DONE is never read as VERIFIED_DONE by anything
+      downstream (see continuity.py::evidence_state_from_requirement).
+      "Someone said they did it" and "it's verified" are different
+      states, not different labels for the same state.
+    - Neither of the above ever collapses back into UNASSIGNED or
+      "unknown." A reported-but-unverified claim is uncertainty that
+      gets preserved as its own state, not information that gets
+      discarded because it wasn't confirmed. See
+      docs/terminal-first-and-blame.md and docs/levels.md for why.
     """
 
-    CLAIMED = "claimed"
-    VERIFIED = "verified"
+    UNASSIGNED = "unassigned"
+    ASSIGNED = "assigned"
+    ACKNOWLEDGED = "acknowledged"
+    IN_PROGRESS = "in_progress"
+    REPORTED_DONE = "reported_done"
+    VERIFIED_DONE = "verified_done"
+    BLOCKED = "blocked"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
 
 
 class EvidenceState(str, Enum):
@@ -49,16 +77,37 @@ class AuthorityVerdict(str, Enum):
 
 
 class Custody(BaseModel):
-    """Who owns a piece of work, and whether it's claimed or verified.
+    """Who owns a piece of work, who accepted it, and its real status.
 
     Embedded in every object a person or the agent can mark "done," so
     "done" never means more than what this field actually says.
     """
 
     owner: str
-    status: CustodyStatus
+    status: TaskStatus
+    assigned_at: Optional[datetime] = None
+    accepted_by: Optional[str] = None
+    accepted_at: Optional[datetime] = None
+    reported_done_by: Optional[str] = None
+    reported_done_at: Optional[datetime] = None
     verified_by: Optional[str] = None
     verified_at: Optional[datetime] = None
+    due_at: Optional[datetime] = None
+
+    @property
+    def is_verified(self) -> bool:
+        return self.status == TaskStatus.VERIFIED_DONE
+
+    @property
+    def is_only_claimed(self) -> bool:
+        """True exactly when someone said it's done but nothing verified it.
+
+        This is the condition the mandatory adversarial scenario (see
+        docs/levels.md) hinges on: an investigator reports a volatile
+        source preserved, a teammate closes the task, and the system
+        must be able to ask this question and get True.
+        """
+        return self.status == TaskStatus.REPORTED_DONE
 
 
 class Mandate(BaseModel):
@@ -103,6 +152,25 @@ class Claim(BaseModel):
     custody: Custody
 
 
+class RecoveryWindow(BaseModel):
+    """Whether, and how, this evidence could still be lost irreversibly.
+
+    The six questions that matter, made explicit fields instead of left
+    to be inferred: until when can it be obtained, what hypotheses need
+    it, what's uncertain about its relevance, what it costs to acquire,
+    and what's lost if it's missed. Authority ("is it allowed now") is
+    deliberately NOT a field here — it comes from Decision/decide(), so
+    there is exactly one place that fact lives, not two that could
+    disagree.
+    """
+
+    until: Optional[datetime] = None  # None: no known expiry
+    what_is_lost_if_missed: str
+    acquisition_cost: Optional[str] = None
+    depends_on_hypothesis_ids: list[str] = Field(default_factory=list)
+    uncertainty_note: Optional[str] = None
+
+
 class EvidenceRequirement(BaseModel):
     id: str
     predicate: str
@@ -111,6 +179,9 @@ class EvidenceRequirement(BaseModel):
     resolved: bool = False
     unresolvable: bool = False
     unresolvable_reason: Optional[str] = None
+    recovery_window: Optional[RecoveryWindow] = None
+    blocked_by_authority: bool = False
+    blocked_reason: Optional[str] = None
     custody: Custody
 
 

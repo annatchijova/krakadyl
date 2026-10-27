@@ -31,39 +31,192 @@ why the product exists at all.
 3. **Evidence state and authority state are separate dimensions**
    (`SUFFICIENT/MISSING/CONFLICTING/STALE` × `GRANTED/NEEDS_CONSENT/
    DENIED/EXPIRED`) — established 2026-10-26.
-4. **Custody is explicit, never assumed.** Every `EvidenceRequirement`
-   and `ProposedAction` has a named owner and a status that distinguishes
-   *claimed done* from *verified done*. "Someone probably already did
-   this" is not a system state — it doesn't exist as an option. If it
-   wasn't verified, it's open, full stop, regardless of what anyone
-   believes.
-5. **The next move is always answerable without reconstructing context.**
-   At any point — after an interruption, a shift change, a context
-   switch — the system can state, from recorded state alone, what the
-   single next useful action is and why. No capability is allowed to
-   require a person to remember what they were doing instead of the
-   system recording it. This generalizes Anna's own
-   [non-overwhelming-ux](https://github.com/annatchijova/SKILLS/tree/main/non-overwhelming-ux)
-   and [terminal-first](https://github.com/annatchijova/SKILLS/tree/main/terminal-first)
-   skills from individual cognitive-load design into a structural product
-   invariant, not just an interface style.
+4. **Custody is explicit, never assumed, and has a real lifecycle.**
+   Every `EvidenceRequirement` and `ProposedAction` carries a `Custody`
+   with a full status (`UNASSIGNED -> ASSIGNED -> ACKNOWLEDGED ->
+   IN_PROGRESS -> REPORTED_DONE -> VERIFIED_DONE`, plus
+   `BLOCKED/EXPIRED/CANCELLED/UNKNOWN`), implemented in
+   `krakadyl/core/models.py`. Three conflations are structurally
+   impossible, not just discouraged by convention:
+   - `ASSIGNED` is not `ACKNOWLEDGED`. Handing a task to someone is a
+     different fact from that person having taken responsibility for
+     it — this is its own enum value, not a side timestamp, so "who
+     hasn't acknowledged yet" is a direct query.
+   - `REPORTED_DONE` is never read as `VERIFIED_DONE`.
+     `krakadyl/core/continuity.py::evidence_state_from_requirement` is
+     the one place this gets decided, and it returns `MISSING` for a
+     claim with no independent verification, every time.
+   - **Neither collapses back into "didn't happen" or "unknown."**
+     There are three genuinely different situations — not done;
+     reported done but unverified; verified against an explicit
+     criterion — and uncertainty about which applies is information
+     the system preserves as its own state, not a fact it discards
+     because nobody confirmed it. "Someone probably already did this"
+     is still not representable — but neither is erasing that someone
+     claimed to.
+5. **The next move is always answerable without reconstructing context —
+   and "answerable" means a clear answer, not a fabricated single
+   priority.** `krakadyl/core/continuity.py::next_move()` returns one of:
+   a single recommended action with its reasons, visible alternatives
+   next to it; an explicit *uncertain* state when two or more candidates
+   are genuinely tied on every criterion that would break the tie (never
+   an arbitrary pick dressed up as a recommendation); or a *blocked* list
+   for anything that has a legitimate claim on attention but no
+   authorized path right now — surfaced, never hidden. No capability is
+   allowed to require a person to remember what they were doing instead
+   of the system recording it.
+6. **Untrusted content never acquires execution authority.** Investigated
+   material, external documents, and anything a model outputs after
+   reading them — Muse Spark's summary, Laya's classification — stay on
+   the data side of a hard line. None of them can become an instruction,
+   a permission, or an installable dependency just by being interpreted.
+   A malicious file in the evidence set does not get to turn into an
+   operational instruction because a model summarized or classified it.
+   This generalizes the Oct 26 "observed content is not authorization"
+   rule from the adversarial benchmark category to the full system,
+   including its own supply chain — see "Untrusted content and supply
+   chain" below.
 
-If a level doesn't carry all five, it isn't a level of this product —
+If a level doesn't carry all six, it isn't a level of this product —
 it's a prototype of something else, same rule that already applied to
 the authority layer.
 
+## Where invariant 5 actually comes from
+
+Not a generic UX principle — it is Anna's own
+[terminal-first](https://github.com/annatchijova/SKILLS/tree/main/terminal-first)
+skill, carried over directly from a documented personal case (see
+`docs/terminal-first-and-blame.md` for the full account): technical
+competence and executive-function availability on a given day are
+**independent variables** — a person fluent with a terminal can still
+get stuck on a three-step form, and assuming otherwise is the exact
+failure mode this invariant exists to prevent. The concrete behaviors
+this implies for KRAKADYL's interface (one actionable next step at a
+time, no assumed memory of where a session left off, stop-and-ask
+instead of repeating a reworded instruction when someone's lost) come
+directly from that skill, not invented fresh for this project.
+
+## Cross-cutting dimension: operational and cognitive continuity
+
+Every level below is also evaluated against this table — it is not a
+separate feature, it is how invariants 4 and 5 show up concretely as
+the system grows:
+
+| Capability | Expected behavior |
+|---|---|
+| External working memory | Holds decisions, pending items, hypotheses and context without depending on anyone remembering them |
+| Explicit responsibility | Every task has an owner, a status, a due time if relevant, and evidence of execution |
+| Team coordination | Surfaces unassigned, duplicated, blocked, or wrongly-assumed-complete tasks |
+| Interruption handling | A case can be picked back up without mentally reconstructing all of its context |
+| Prioritization under pressure | Distinguishes time urgency, evidentiary importance, and dependency chains — not one score flattening all three |
+| Omission prevention | Flags critical steps that are claimed but not yet verified, before the window to verify them closes |
+| Shift handoff | Transfers what's known, what's pending, and what's uncertain, with provenance intact |
+| Cognitive adaptation | Removes unnecessary steps, always offers one clear next action, allows going deeper without forcing it |
+| Error recovery | Detects inconsistencies and allows correcting them without erasing history |
+| Human oversight | Keeps professional authority with the investigator; the agent's mandate never silently expands |
+
+This is not a "mode" that turns on for ADHD users. It's a property of
+the system — useful the same way for an exhausted investigator at hour
+14 of a shift, an emergency-response team, or anyone operating under
+repeated interruption, which (see the Oct 12–21, 2026 wave of critical
+vulnerabilities across PHP, Next.js, Node.js, and GitLab — four
+independently confirmed incidents inside ten days) is most people
+working in this field most of the time, not an edge case.
+
+## Anticipating irreversible evidence loss
+
+A requirement's `RecoveryWindow` (`krakadyl/core/models.py`) makes six
+questions explicit instead of leaving them to be inferred, for every
+piece of evidence that could still be lost:
+
+| Concept | Question | Field |
+|---|---|---|
+| Recovery window | Until when can this still be obtained? | `until` |
+| Investigative dependency | Which hypotheses need this source? | `depends_on_hypothesis_ids` |
+| Uncertainty | What's unknown about its relevance? | `uncertainty_note` |
+| Acquisition cost | What does preserving it require? | `acquisition_cost` |
+| Irreversibility | What's lost if we wait? | `what_is_lost_if_missed` |
+| Authority | Is it allowed right now? | *not a field here* — comes from `Decision`/`decide()`, the single place that fact lives |
+
+This is not probabilistic planning, and isn't meant to be yet — `next_move()`
+ranks open requirements by recovery-window urgency and how many
+hypotheses depend on them, both explicit, auditable, rule-based
+comparisons. It's a real, verifiable capability from Level 1
+(`tests/test_continuity.py`), with the explicit room to grow into
+planning under uncertainty later if a measurable model for that ever
+earns its way in — not before.
+
+## Untrusted content and supply chain
+
+Investigated material, documents, and model outputs are data, never
+instructions, permissions, or installable code — invariant 6. Concretely:
+evidence content, the agent's own instructions, execution permissions,
+and installable dependencies are four separate categories that never
+merge. A malicious document in a case does not become an operational
+instruction by being summarized by Muse Spark or classified by Laya.
+
+This is not abstract caution: the project's own dependencies sit inside
+the exact wave of incidents referenced above (Oct 12–21, 2026 — PHP,
+Next.js, Node.js, GitLab, all independently confirmed). Concrete
+consequence: KRAKADYL pins its own dependency versions deliberately
+(not just "latest"), and the TypeScript frontend's Node/Next.js versions
+get checked against that list before each level that touches them —
+being the thing that investigates incidents and also being vulnerable to
+one from an unpinned dependency is the kind of irony worth actively
+avoiding.
+
+## No individual blame, by construction — not just by policy
+
+Borrowed directly from a sibling project in the same portfolio,
+[Janus](https://github.com/annatchijova/janus) (its organizational
+report generator bans a fixed list of blame/incompetence words in both
+languages and never compares people to each other — findings describe
+*processes*, never people): KRAKADYL's discrepancy and handoff reporting
+follows the same rule. An unverified claim is reported as **a state of
+the case** ("this requirement has no independent verification and its
+source expires in N minutes"), never as a statement about the person who
+made the claim. Investigations fail for many reasons that have nothing
+to do with any one person's competence or diligence — the system's
+language has to reflect that structurally, the same way Janus's
+`ORG_FORBIDDEN_WORDS` does, not rely on whoever writes the narration
+remembering to phrase it kindly.
+
+## The standing acceptance scenario for the whole project
+
+> An exhausted team, mid-interruption. A volatile source about to
+> disappear. A task reported done that nobody verified. Limited,
+> partial authority over what could still be done about it.
+
+If KRAKADYL can keep continuity and propose a legitimate action here
+without fabricating certainty, it is doing exactly what it was designed
+to do. This is not a Level 1 checkbox to pass once — every later level
+gets re-measured against this same scenario, not just its own new
+cases.
+
+Implemented today as `tests/test_continuity.py::test_adversarial_scenario_three_investigators_twenty_minutes`,
+passing as of the Level 1 core skeleton commit. It is the test that
+proves invariants 4, 5, and 6 are load-bearing, not aspirational.
+
+## Properties every level must hold, restated as one line
+
+Verifiable authority · provenance · explicit responsibility · cognitive
+continuity · anticipation of irreversible loss · isolation of untrusted
+content. Six invariants above, six words here — if a level is missing
+one of these six, it is not a level of this product.
+
 ## The levels
 
-### Level 1 — A single investigable case, one investigator, end to end
+### Level 1 — A complete investigable case
 
-`Mission`, `Mandate`, `Observation`, `Claim`, `EvidenceRequirement`,
-`Hypothesis`, `ProposedAction`, `PreparedAction`, `Decision`, `Receipt` —
-all with the custody fields (owner, claimed/verified status) and the
-next-move surface from day one, not added after the "real" version
-works. One real domain action actually executed (e.g., assembling a
-verifiable local evidence package), not simulated. This alone is a
-complete, demonstrable product — later levels extend it, they don't
-replace it.
+`Mission`, `Mandate`, `Observation`, `Claim`, `EvidenceRequirement`
+(with its `RecoveryWindow`), `Hypothesis`, `ProposedAction`,
+`PreparedAction`, `Decision`, `Receipt` — all with the full custody
+lifecycle and a real `next_move()` (primary/alternatives/uncertain/
+blocked, never a fabricated single answer) from day one, not added
+after the "real" version works. One real domain action actually
+executed (e.g., assembling a verifiable local evidence package), not
+simulated. This alone is a complete, demonstrable product — later
+levels extend it, they don't replace it.
 
 ### Level 2 — The case stays alive: contradictions, staleness, recovery
 
