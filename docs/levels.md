@@ -310,14 +310,21 @@ levels extend it, they don't replace it.
 
 **Status as of 2026-10-27, stated precisely, not rounded up**: the
 contracts, the policy engine, the receipt chain + independent verifier,
-and the continuity/task-responsibility mechanism are implemented and
-tested (23/23 passing). **Not yet done, and therefore Level 1 is not
-complete**: no
-Meta Model API call has been made from this codebase, there is no agent
-loop proposing actions, and no real domain action has been executed
-end-to-end — which is this level's own stated acceptance criterion.
-What exists is the deterministic core Level 1 depends on, not Level 1
-itself.
+the continuity/task-responsibility mechanism, and now
+`krakadyl/core/executor.py` are implemented and tested (30/30 passing).
+**This level's own stated acceptance criterion — one real domain action
+executed end-to-end, not simulated — is met**: `demo/run_case_001.py`
+runs a synthetic two-device case through the real policy engine and
+executor, with real files on disk, real SHA-256 integrity checks, and a
+real chained receipt. Device B is excluded from the package because the
+mandate says so, not because the demo was scripted to leave it out; a
+tampered file is caught because its digest is recomputed, not assumed.
+
+**Still not done**: no Meta Model API call has been made from this
+codebase, and there is no agent loop proposing actions — the executor
+above is wired to run on a `ProposedAction` built by hand in the demo,
+not one a model generated. That's the one piece left before Level 1 is
+fully complete, not a re-opening of the acceptance criterion above.
 
 ### Level 2 — The case stays alive: contradictions, staleness, recovery
 
