@@ -520,6 +520,60 @@ confirmed by actually running the script, not asserted from its source.
 This is Level 2's own version of Level 1's acceptance criterion: a real
 domain sequence executed end-to-end, not simulated. 63/63 tests passing.
 
+## The case workspace — KRAKADYL becomes usable (2026-10-27)
+
+Per `docs/language-decision.md`'s plan, now built rather than deferred:
+`krakadyl/store.py` (SQLite persistence — every domain object stored as
+its own canonical Pydantic JSON, so a case survives a server restart;
+nonce consumption now persists too, closing a gap tracked since Level 2
+Cycle 1), `krakadyl/api/` (FastAPI over the unmodified core — every
+endpoint calls `prepare_evidence_package`/`execute_prepared_action`/
+`propose_recovery_route` exactly as the demos and tests do, never a
+second notion of "allowed"), and `frontend/` (React + TypeScript,
+Mission/Evidence/Next move/Activity/Hypotheses zones, dark
+phosphor-accented identity per the project's own brand direction).
+
+**Verified in a real browser, not just asserted from the source**: the
+full Level 2 narrative was walked by hand through the running UI —
+Prepare (verdict `allowed`, resources shown), the dev-only "tamper"
+control, Execute catching the staleness (`Execution blocked`, red
+`integrity FAILED` badge on the evidence row), "Propose a recovery
+route" showing the exclusion and reason *before* anything executes
+(her explicit requirement — recovery is a reviewable proposal, never
+auto-applied), "Execute this recovery" producing a real receipt and a
+manifest visibly flagging reduced coverage, a revoked mandate correctly
+refusing recovery ("no exclusion can restore a missing or revoked
+permission"), and a hypothesis showing `accepted` and `needs review` as
+two simultaneously visible, distinct facts — never collapsed into one
+status. State was confirmed to survive a full page reload (the tampered
+evidence and the full activity history were still there).
+
+**Found and fixed during that same verification, not after**: the
+`/execute` endpoint was loading every stored observation unfiltered,
+so executing a recovered `PreparedAction` re-triggered the very
+integrity failure recovery had already excluded — caught by actually
+running the sequence, not by the test suite alone (the equivalent
+server-side test in `tests/test_api.py` already covered this path and
+passed; the bug was specifically in not yet having written that
+end-to-end click-through). Fixed by deriving the execute-time
+exclusion from `prepared.excluded_resource_reasons`, the same contract
+`tests/test_recovery.py` established. A second, smaller fix: the
+manifest's raw digest text was overflowing its panel horizontally
+(`overflow-wrap: anywhere` was missing) — caught by looking at the
+actual rendered page, not by any automated check.
+
+**Honest about what this is and isn't**: the TypeScript types in
+`frontend/src/api.ts` are hand-written to mirror `krakadyl/api/app.py`'s
+Pydantic response models, not generated from them yet —
+`docs/language-decision.md` names codegen as the eventual approach;
+this is the real interim state, flagged in the file itself so it
+doesn't quietly drift out of sync. The `/api/dev/...` router (tamper a
+file, revoke a mandate, make a hypothesis's requirement unresolvable)
+exists only to demonstrate the mechanism on demand and is clearly
+separated in the UI and in the route prefix — a real deployment gates
+or removes it, it is never a path an investigator would use on a real
+case.
+
 ### Level 3 — Active perception
 
 SAM 3.1 for regions/tracking in photos and video tied to the case's

@@ -157,6 +157,17 @@ revisarlo de nuevo, inmediatamente antes de actuar. Se produce un
 receipt en cualquier caso — "esto se rechazó, y esta es exactamente la
 razón" queda tan registrado como "esto se ejecutó".
 
+## Probalo
+
+`krakadyl/api/` expone este mismo núcleo, sin modificar, sobre HTTP
+(FastAPI), con persistencia real (`krakadyl/store.py` — un caso
+sobrevive a un reinicio del servidor o a recargar la página), y
+`frontend/` es un workspace en React + TypeScript sobre eso: Mission,
+Evidence, Next move, Activity e Hypotheses, recorriendo el mismo caso
+de dos dispositivos que usan los demos. Cada botón llama a un endpoint
+real; nada en la interfaz vuelve a decidir lo que el ejecutor ya
+decidió. Ver `frontend/README.md` para correr ambos.
+
 ## No es solo para forense
 
 KRAKADYL se publica bajo licencia abierta específicamente para que no

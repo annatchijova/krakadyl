@@ -1,0 +1,153 @@
+/* KRAKADYL visual identity — dark, phosphor-accented, per the project's
+   own brand direction: ink as the working ground, signal (phosphor
+   lime) as the one recognizable accent, never used as a truth score —
+   meaning is always paired with text/iconography, not color alone.
+   Monospace (IBM Plex Mono stack) is reserved for IDs/hashes/timestamps
+   and diagnostic detail; Manrope-style sans for everything a human
+   reads as language. */
+
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+:root {
+  --canvas: #f5f8f3;
+  --surface: #ffffff;
+  --ink: #092624;
+  --jade: #147d64;
+  --signal: #d6ff7f;
+  --muted: #526762;
+  --line: #cbd8d0;
+  --inquiry: #6654c0;
+  --attention: #a65320;
+  --exception: #ad3d36;
+
+  --bg: var(--ink);
+  --panel: #0f3330;
+  --panel-raised: #123c38;
+  --text: #e8f3ee;
+  --text-muted: #9fb8b1;
+  --border: #1d4a45;
+  --accent: var(--signal);
+
+  color-scheme: dark;
+  font-family: "Manrope", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+code,
+.mono,
+.mono-value {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badge.ok {
+  background: rgba(20, 125, 100, 0.25);
+  color: #8fe6c9;
+  border-color: var(--jade);
+}
+
+.badge.pending {
+  background: rgba(102, 84, 192, 0.2);
+  color: #c3b6ff;
+  border-color: var(--inquiry);
+}
+
+.badge.warn {
+  background: rgba(166, 83, 32, 0.22);
+  color: #ffbf8a;
+  border-color: var(--attention);
+}
+
+.badge.error {
+  background: rgba(173, 61, 54, 0.22);
+  color: #ff9d96;
+  border-color: var(--exception);
+}
+
+.badge.neutral {
+  background: rgba(203, 216, 208, 0.12);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+}
+
+.panel h2 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.button-primary {
+  background: var(--signal);
+  color: var(--ink);
+  border: none;
+  border-radius: 6px;
+  padding: 0.55em 1.1em;
+  font-weight: 700;
+}
+
+.button-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.55em 1.1em;
+  font-weight: 600;
+}
+
+.button-secondary:hover:not(:disabled) {
+  border-color: var(--jade);
+}
+
+.button-danger {
+  background: transparent;
+  color: #ff9d96;
+  border: 1px solid var(--exception);
+  border-radius: 6px;
+  padding: 0.4em 0.9em;
+  font-size: 0.85rem;
+  font-weight: 600;
+}

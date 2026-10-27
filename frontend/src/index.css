@@ -1,0 +1,157 @@
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header .tagline {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-left: auto;
+}
+
+.workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr 340px;
+  gap: 1rem;
+  padding: 1rem 1.4rem;
+  align-items: start;
+}
+
+@media (max-width: 1000px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.evidence-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.evidence-row:last-child {
+  border-bottom: none;
+}
+
+.evidence-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.evidence-main .obs-id {
+  font-weight: 600;
+}
+
+.evidence-main .obs-meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.badges {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.error-banner {
+  background: rgba(173, 61, 54, 0.18);
+  border: 1px solid var(--exception);
+  color: #ffd6d2;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin: 0 1.4rem 1rem 1.4rem;
+  font-size: 0.85rem;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.activity-item {
+  font-size: 0.82rem;
+  border-left: 2px solid var(--border);
+  padding-left: 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+.activity-item .ts {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.section-gap {
+  margin-top: 1.1rem;
+}
+
+.dev-panel {
+  margin-top: 1rem;
+  border: 1px dashed var(--attention);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+}
+
+.dev-panel h2 {
+  color: #ffbf8a;
+}
+
+.dev-panel .buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.recovery-card {
+  border: 1px solid var(--inquiry);
+  background: rgba(102, 84, 192, 0.1);
+  border-radius: 8px;
+  padding: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.recovery-card h3 {
+  margin: 0 0 0.4rem 0;
+  font-size: 0.85rem;
+  color: #c3b6ff;
+}
+
+.manifest-box {
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  padding: 0.6rem;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.manifest-box pre {
+  overflow-wrap: anywhere;
+}
+
+.reason-text {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.action-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}

@@ -148,6 +148,17 @@ checking it again immediately before acting. A receipt is produced
 either way, so "this was refused, and here's exactly why" is as
 permanent a record as "this executed."
 
+## Try it
+
+`krakadyl/api/` exposes this same, unmodified core over HTTP
+(FastAPI), backed by real persistence (`krakadyl/store.py` — a case
+survives a server restart or a page reload), and `frontend/` is a
+React + TypeScript workspace over it: Mission, Evidence, Next move,
+Activity, and Hypotheses, walking the exact two-device case the demos
+use. Every button calls a real endpoint; nothing in the UI re-decides
+what the executor already decided. See `frontend/README.md` for how to
+run both.
+
 ## Not just forensics
 
 KRAKADYL is released under an open license specifically so it is not
