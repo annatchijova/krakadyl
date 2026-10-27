@@ -126,6 +126,28 @@ verifica, un motor determinista decide — no es nueva en sí misma; ver los
 agradecimientos más abajo para el antecedente más cercano, leído y
 verificado antes de que este proyecto reclamara cualquier novedad.
 
+```mermaid
+flowchart TD
+    A[ProposedAction] --> C{"check_mandate\n(alcance, vigencia, revocación)"}
+    A --> D{"check_evidence\n(digest + verificación independiente)"}
+    C --> E{decide}
+    D --> E
+    E -- "FORBIDDEN / CONFIRM / GATHER_EVIDENCE" --> F["Solo Decision\nnada se ejecuta"]
+    E -- ALLOWED --> G["PreparedAction\n(snapshot congelado + nonce)"]
+    G -. "pasa el tiempo: un mandato puede\nrevocarse, un archivo puede cambiar" .-> H[execute_prepared_action]
+    H --> I{"revalidar contra el estado ACTUAL:\nmandato · evidencia · correspondencia · replay"}
+    I -- "obsoleto o inválido" --> J["No se ejecuta\nrazón registrada, nada se publica"]
+    I -- "sigue vigente" --> K["Se arma en un directorio temporal,\nse verifica el digest de cada copia,\nse renombra atómicamente"]
+    K --> L[Receipt encadenado]
+    J --> L
+```
+
+Dos fases, no una: `prepare_evidence_package` decide y toma el snapshot;
+`execute_prepared_action` no confía en nada de ese snapshot sin
+revisarlo de nuevo, inmediatamente antes de actuar. Se produce un
+receipt en cualquier caso — "esto se rechazó, y esta es exactamente la
+razón" queda tan registrado como "esto se ejecutó".
+
 ## No es solo para forense
 
 KRAKADYL se publica bajo licencia abierta específicamente para que no

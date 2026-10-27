@@ -117,6 +117,28 @@ environment verifies, a deterministic engine decides — is not new on its
 own; see the acknowledgements below for the closest prior art, read and
 verified before this project claimed any novelty.
 
+```mermaid
+flowchart TD
+    A[ProposedAction] --> C{"check_mandate\n(scope, validity, revocation)"}
+    A --> D{"check_evidence\n(digest + independent verification)"}
+    C --> E{decide}
+    D --> E
+    E -- "FORBIDDEN / CONFIRM / GATHER_EVIDENCE" --> F["Decision only\nnothing executed"]
+    E -- ALLOWED --> G["PreparedAction\n(frozen snapshot + nonce)"]
+    G -. "time passes: a mandate can be\nrevoked, a file can change" .-> H[execute_prepared_action]
+    H --> I{"revalidate against CURRENT state:\nmandate · evidence · correspondence · replay"}
+    I -- stale or invalid --> J["Not executed\nreason recorded, nothing published"]
+    I -- still valid --> K["Assemble in temp dir,\nverify each copy's digest,\nrename atomically"]
+    K --> L[Chained Receipt]
+    J --> L
+```
+
+Two phases, not one: `prepare_evidence_package` decides and snapshots;
+`execute_prepared_action` trusts nothing from that snapshot without
+checking it again immediately before acting. A receipt is produced
+either way, so "this was refused, and here's exactly why" is as
+permanent a record as "this executed."
+
 ## Not just forensics
 
 KRAKADYL is released under an open license specifically so it is not

@@ -357,15 +357,30 @@ was a mutable "snapshot" (also now `frozen=True`). All four have
 regression tests in `tests/test_model_invariants.py` proving the bypass
 stays closed, not just that it was closed once.
 
-**Known, deliberately deferred limitations — not silently unaddressed**:
-there is a real time-of-check-to-time-of-use gap between
-`execute_prepared_action`'s digest recheck and the actual file copy
-(not exploitable in the current single-threaded, single-process demo;
-becomes real once Level 4 adds concurrent investigators touching the
-same case). There is also no replay/idempotency protection — nothing
-yet stops `execute_prepared_action` from being called twice on the same
-still-valid `PreparedAction`, producing two receipts for one logical
-action. Both are tracked here, not claimed solved.
+**Follow-up review, same day (2026-10-27), both of the limitations above
+closed**: `execute_prepared_action` now takes a required `consumed_nonces`
+set and refuses to execute a `PreparedAction` whose `nonce` is already in
+it — the caller owns the set's lifetime (in-memory today; backed by
+storage once persistence exists, not yet), so forgetting to pass one is a
+loud signature error, not a silent gap. The TOCTOU window is not
+eliminated — a file can still change in the instant between the digest
+recheck and the copy — but it is now *caught rather than ignored*: the
+copy's own digest is verified against the expected one immediately after
+copying, and the whole package is assembled in a temp directory and only
+`rename()`d into `out_dir` if every file matches; a mismatch aborts with
+nothing published, never a half-written package mistaken for a complete
+one. `execute_prepared_action` also now fully re-runs `check_mandate`
+(catching revocation, scope, and a validity window that moved — not just
+a revision-string diff) and `check_evidence` (catching a requirement that
+regressed from `VERIFIED_DONE` after prepare) against current state, and
+confirms `prepared`/`decision`/`proposed_action` all name the same
+action before doing anything. 51/51 tests passing.
+
+**What's still deliberately deferred, not claimed solved**: nonce
+consumption lives in a caller-supplied in-memory set — nothing persists
+it across a process restart, so replay protection does not survive a
+crash between execute calls. That's real work for whichever level adds
+persistence, not silently assumed away.
 
 **Cycle 2 (same session, 2026-10-27)**: hypothesis invalidation is now
 built — `invalidation.py::find_hypotheses_needing_review` flags a
