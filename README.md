@@ -11,6 +11,8 @@ better prepared.
 
 > Lee esto en español: [README.es.md](README.es.md)
 
+![The crocodile keeps the evidence](visual/evidence.png)
+
 Built during the [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 (building period: Oct 27 – Nov 4, 2026) by [Anna Tchijova](https://github.com/annatchijova).
 

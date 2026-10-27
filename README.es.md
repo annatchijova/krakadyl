@@ -11,6 +11,8 @@ herramientas mejor preparada.
 
 > Read this in English: [README.md](README.md)
 
+![El cocodrilo guarda la evidencia.png](visual/evidence.png)
+
 Construido durante el [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 (building period: 27 oct – 4 nov 2026) por [Anna Tchijova](https://github.com/annatchijova).
 
