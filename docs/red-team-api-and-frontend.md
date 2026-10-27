@@ -29,7 +29,7 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
 | F2 | Medium | CODE FACT | `api/app.py` | Dev router's "a real deployment gates or removes it" was a comment, not a mechanism — no env flag existed | **Fixed** |
 | F3 | Low–Medium | CONFIRMED BY INDUCTION | `api/seed.py` / `api/app.py` | `observation_file_path()` interpolates `observation_id` unsanitized; a crafted id resolves outside the case data directory | **Fixed** |
 | F4 | Low | PLAUSIBLE HYPOTHESIS, not reproduced | `store.py` | `list()`'s `ORDER BY updated_at` has no tiebreak for same-timestamp writes; `get_case()` reads `list(...)[-1]` as "most recent" | **Fixed** (hardened regardless of reproduction) |
-| F5 | Low (cost exposure) | CODE FACT | `api/app.py` | No rate limit on `propose-with-muse` — an unauthenticated caller could loop it and spend the project's Meta API budget | **Mitigated by F1's fix, not fully closed** — see Recommendations |
+| F5 | Low (cost exposure) | CONFIRMED BY INDUCTION | `api/app.py` | The billed `propose-with-muse` endpoint had no frequency bound | **Fixed for one process; not distributed** — see F5 |
 | F6 | Informational | PLAUSIBLE HYPOTHESIS, not reproduced | `store.py` | Single SQLite connection with `check_same_thread=False`, used from FastAPI's sync threadpool — concurrent writes from two threads are a known SQLite hazard | **Not fixed** — deferred to Level 4 (concurrent investigators), same scope boundary already named in `docs/levels.md` |
 
 ## Findings
@@ -96,13 +96,16 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
 - **Fix:** `ORDER BY updated_at, rowid` — SQLite's implicit insertion-order column breaks every tie deterministically.
 - **Regression test:** `tests/test_store.py::test_list_breaks_ties_by_insertion_order_not_just_timestamp` (constructs the exact-same-timestamp case directly, since that's the only way to test the ordering clause itself).
 
-### F5 — No rate limit on the billed Muse endpoint
+### F5 — Per-process rate limit on the billed Muse endpoint
 
-**Severity:** Low, but real (financial, not data) **Epistemic level:** CODE FACT **Bucket:** vulnerability (cost-exposure), **not fully closed**
+**Severity:** Low, but real (financial, not data) **Epistemic level:** CONFIRMED BY INDUCTION **Bucket:** vulnerability (cost-exposure), **fixed for one process; not distributed**
 
-- **Surprise:** `propose-with-muse` makes a real, billed call to the Meta Model API with no limit on call frequency.
-- **F1's fix helps but does not close this:** a caller must now assert the correct `principal` to reach the endpoint — but principal is still self-asserted, not authenticated, so this is a speed bump, not a lock. Anyone who can read the frontend's source (trivially, it's a public bundle) learns the literal string `"investigator-A"` to assert.
-- **Not fixed in this round** — a real rate limiter or authenticated-session requirement is more than this round's scope justifies for a single-investigator demo; recorded here so it isn't silently forgotten. See Recommendations.
+- **Original surprise:** `propose-with-muse` made a real, billed call to the Meta Model API with no limit on call frequency. F1's principal check was only a speed bump because the principal remains caller-asserted, not authenticated.
+- **Deduction before the fix:** with a configured limit of N, request N+1 would still return 200 and reach both `_case_summaries` and the Muse adapter.
+- **Induction:** `tests/test_api.py::test_propose_with_muse_rate_limit_rejects_n_plus_one_before_summary_or_adapter` was run against the unfixed code and failed exactly that way: request N+1 returned 200 instead of 429.
+- **Fix:** a lock-protected, in-memory rolling 60-second window now reserves capacity after case/principal validation but before `_case_summaries` or `propose_action`. `KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE` configures the per-process limit (default 10); invalid or negative values stop startup, and 0 is an explicit kill switch. An admitted attempt consumes capacity even if the adapter later returns 502 because the external call may already have incurred cost.
+- **Verification:** the endpoint test proves N succeeds and N+1 returns 429 without reaching summary construction or the mocked adapter. Direct thread tests prove exactly N of N+K simultaneous admissions succeed and that admission uses the lock; a negative-control mutation removing lock use made the lock test fail. A real local Uvicorn run with the limit set to 0 returned `HTTP/1.1 429 Too Many Requests` and `Retry-After: 60` through `curl`, without calling Muse.
+- **Remaining scope:** this is a single-process bound. Restarting the server clears the window, and workers or instances do not coordinate; W workers can admit approximately W×N calls per minute. It does not replace real authentication.
 
 ### F6 — Single SQLite connection shared across FastAPI's threadpool
 
@@ -126,5 +129,5 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
 ## Recommendations (not built in this round — recorded for later)
 
 - Replace caller-asserted `principal` with real authentication once there's more than one investigator (Level 4 territory) — a session/login layer that the frontend can't just read out of its own bundle.
-- A basic rate limit (even a crude per-process counter) on `propose-with-muse`, independent of identity, as defense in depth against the cost-exposure in F5.
+- Replace the per-process Muse limiter with coordinated shared state if deployment grows to multiple workers or instances; until then, size the configured limit with the W×N aggregate bound in mind.
 - Revisit `KrakadylStore`'s single shared connection (F6) when Level 4's concurrent-investigator work starts — likely a connection-per-request pattern or an actual write-serializing lock, not assumed away.

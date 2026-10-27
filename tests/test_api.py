@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
     import krakadyl.api.app as app_module
 
     importlib.reload(app_module)
@@ -270,6 +271,193 @@ def test_wrong_principal_is_rejected_on_every_action_endpoint(client):
         ).status_code
         == 403
     )
+
+
+def test_propose_with_muse_rate_limit_rejects_n_plus_one_before_summary_or_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", "2")
+    import krakadyl.api.app as app_module
+    from krakadyl.adapters.muse import ProposedActionCandidate
+
+    importlib.reload(app_module)
+    adapter_calls = 0
+    summary_calls = 0
+    real_case_summaries = app_module._case_summaries
+
+    def counted_case_summaries(case_id: str):
+        nonlocal summary_calls
+        summary_calls += 1
+        return real_case_summaries(case_id)
+
+    def fake_propose_action(**kwargs):
+        nonlocal adapter_calls
+        adapter_calls += 1
+        return ProposedActionCandidate(
+            operation="package_export",
+            allowed_device="device-A",
+            destination="reviewer-authorized",
+            reasoning="bounded fake response",
+        )
+
+    monkeypatch.setattr(app_module, "_case_summaries", counted_case_summaries)
+    monkeypatch.setattr(app_module, "propose_action", fake_propose_action)
+    limited_client = TestClient(app_module.app)
+
+    for _ in range(2):
+        response = limited_client.post(
+            "/api/cases/case-001/actions/propose-with-muse",
+            json={"principal": "investigator-A"},
+        )
+        assert response.status_code == 200
+
+    blocked = limited_client.post(
+        "/api/cases/case-001/actions/propose-with-muse",
+        json={"principal": "investigator-A"},
+    )
+    assert blocked.status_code == 429
+    assert "per server process" in blocked.json()["detail"]
+    assert adapter_calls == 2
+    assert summary_calls == 2
+
+
+def test_muse_rate_limiter_admission_is_atomic_across_threads():
+    from threading import Barrier, Lock, Thread
+
+    from fastapi import HTTPException
+
+    import krakadyl.api.app as app_module
+
+    limiter = app_module._MuseRateLimiter(2, clock=lambda: 100.0)
+    barrier = Barrier(6)
+    statuses = []
+    statuses_lock = Lock()
+
+    def attempt() -> None:
+        barrier.wait()
+        try:
+            limiter.acquire()
+        except HTTPException as exc:
+            status = exc.status_code
+        else:
+            status = 200
+        with statuses_lock:
+            statuses.append(status)
+
+    threads = [Thread(target=attempt) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert statuses.count(200) == 2
+    assert statuses.count(429) == 3
+
+
+def test_muse_rate_limiter_uses_its_lock_for_admission():
+    from threading import Event, Thread
+
+    import krakadyl.api.app as app_module
+
+    limiter = app_module._MuseRateLimiter(1, clock=lambda: 100.0)
+    completed = Event()
+
+    def attempt() -> None:
+        limiter.acquire()
+        completed.set()
+
+    limiter._lock.acquire()
+    thread = Thread(target=attempt)
+    try:
+        thread.start()
+        assert completed.wait(0.05) is False
+    finally:
+        limiter._lock.release()
+    assert completed.wait(1) is True
+    thread.join(timeout=1)
+
+
+def test_failed_muse_call_still_consumes_rate_limit_capacity(tmp_path, monkeypatch):
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", "1")
+    import krakadyl.api.app as app_module
+    from krakadyl.adapters.muse import MuseAdapterError
+
+    importlib.reload(app_module)
+    adapter_calls = 0
+
+    def failing_propose_action(**kwargs):
+        nonlocal adapter_calls
+        adapter_calls += 1
+        raise MuseAdapterError("failure after the external call was attempted")
+
+    monkeypatch.setattr(app_module, "propose_action", failing_propose_action)
+    limited_client = TestClient(app_module.app)
+
+    first = limited_client.post(
+        "/api/cases/case-001/actions/propose-with-muse",
+        json={"principal": "investigator-A"},
+    )
+    second = limited_client.post(
+        "/api/cases/case-001/actions/propose-with-muse",
+        json={"principal": "investigator-A"},
+    )
+
+    assert first.status_code == 502
+    assert second.status_code == 429
+    assert adapter_calls == 1
+
+
+def test_zero_muse_rate_limit_is_a_kill_switch_before_summary_or_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", "0")
+    import krakadyl.api.app as app_module
+
+    importlib.reload(app_module)
+
+    def must_not_run(*args, **kwargs):
+        pytest.fail("rate-limited requests must stop before summaries and Muse")
+
+    monkeypatch.setattr(app_module, "_case_summaries", must_not_run)
+    monkeypatch.setattr(app_module, "propose_action", must_not_run)
+    limited_client = TestClient(app_module.app)
+
+    response = limited_client.post(
+        "/api/cases/case-001/actions/propose-with-muse",
+        json={"principal": "investigator-A"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "60"
+
+
+@pytest.mark.parametrize("raw_limit", ["-1", "not-an-integer"])
+def test_invalid_muse_rate_limit_configuration_is_rejected(monkeypatch, raw_limit):
+    import krakadyl.api.app as app_module
+
+    monkeypatch.setenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raw_limit)
+    with pytest.raises(RuntimeError, match="must be a non-negative integer"):
+        app_module._muse_rate_limit_from_environment()
+
+
+def test_muse_rate_limit_capacity_returns_when_the_window_expires():
+    from fastapi import HTTPException
+
+    import krakadyl.api.app as app_module
+
+    current = [0.0]
+    limiter = app_module._MuseRateLimiter(1, clock=lambda: current[0])
+    limiter.acquire()
+
+    current[0] = 59.999
+    with pytest.raises(HTTPException) as blocked:
+        limiter.acquire()
+    assert blocked.value.status_code == 429
+    assert blocked.value.headers["Retry-After"] == "1"
+
+    current[0] = 60.0
+    limiter.acquire()
 
 
 def test_propose_with_muse_wires_a_real_adapter_call_through_the_real_pipeline(client, monkeypatch):

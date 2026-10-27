@@ -20,9 +20,13 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections import deque
 from datetime import datetime, timezone
+from math import ceil
 from pathlib import Path
-from typing import Optional
+from threading import Lock
+from time import monotonic
+from typing import Callable, Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,6 +60,67 @@ from krakadyl.store import KrakadylStore
 
 DATA_DIR = Path(os.environ.get("KRAKADYL_DATA_DIR", "out/api"))
 DB_PATH = DATA_DIR / "krakadyl.db"
+MUSE_RATE_LIMIT_WINDOW_SECONDS = 60
+
+
+def _muse_rate_limit_from_environment() -> int:
+    raw_limit = os.environ.get("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", "10")
+    try:
+        limit = int(raw_limit)
+    except ValueError as exc:
+        raise RuntimeError(
+            "KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE must be a non-negative integer"
+        ) from exc
+    if limit < 0:
+        raise RuntimeError(
+            "KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE must be a non-negative integer"
+        )
+    return limit
+
+
+class _MuseRateLimiter:
+    def __init__(
+        self,
+        limit_per_minute: int,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        if limit_per_minute < 0:
+            raise ValueError("limit_per_minute must be non-negative")
+        self.limit_per_minute = limit_per_minute
+        self._clock = clock
+        self._admitted_at: deque[float] = deque()
+        self._lock = Lock()
+
+    def acquire(self) -> None:
+        with self._lock:
+            current = self._clock()
+            cutoff = current - MUSE_RATE_LIMIT_WINDOW_SECONDS
+            while self._admitted_at and self._admitted_at[0] <= cutoff:
+                self._admitted_at.popleft()
+
+            if len(self._admitted_at) >= self.limit_per_minute:
+                retry_after = (
+                    ceil(
+                        self._admitted_at[0]
+                        + MUSE_RATE_LIMIT_WINDOW_SECONDS
+                        - current
+                    )
+                    if self._admitted_at
+                    else MUSE_RATE_LIMIT_WINDOW_SECONDS
+                )
+                raise HTTPException(
+                    429,
+                    (
+                        "Muse rate limit exceeded: at most "
+                        f"{self.limit_per_minute} call(s) per minute per server process"
+                    ),
+                    headers={"Retry-After": str(max(1, retry_after))},
+                )
+
+            self._admitted_at.append(current)
+
+
+_muse_rate_limiter = _MuseRateLimiter(_muse_rate_limit_from_environment())
 
 app = FastAPI(title="KRAKADYL API")
 app.add_middleware(
@@ -415,6 +480,7 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
     _assert_principal(mandate, body.principal)
+    _muse_rate_limiter.acquire()
 
     mission_summary, mandate_summary, case_summary = _case_summaries(case_id)
     try:
