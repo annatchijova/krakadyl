@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Runnable demo of the two-device synthetic case.
 
-Three real runs against the real policy engine and executor — no
-mocked decision, no simulated file I/O:
+Four real runs against the real policy engine and executor — no mocked
+decision, no simulated file I/O:
 
 1. Happy path: package device A's evidence for the authorized reviewer.
 2. Adversarial: try to package device B (outside the mandate) — FORBIDDEN.
 3. Tampering: device A's file is modified after acquisition — FORBIDDEN,
    caught by the integrity check, not trusted.
+4. The three-investigators scenario from the README, literally: the file
+   is perfectly intact, but its acquisition was only REPORTED_DONE by
+   investigator A — nobody independently verified it. FORBIDDEN, because
+   a matching digest proves the file wasn't altered, not that the
+   acquisition itself was ever checked.
 
 Run: python demo/run_case_001.py
 Output lands in ./out/case-001/ (gitignored).
@@ -21,7 +26,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from krakadyl.core.executor import assemble_evidence_package, sha256_file
-from krakadyl.core.models import EvidenceCustody, Mandate, Observation, ProposedAction
+from krakadyl.core.models import (
+    EvidenceCustody,
+    EvidenceRequirement,
+    Mandate,
+    Observation,
+    ProposedAction,
+    TaskResponsibility,
+    TaskStatus,
+)
 
 NOW = datetime(2026, 10, 27, 16, 0, tzinfo=timezone.utc)
 OUT = Path(__file__).resolve().parent.parent / "out" / "case-001"
@@ -41,6 +54,42 @@ def make_observation(obs_id: str, source: str, path: Path, content: bytes) -> Ob
             acquired_at=NOW - timedelta(hours=2),
             acquisition_method="forensic-imaging-tool-v3",
             integrity_digest=digest,
+        ),
+    )
+
+
+def verified_requirement(observation_id: str) -> EvidenceRequirement:
+    """Independently verified: investigator C checked investigator A's
+    acquisition, separate from the act of reporting it done."""
+    return EvidenceRequirement(
+        id=f"req-{observation_id}",
+        predicate=f"{observation_id} was acquired following the documented procedure",
+        acceptable_source_class="forensic acquisition tool",
+        observation_id=observation_id,
+        resolved=True,
+        responsibility=TaskResponsibility(
+            owner="investigator-A",
+            status=TaskStatus.VERIFIED_DONE,
+            reported_done_by="investigator-A",
+            verified_by="investigator-C",
+            verification_method="peer-review",
+            verified_against="acquisition procedure followed, device matches case assignment",
+        ),
+    )
+
+
+def unverified_requirement(observation_id: str) -> EvidenceRequirement:
+    """The three-investigators scenario: A reports it done, nobody
+    checks. REPORTED_DONE, not VERIFIED_DONE."""
+    return EvidenceRequirement(
+        id=f"req-{observation_id}",
+        predicate=f"{observation_id} was acquired following the documented procedure",
+        acceptable_source_class="forensic acquisition tool",
+        observation_id=observation_id,
+        responsibility=TaskResponsibility(
+            owner="investigator-A",
+            status=TaskStatus.REPORTED_DONE,
+            reported_done_by="investigator-A",
         ),
     )
 
@@ -95,12 +144,14 @@ def main() -> None:
         "obs-a2": raw / "a2.jpg",
         "obs-b1": raw / "b1.jpg",
     }
+    requirements = [verified_requirement("obs-a1"), verified_requirement("obs-a2")]
 
     # 1. Happy path.
     decision1, receipt1 = assemble_evidence_package(
         proposed_action=action("action-001"),
         mandate=mandate(),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -117,6 +168,7 @@ def main() -> None:
         proposed_action=action("action-002"),
         mandate=mandate(),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-B",
         destination="reviewer-authorized",
@@ -132,6 +184,7 @@ def main() -> None:
         proposed_action=action("action-003"),
         mandate=mandate(),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -140,6 +193,28 @@ def main() -> None:
         prev_receipt_hash=receipt2.hash,
     )
     report("3. Tampered file — integrity check must catch it", decision3, receipt3)
+
+    # 4. The three-investigators scenario, literally: intact file, but
+    # only REPORTED_DONE — nobody independently verified the acquisition.
+    files["obs-a1"].write_bytes(b"device A photo one, authentic bytes")  # restore from #3
+    unverified_requirements = [unverified_requirement("obs-a1"), verified_requirement("obs-a2")]
+    decision4, receipt4 = assemble_evidence_package(
+        proposed_action=action("action-004"),
+        mandate=mandate(),
+        observations=observations,
+        requirements=unverified_requirements,
+        observation_files=files,
+        allowed_device="device-A",
+        destination="reviewer-authorized",
+        out_dir=OUT / "package-unverified-attempt",
+        now=NOW,
+        prev_receipt_hash=receipt3.hash,
+    )
+    report(
+        "4. Reported done, never verified — the three-investigators scenario",
+        decision4,
+        receipt4,
+    )
 
     print(f"\nAll output under: {OUT}")
 

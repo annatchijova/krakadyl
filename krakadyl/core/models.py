@@ -311,6 +311,12 @@ class EvidenceRequirement(BaseModel):
     predicate: str
     acceptable_source_class: str
     freshness_requirement: Optional[str] = None
+    # Which Observation this requirement's custody lifecycle governs —
+    # the link executor.py uses to refuse packaging an observation
+    # whose acquisition was never independently verified, added
+    # 2026-10-27 to close the cross-module gap found by self-red-teaming
+    # (the executor used to check file integrity only, never custody).
+    observation_id: Optional[str] = None
     resolved: bool = False
     unresolvable: bool = False
     unresolvable_reason: Optional[str] = None

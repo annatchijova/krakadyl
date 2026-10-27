@@ -15,7 +15,16 @@ from krakadyl.core.executor import (
     sha256_file,
 )
 from krakadyl.core.invalidation import compute_combined_revision, staleness_reason
-from krakadyl.core.models import AuthorityVerdict, EvidenceCustody, Mandate, Observation, ProposedAction
+from krakadyl.core.models import (
+    AuthorityVerdict,
+    EvidenceCustody,
+    EvidenceRequirement,
+    Mandate,
+    Observation,
+    ProposedAction,
+    TaskResponsibility,
+    TaskStatus,
+)
 
 NOW = datetime(2026, 10, 27, 17, 0, tzinfo=timezone.utc)
 
@@ -52,6 +61,24 @@ def _mandate(**overrides) -> Mandate:
     )
     defaults.update(overrides)
     return Mandate(**defaults)
+
+
+def _verified_requirement(observation_id: str) -> EvidenceRequirement:
+    return EvidenceRequirement(
+        id=f"req-{observation_id}",
+        predicate=f"{observation_id} was acquired following the documented procedure",
+        acceptable_source_class="forensic acquisition tool",
+        observation_id=observation_id,
+        resolved=True,
+        responsibility=TaskResponsibility(
+            owner="investigator-A",
+            status=TaskStatus.VERIFIED_DONE,
+            reported_done_by="investigator-A",
+            verified_by="investigator-C",
+            verification_method="peer-review",
+            verified_against="acquisition procedure followed",
+        ),
+    )
 
 
 def _action() -> ProposedAction:
@@ -101,6 +128,7 @@ def test_prepared_action_executes_when_nothing_changed(tmp_path):
         proposed_action=_action(),
         mandate=mandate,
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -137,6 +165,7 @@ def test_mandate_revoked_between_prepare_and_execute_blocks_execution(tmp_path):
         proposed_action=_action(),
         mandate=mandate_at_prepare,
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -180,6 +209,7 @@ def test_source_file_changed_between_prepare_and_execute_blocks_execution(tmp_pa
         proposed_action=_action(),
         mandate=mandate,
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -215,6 +245,7 @@ def test_expired_prepared_action_blocks_execution_even_if_nothing_else_changed(t
         proposed_action=_action(),
         mandate=mandate,
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -251,6 +282,7 @@ def test_source_file_deleted_between_prepare_and_execute_is_caught(tmp_path):
         proposed_action=_action(),
         mandate=mandate,
         observations=observations,
+        requirements=[_verified_requirement("obs-a1")],
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",

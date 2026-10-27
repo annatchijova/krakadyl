@@ -29,11 +29,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from krakadyl.core.continuity import evidence_state_from_requirement
 from krakadyl.core.invalidation import compute_combined_revision, staleness_reason
 from krakadyl.core.models import (
     AuthorityState,
     AuthorityVerdict,
     Decision,
+    EvidenceRequirement,
     EvidenceState,
     Mandate,
     Observation,
@@ -139,15 +141,28 @@ def prepare_evidence_package(
     proposed_action: ProposedAction,
     mandate: Mandate,
     observations: list[Observation],
+    requirements: list[EvidenceRequirement],
     observation_files: dict[str, Path],
     allowed_device: str,
     destination: str,
     now: datetime,
     ttl: timedelta = DEFAULT_PREPARED_ACTION_TTL,
 ) -> tuple[Decision, Optional[PreparedAction]]:
-    """Resolves authority and evidence integrity for real. Returns a
+    """Resolves authority and evidence state for real. Returns a
     Decision always; returns a PreparedAction only when the verdict is
     ALLOWED — nothing is executed here, this only decides and snapshots.
+
+    Evidence is sufficient only when BOTH hold, for every included
+    observation: its `EvidenceRequirement` has independently reached
+    `VERIFIED_DONE` (via `continuity.evidence_state_from_requirement` —
+    the one place that decides, reused here rather than re-derived), and
+    its file's digest still matches what was acquired. Neither check
+    substitutes for the other: digest-matching proves the file wasn't
+    altered since acquisition, not that the acquisition itself was
+    verified; VERIFIED_DONE proves acquisition was verified, not that
+    the file wasn't swapped afterward. Fixed 2026-10-27 — the executor
+    used to only check the digest, never custody, per the cross-module
+    red-team finding in docs/levels.md.
     """
     resource = f"{proposed_action.mission_id}/{allowed_device}"
     check = check_mandate(
@@ -161,12 +176,25 @@ def prepare_evidence_package(
     included = [o for o in observations if o.source == allowed_device]
     excluded_devices = sorted({o.source for o in observations if o.source != allowed_device})
 
+    requirements_by_observation = {r.observation_id: r for r in requirements if r.observation_id}
+
     integrity_failures = [
         o.id for o in included if not verify_observation_integrity(o, observation_files[o.id])
     ]
+
+    unverified: list[str] = []
+    for o in included:
+        req = requirements_by_observation.get(o.id)
+        if req is None:
+            unverified.append(f"{o.id} (no EvidenceRequirement governs its acquisition)")
+        elif evidence_state_from_requirement(req) != EvidenceState.SUFFICIENT:
+            unverified.append(f"{o.id} (requirement '{req.id}' is {req.responsibility.status.value}, not independently verified)")
+
     if integrity_failures:
         evidence_state = EvidenceState.CONFLICTING
     elif not included:
+        evidence_state = EvidenceState.MISSING
+    elif unverified:
         evidence_state = EvidenceState.MISSING
     else:
         evidence_state = EvidenceState.SUFFICIENT
@@ -180,6 +208,8 @@ def prepare_evidence_package(
     reasons = check.reasons + policy_reasons
     if integrity_failures:
         reasons.append(f"integrity check failed for: {', '.join(integrity_failures)}")
+    if unverified:
+        reasons.append(f"not independently verified: {', '.join(unverified)}")
 
     decision = Decision(
         id=f"decision-{proposed_action.id}",
@@ -321,6 +351,7 @@ def assemble_evidence_package(
     proposed_action: ProposedAction,
     mandate: Mandate,
     observations: list[Observation],
+    requirements: list[EvidenceRequirement],
     observation_files: dict[str, Path],
     allowed_device: str,
     destination: str,
@@ -339,6 +370,7 @@ def assemble_evidence_package(
         proposed_action=proposed_action,
         mandate=mandate,
         observations=observations,
+        requirements=requirements,
         observation_files=observation_files,
         allowed_device=allowed_device,
         destination=destination,

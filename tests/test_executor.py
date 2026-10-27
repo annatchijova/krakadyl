@@ -13,9 +13,12 @@ from krakadyl.core.executor import assemble_evidence_package, sha256_file
 from krakadyl.core.models import (
     AuthorityVerdict,
     EvidenceCustody,
+    EvidenceRequirement,
     Mandate,
     Observation,
     ProposedAction,
+    TaskResponsibility,
+    TaskStatus,
 )
 from krakadyl.core.receipt import seal
 
@@ -55,6 +58,29 @@ def _mandate(**overrides) -> Mandate:
     return Mandate(**defaults)
 
 
+def _verified_requirement(req_id: str, observation_id: str) -> EvidenceRequirement:
+    """An EvidenceRequirement already independently verified — a second
+    investigator (not the one who acquired it) peer-reviewed the
+    acquisition. This is what the executor now requires in addition to
+    the file-integrity check — see executor.py's cross-module fix.
+    """
+    return EvidenceRequirement(
+        id=req_id,
+        predicate=f"{observation_id} was acquired following the documented procedure",
+        acceptable_source_class="forensic acquisition tool",
+        observation_id=observation_id,
+        resolved=True,
+        responsibility=TaskResponsibility(
+            owner="investigator-A",
+            status=TaskStatus.VERIFIED_DONE,
+            reported_done_by="investigator-A",
+            verified_by="investigator-C",
+            verification_method="peer-review",
+            verified_against="acquisition procedure followed, device matches case assignment",
+        ),
+    )
+
+
 def _proposed_action() -> ProposedAction:
     return ProposedAction(
         id="action-001",
@@ -75,17 +101,25 @@ def two_device_case(tmp_path: Path):
         _observation("obs-b1", "device-B", raw / "b1.jpg", b"device B photo one - must stay excluded"),
     ]
     files = {o.id: raw / f"{o.id.split('-')[1]}.jpg" for o in observations}
-    return observations, files
+    requirements = [
+        _verified_requirement("req-a1", "obs-a1"),
+        _verified_requirement("req-a2", "obs-a2"),
+        # obs-b1 deliberately has no EvidenceRequirement — it's excluded
+        # by the mandate anyway, and this also exercises "no requirement
+        # governs it" as a real case rather than only as a theoretical one.
+    ]
+    return observations, files, requirements
 
 
 def test_happy_path_executes_for_real_and_excludes_device_b(tmp_path, two_device_case):
-    observations, files = two_device_case
+    observations, files, requirements = two_device_case
     out_dir = tmp_path / "package"
 
     decision, receipt = assemble_evidence_package(
         proposed_action=_proposed_action(),
         mandate=_mandate(),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -147,6 +181,7 @@ def test_wrong_device_is_forbidden_not_silently_substituted():
         proposed_action=_proposed_action(),
         mandate=_mandate(),  # only authorizes case-001/device-A
         observations=observations,
+        requirements=[],
         observation_files={"obs-b1": raw_dir_marker / "nonexistent.jpg"},
         allowed_device="device-B",
         destination="reviewer-authorized",
@@ -164,13 +199,14 @@ def test_tampered_file_fails_integrity_and_is_forbidden(tmp_path, two_device_cas
     honest corruption) must be caught by recomputing its digest — not
     trusted because the metadata still says it's fine.
     """
-    observations, files = two_device_case
+    observations, files, requirements = two_device_case
     files["obs-a1"].write_bytes(b"tampered content, does not match the stored digest")
 
     decision, receipt = assemble_evidence_package(
         proposed_action=_proposed_action(),
         mandate=_mandate(),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -185,11 +221,12 @@ def test_tampered_file_fails_integrity_and_is_forbidden(tmp_path, two_device_cas
 
 
 def test_wrong_destination_is_forbidden(tmp_path, two_device_case):
-    observations, files = two_device_case
+    observations, files, requirements = two_device_case
     decision, receipt = assemble_evidence_package(
         proposed_action=_proposed_action(),
         mandate=_mandate(),  # destinations=["reviewer-authorized"] only
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="unauthorized-third-party",
@@ -201,11 +238,12 @@ def test_wrong_destination_is_forbidden(tmp_path, two_device_case):
 
 
 def test_expired_mandate_is_forbidden_even_with_perfect_evidence(tmp_path, two_device_case):
-    observations, files = two_device_case
+    observations, files, requirements = two_device_case
     decision, receipt = assemble_evidence_package(
         proposed_action=_proposed_action(),
         mandate=_mandate(valid_until=NOW - timedelta(days=1)),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -216,12 +254,48 @@ def test_expired_mandate_is_forbidden_even_with_perfect_evidence(tmp_path, two_d
     assert receipt.executed is False
 
 
+def test_evidence_without_independent_verification_is_forbidden(tmp_path, two_device_case):
+    """The cross-module fix, exercised directly: a file that matches its
+    digest perfectly is still not enough — its EvidenceRequirement must
+    also be independently verified (VERIFIED_DONE), not just REPORTED_DONE.
+    """
+    observations, files, _ = two_device_case
+    unverified_requirements = [
+        EvidenceRequirement(
+            id="req-a1",
+            predicate="obs-a1 was acquired following the documented procedure",
+            acceptable_source_class="forensic acquisition tool",
+            observation_id="obs-a1",
+            responsibility=TaskResponsibility(
+                owner="investigator-A", status=TaskStatus.REPORTED_DONE, reported_done_by="investigator-A"
+            ),
+        ),
+    ]
+
+    decision, receipt = assemble_evidence_package(
+        proposed_action=_proposed_action(),
+        mandate=_mandate(),
+        observations=observations,
+        requirements=unverified_requirements,
+        observation_files=files,
+        allowed_device="device-A",
+        destination="reviewer-authorized",
+        out_dir=tmp_path / "package",
+        now=NOW,
+    )
+
+    assert decision.verdict == AuthorityVerdict.FORBIDDEN
+    assert receipt.executed is False
+    assert "not independently verified" in receipt.observed_effect
+
+
 def test_receipt_chain_links_to_previous_hash(tmp_path, two_device_case):
-    observations, files = two_device_case
+    observations, files, requirements = two_device_case
     _, first_receipt = assemble_evidence_package(
         proposed_action=_proposed_action(),
         mandate=_mandate(),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",
@@ -240,6 +314,7 @@ def test_receipt_chain_links_to_previous_hash(tmp_path, two_device_case):
         proposed_action=action2,
         mandate=_mandate(),
         observations=observations,
+        requirements=requirements,
         observation_files=files,
         allowed_device="device-A",
         destination="reviewer-authorized",

@@ -398,31 +398,36 @@ re-propose" for both PreparedActions and Hypotheses; neither yet
 suggests what the re-proposal should look like. That's the natural
 Cycle 3 target, not started in this session.
 
-**Cross-module red team (same session, 2026-10-27) — a real, significant
-finding, not yet fixed**: `krakadyl/core/executor.py` and the
-custody/continuity mechanism built across Level 1 and this level's two
-cycles are two parallel systems that were never actually wired
-together. `prepare_evidence_package()` computes `evidence_state` purely
-by recomputing an `Observation`'s file digest — it never imports or
-consults `EvidenceRequirement`, its `TaskResponsibility` lifecycle, or
-`continuity.py::evidence_state_from_requirement` at all (confirmed: zero
-references). Concretely, as the code stands today: **if a file on disk
-matches its stored digest, the executor will package it — even if the
-`EvidenceRequirement` tracking its acquisition is still sitting in
-`REPORTED_DONE`, never independently verified.** That is exactly the gap
-the three-investigators scenario in the README exists to close, and the
-executor built in this level's two cycles does not yet respect it.
+**Cross-module red team (same session, 2026-10-27) — found, decided, and
+fixed**: `krakadyl/core/executor.py` and the custody/continuity
+mechanism built across Level 1 and this level's two cycles were two
+parallel systems that had never actually been wired together.
+`prepare_evidence_package()` used to compute `evidence_state` purely by
+recomputing an `Observation`'s file digest — it never consulted
+`EvidenceRequirement`, its `TaskResponsibility` lifecycle, or
+`continuity.py::evidence_state_from_requirement` at all. Concretely: a
+file matching its stored digest would have been packaged even if the
+`EvidenceRequirement` tracking its acquisition was still sitting in
+`REPORTED_DONE`, never independently verified — exactly the gap the
+three-investigators scenario in the README exists to close.
 
-This is a design decision, not a one-line fix — it changes
-`prepare_evidence_package`'s signature (taking `EvidenceRequirement`
-objects alongside or instead of raw `Observation`s) and needs a decision
-on who updates a requirement's status when the executor runs (does a
-successful execution mark it `VERIFIED_DONE` itself — with what counts
-as the "independent" check, given the executor is the thing proposing
-the action? or does it stay strictly read-only and refuse to execute
-unless the requirement is already independently verified by something
-else?). Flagged here, deliberately not fixed in this pass without
-Anna's input on the approach.
+**Anna's decision on the approach**: the executor stays strictly
+read-only with respect to verification — it refuses to execute unless
+an observation's `EvidenceRequirement` is already independently
+`VERIFIED_DONE` by something else, never marks one verified itself.
+Strongest separation: the thing that proposes/executes an action is
+never the same act as the thing that verifies the evidence behind it.
+
+**Implemented**: `EvidenceRequirement` gained `observation_id`, linking
+it to the `Observation` whose custody it governs.
+`prepare_evidence_package()` now requires both independently, for every
+included observation — neither substitutes for the other: digest
+integrity proves the file wasn't altered since acquisition, not that
+the acquisition was verified; `VERIFIED_DONE` proves the acquisition was
+verified, not that the file wasn't swapped afterward. `demo/run_case_001.py`
+gained a fourth, literal run of the three-investigators scenario: an
+intact file whose requirement is only `REPORTED_DONE` — `FORBIDDEN`,
+confirmed by actually running it. 51/51 tests passing.
 
 ### Level 3 — Active perception
 
