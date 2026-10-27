@@ -432,11 +432,33 @@ with `validate_assignment=True`. Both have regression tests in
 50/50 tests passing. Demo re-run end-to-end after both cycles, confirmed
 still working.
 
-**Still not built**: the "propose a still-legitimate route forward"
-half — today, staleness stops at "don't execute / needs review,
-re-propose" for both PreparedActions and Hypotheses; neither yet
-suggests what the re-proposal should look like. That's the natural
-Cycle 3 target, not started in this session.
+**Cycle 3 (2026-10-27)**: `executor.py::propose_recovery_route` is the
+"propose a still-legitimate route forward" half, built. When a specific
+piece of evidence is the problem — a tampered file, a requirement that
+regressed from `VERIFIED_DONE` — it retries the exact same action with
+exactly that resource excluded, through the unmodified
+`prepare_evidence_package`/`decide()` pipeline: no new decision logic,
+no evidence silently patched. This is the literal "package without that
+attachment" scenario from the README's recovery pitch. Deliberately
+**not** attempted when the mandate itself is the problem (revoked,
+expired, narrowed scope, a bumped revision) — excluding a resource
+cannot restore a missing permission, so it closes honestly instead of
+pretending a resource-level fix can patch an authority problem. When
+excluding the failing resource(s) still leaves nothing usable, or still
+isn't `ALLOWED`, it also closes honestly rather than fabricating a
+package. 62/62 tests passing (`tests/test_recovery.py`).
+
+**Found by self-red-teaming this build, not yet fixed — a known gap,
+not a silent one**: `RecoveryOutcome.excluded_resources` names exactly
+which resource was dropped and the caller knows why (it came from a
+recovery attempt), but once the recovered `PreparedAction` is executed,
+the resulting manifest/receipt does not itself record "obs-a1 was
+excluded because its integrity check failed" — it only shows what
+*was* included, the same way an exclusion-by-mandate (a different
+device) already does today. For a forensic package, "why isn't this
+item here" is exactly the kind of fact that should survive in the
+receipt, not just in the orchestration layer that called recovery.
+Tracked here as real follow-up work, not claimed solved by this cycle.
 
 **Cross-module red team (same session, 2026-10-27) — found, decided, and
 fixed**: `krakadyl/core/executor.py` and the custody/continuity

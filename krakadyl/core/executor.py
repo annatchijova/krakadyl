@@ -144,6 +144,7 @@ class EvidenceCheck:
     excluded_devices: list[str]
     integrity_failures: list[str]
     unverified: list[str]
+    unverified_ids: list[str]
     reasons: list[str]
 
 
@@ -172,14 +173,17 @@ def check_evidence(
     ]
 
     unverified: list[str] = []
+    unverified_ids: list[str] = []
     for o in included:
         req = requirements_by_observation.get(o.id)
         if req is None:
             unverified.append(f"{o.id} (no EvidenceRequirement governs its acquisition)")
+            unverified_ids.append(o.id)
         elif evidence_state_from_requirement(req) != EvidenceState.SUFFICIENT:
             unverified.append(
                 f"{o.id} (requirement '{req.id}' is {req.responsibility.status.value}, not independently verified)"
             )
+            unverified_ids.append(o.id)
 
     reasons: list[str] = []
     if integrity_failures:
@@ -199,6 +203,7 @@ def check_evidence(
         excluded_devices=excluded_devices,
         integrity_failures=integrity_failures,
         unverified=unverified,
+        unverified_ids=unverified_ids,
         reasons=reasons,
     )
 
@@ -486,6 +491,115 @@ def execute_prepared_action(
         prev_hash=prev_receipt_hash,
         hash=receipt_hash,
         created_at=now,
+    )
+
+
+@dataclass
+class RecoveryOutcome:
+    """Result of attempting the other half of Level 2: when staleness
+    comes from specific evidence (not the mandate itself), is there a
+    still-legitimate route that excludes exactly the failing
+    resource(s) and nothing else?
+    """
+
+    attempted: bool
+    excluded_resources: list[str]
+    recovered_decision: Optional[Decision]
+    recovered_prepared: Optional[PreparedAction]
+    closed_reason: Optional[str]
+
+
+def propose_recovery_route(
+    *,
+    proposed_action: ProposedAction,
+    mandate: Mandate,
+    observations: list[Observation],
+    requirements: list[EvidenceRequirement],
+    observation_files: dict[str, Path],
+    allowed_device: str,
+    destination: str,
+    now: datetime,
+    ttl: timedelta = DEFAULT_PREPARED_ACTION_TTL,
+) -> RecoveryOutcome:
+    """"Propose a still-legitimate route forward" — the half of Level 2
+    that was only ever a known gap (`docs/levels.md`), not previously
+    built: don't just block a stale action, retry it with exactly the
+    resource(s) that actually failed excluded, through the SAME
+    unmodified `prepare_evidence_package`/`decide()` pipeline. Never a
+    new decision path, never evidence silently patched or assumed —
+    only the "package without that attachment" the product was always
+    meant to offer (see the README's "Recuperar el progreso" scenario).
+
+    Deliberately NOT attempted for mandate-level staleness (revoked,
+    expired, narrowed scope, a bumped revision): excluding a resource
+    cannot restore a missing permission, so this closes honestly instead
+    of pretending a resource-level fix can patch an authority problem —
+    same `honest-degradation` discipline that already governs `decide()`
+    itself.
+    """
+    resource = f"{proposed_action.mission_id}/{allowed_device}"
+    mandate_check = check_mandate(
+        mandate, resource=resource, operation=proposed_action.operation, destination=destination, now=now
+    )
+    if mandate_check.authority_state != AuthorityState.GRANTED or mandate_check.outside_scope:
+        return RecoveryOutcome(
+            attempted=False,
+            excluded_resources=[],
+            recovered_decision=None,
+            recovered_prepared=None,
+            closed_reason=(
+                "mandate itself is the problem, not a specific resource — no exclusion can "
+                "restore a missing or revoked permission: " + "; ".join(mandate_check.reasons)
+            ),
+        )
+
+    evidence_check = check_evidence(
+        observations, requirements, allowed_device=allowed_device, observation_files=observation_files
+    )
+    failing_ids = sorted(set(evidence_check.integrity_failures) | set(evidence_check.unverified_ids))
+
+    if not failing_ids:
+        return RecoveryOutcome(
+            attempted=False,
+            excluded_resources=[],
+            recovered_decision=None,
+            recovered_prepared=None,
+            closed_reason="no specific failing resource identified — exclusion-based recovery does not apply here",
+        )
+
+    reduced_observations = [o for o in observations if o.id not in failing_ids]
+    reduced_requirements = [r for r in requirements if r.observation_id not in failing_ids]
+
+    decision, prepared = prepare_evidence_package(
+        proposed_action=proposed_action,
+        mandate=mandate,
+        observations=reduced_observations,
+        requirements=reduced_requirements,
+        observation_files=observation_files,
+        allowed_device=allowed_device,
+        destination=destination,
+        now=now,
+        ttl=ttl,
+    )
+
+    if decision.verdict != AuthorityVerdict.ALLOWED or prepared is None or not prepared.resources_touched:
+        return RecoveryOutcome(
+            attempted=True,
+            excluded_resources=failing_ids,
+            recovered_decision=decision,
+            recovered_prepared=None,
+            closed_reason=(
+                f"excluding {', '.join(failing_ids)} still does not produce a legitimate "
+                "route — closing honestly rather than forcing one"
+            ),
+        )
+
+    return RecoveryOutcome(
+        attempted=True,
+        excluded_resources=failing_ids,
+        recovered_decision=decision,
+        recovered_prepared=prepared,
+        closed_reason=None,
     )
 
 
