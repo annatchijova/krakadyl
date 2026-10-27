@@ -83,21 +83,34 @@ class NextMove(BaseModel):
     fabricated single priority where none is defensible.
 
     - primary set, alternatives possibly non-empty, uncertain False:
-      the normal case — one defensible recommendation.
-    - primary None, uncertain True: two or more candidates are tied on
-      every criterion that would break the tie — the honest answer is
-      "no single defensible priority," not an arbitrary pick. Both/all
-      tied candidates are in `alternatives`.
+      the normal case — one defensible recommendation, ranked on
+      recovery-window urgency alone (see note on `dependents_count`
+      below for why nothing else auto-decides this).
+    - primary None, uncertain True: two or more candidates share the
+      same most-urgent recovery window — the honest answer is "no
+      single defensible priority," not an arbitrary pick. All tied
+      candidates are in `alternatives`.
     - primary None, uncertain False, alternatives empty: nothing open.
     - `blocked` always lists requirements with a legitimate claim on
       attention that the agent currently has no authorized path for —
       visible, not hidden, even though they're not actionable now.
+
+    `dependents_count` (requirement id -> count) is exposed alongside
+    the ranking, never folded into it. Correction from the Oct 27 review:
+    the number of hypotheses that depend on a source is not a validated
+    measure of evidentiary relevance — a source tied to five trivial
+    hypotheses is not more important than one decisive for a single
+    hypothesis, and ranking as if it were would be a real, silent wrong
+    incentive. It stays visible, separate information for a human to
+    weigh, not an automatic tiebreaker, until there's a validated
+    relevance measure and sensitivity tests to back using it that way.
     """
 
     primary: Optional[str] = None  # requirement id
     alternatives: list[str] = []
     uncertain: bool = False
     blocked: list[tuple[str, str]] = []  # (requirement id, reason)
+    dependents_count: dict[str, int] = {}
 
 
 def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
@@ -113,26 +126,28 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
         if not r.resolved and not r.unresolvable and not r.blocked_by_authority
     ]
 
+    def dependents(r: EvidenceRequirement) -> int:
+        if r.recovery_window is None:
+            return 0
+        return len(r.recovery_window.depends_on_hypothesis_ids)
+
+    dependents_count = {r.id: dependents(r) for r in open_candidates}
+
     if not open_candidates:
-        return NextMove(primary=None, alternatives=[], uncertain=False, blocked=blocked)
+        return NextMove(
+            primary=None, alternatives=[], uncertain=False, blocked=blocked, dependents_count={}
+        )
 
     def urgency_rank(r: EvidenceRequirement) -> float:
         if r.recovery_window is None or r.recovery_window.until is None:
             return float("inf")
         return r.recovery_window.until.timestamp()
 
-    def dependents(r: EvidenceRequirement) -> int:
-        if r.recovery_window is None:
-            return 0
-        return len(r.recovery_window.depends_on_hypothesis_ids)
-
-    ranked = sorted(open_candidates, key=lambda r: (urgency_rank(r), -dependents(r)))
+    # Urgency is the ONLY automatic ranking key — see class docstring for
+    # why hypothesis-dependent count is deliberately not a tiebreaker.
+    ranked = sorted(open_candidates, key=lambda r: (urgency_rank(r), r.id))
     top = ranked[0]
-    tied_with_top = [
-        r
-        for r in ranked
-        if urgency_rank(r) == urgency_rank(top) and dependents(r) == dependents(top)
-    ]
+    tied_with_top = [r for r in ranked if urgency_rank(r) == urgency_rank(top)]
 
     if len(tied_with_top) > 1:
         return NextMove(
@@ -140,6 +155,7 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
             alternatives=[r.id for r in ranked],
             uncertain=True,
             blocked=blocked,
+            dependents_count=dependents_count,
         )
 
     return NextMove(
@@ -147,4 +163,5 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
         alternatives=[r.id for r in ranked[1:]],
         uncertain=False,
         blocked=blocked,
+        dependents_count=dependents_count,
     )

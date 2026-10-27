@@ -36,8 +36,16 @@ why the product exists at all.
    with a full status (`UNASSIGNED -> ASSIGNED -> ACKNOWLEDGED ->
    IN_PROGRESS -> REPORTED_DONE -> VERIFIED_DONE`, plus
    `BLOCKED/EXPIRED/CANCELLED/UNKNOWN`), implemented in
-   `krakadyl/core/models.py`. Three conflations are structurally
-   impossible, not just discouraged by convention:
+   `krakadyl/core/models.py`. The current code routes all three
+   conflations below through one place each, and today's tests confirm
+   they're refused there — that is narrower than "structurally
+   impossible" (a corrected overclaim from an earlier version of this
+   doc): a full structural guarantee would also need validators on
+   direct state mutation, a persistence/serialization audit, and
+   coverage of every code path that can write `Custody`, none of which
+   exist yet. Treat the three points below as "enforced today, in the
+   one place that currently sets this state" — not yet as a proof that
+   no other path could violate them:
    - `ASSIGNED` is not `ACKNOWLEDGED`. Handing a task to someone is a
      different fact from that person having taken responsibility for
      it — this is its own enum value, not a side timestamp, so "who
@@ -194,8 +202,23 @@ gets re-measured against this same scenario, not just its own new
 cases.
 
 Implemented today as `tests/test_continuity.py::test_adversarial_scenario_three_investigators_twenty_minutes`,
-passing as of the Level 1 core skeleton commit. It is the test that
-proves invariants 4, 5, and 6 are load-bearing, not aspirational.
+passing as of the Level 1 core skeleton commit. Correction from the
+Oct 27 review: this test exercises coordination and continuity — it is
+real evidence for invariants 4 and 5, not for invariant 6. A
+coordination/custody scenario does not test content isolation; nothing
+in it attempts a prompt injection, a contaminated proposal, an authority
+escalation, or an unauthorized execution, so it cannot stand as evidence
+that invariant 6 holds.
+
+**Invariant 6's actual coverage today is narrow and should be stated as
+such**: `tests/test_policy.py::test_a_classification_signal_alone_never_grants_authority`
+confirms that `decide()`'s signature has no parameter shaped to accept
+raw content — a real, if small, structural fact. It does not test
+prompt-injection resistance, proposal contamination, authority
+escalation, or unauthorized execution, because there is no agent/LLM-
+calling code yet for any of those to attack. Writing that suite is
+explicit, tracked work for whichever level first wires in Muse Spark and
+Laya for real — not a claim to make before that code exists.
 
 ## Properties every level must hold, restated as one line
 
@@ -217,6 +240,16 @@ after the "real" version works. One real domain action actually
 executed (e.g., assembling a verifiable local evidence package), not
 simulated. This alone is a complete, demonstrable product — later
 levels extend it, they don't replace it.
+
+**Status as of 2026-10-27, stated precisely, not rounded up**: the
+contracts, the policy engine, the receipt chain + independent verifier,
+and the continuity/custody mechanism are implemented and tested (17/17
+passing). **Not yet done, and therefore Level 1 is not complete**: no
+Meta Model API call has been made from this codebase, there is no agent
+loop proposing actions, and no real domain action has been executed
+end-to-end — which is this level's own stated acceptance criterion.
+What exists is the deterministic core Level 1 depends on, not Level 1
+itself.
 
 ### Level 2 — The case stays alive: contradictions, staleness, recovery
 

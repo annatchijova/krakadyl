@@ -109,6 +109,40 @@ def test_next_move_picks_the_more_urgent_of_two_open_requirements():
     assert result.uncertain is False
 
 
+def test_hypothesis_dependent_count_never_silently_breaks_an_urgency_tie():
+    """Regression test for the Oct 27 review: a source tied to five
+    trivial hypotheses must NOT silently outrank one decisive for a
+    single hypothesis just because the counts differ. When urgency ties,
+    the honest answer is uncertain=True — dependents_count is exposed
+    as separate information, never used to fabricate a primary.
+    """
+    trivial_but_many = _requirement(
+        req_id="req-many-trivial",
+        status=TaskStatus.UNASSIGNED,
+        recovery_window=RecoveryWindow(
+            until=NOW + timedelta(minutes=20),
+            what_is_lost_if_missed="source gone",
+            depends_on_hypothesis_ids=["h1", "h2", "h3", "h4", "h5"],
+        ),
+    )
+    decisive_but_one = _requirement(
+        req_id="req-one-decisive",
+        status=TaskStatus.UNASSIGNED,
+        recovery_window=RecoveryWindow(
+            until=NOW + timedelta(minutes=20),  # same urgency
+            what_is_lost_if_missed="source gone",
+            depends_on_hypothesis_ids=["h-decisive"],
+        ),
+    )
+
+    result = next_move([trivial_but_many, decisive_but_one])
+
+    assert result.primary is None
+    assert result.uncertain is True
+    assert set(result.alternatives) == {"req-many-trivial", "req-one-decisive"}
+    assert result.dependents_count == {"req-many-trivial": 5, "req-one-decisive": 1}
+
+
 def test_next_move_reports_uncertain_when_truly_tied_not_a_fabricated_pick():
     same_window = RecoveryWindow(
         until=NOW + timedelta(minutes=20),
