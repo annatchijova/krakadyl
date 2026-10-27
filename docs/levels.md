@@ -448,17 +448,33 @@ excluding the failing resource(s) still leaves nothing usable, or still
 isn't `ALLOWED`, it also closes honestly rather than fabricating a
 package. 62/62 tests passing (`tests/test_recovery.py`).
 
-**Found by self-red-teaming this build, not yet fixed — a known gap,
-not a silent one**: `RecoveryOutcome.excluded_resources` names exactly
-which resource was dropped and the caller knows why (it came from a
-recovery attempt), but once the recovered `PreparedAction` is executed,
-the resulting manifest/receipt does not itself record "obs-a1 was
-excluded because its integrity check failed" — it only shows what
-*was* included, the same way an exclusion-by-mandate (a different
-device) already does today. For a forensic package, "why isn't this
-item here" is exactly the kind of fact that should survive in the
-receipt, not just in the orchestration layer that called recovery.
-Tracked here as real follow-up work, not claimed solved by this cycle.
+**Found by self-red-teaming this build, fixed before moving on**:
+`RecoveryOutcome.excluded_resources` named which resource was dropped
+and why, but the recovered `PreparedAction`'s own manifest/receipt
+didn't carry that reason — it only showed what *was* included, same as
+an exclusion-by-mandate (a different device) already does. Fixed:
+`models.py` gained `ExclusionRecord` (frozen: `resource_id`, `reason`)
+and `PreparedAction.excluded_resource_reasons`; `check_evidence` now
+returns a structured `failure_reasons: dict[str, str]` (never parsed
+from prose) alongside its existing human-readable messages;
+`prepare_evidence_package` takes an optional `excluded_resource_reasons`
+and stores it on the snapshot; `execute_prepared_action`'s manifest now
+has an `excluded_resources` list naming each dropped resource and why.
+`propose_recovery_route` wires its own `evidence_check.failure_reasons`
+straight through. Confirmed end-to-end, not just unit-tested in
+isolation: `tests/test_recovery.py::test_recovered_action_executes_and_manifest_names_the_excluded_reason`
+recovers from a tampered file, executes the recovered action for real,
+and reads the written `manifest.json` back to confirm the reason is
+there. 63/63 tests passing.
+
+Confirms an existing contract, doesn't add a new one: the caller still
+has to pass the same reduced observations/requirements to `execute`
+that recovery computed — there is no persistence layer yet that would
+let `execute` rediscover "this resource was deliberately excluded" on
+its own; passing the original, untrimmed set back to `execute` would
+make its own revalidation see the still-tampered file again and refuse
+the whole thing. Same discipline as the rest of Level 2, not a new
+exception.
 
 **Cross-module red team (same session, 2026-10-27) — found, decided, and
 fixed**: `krakadyl/core/executor.py` and the custody/continuity

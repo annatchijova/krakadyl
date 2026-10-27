@@ -3,10 +3,11 @@ of evidence is the problem, retry with exactly that resource excluded,
 through the same unmodified decision pipeline, instead of only blocking.
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from krakadyl.core.executor import propose_recovery_route, sha256_file
+from krakadyl.core.executor import execute_prepared_action, propose_recovery_route, sha256_file
 from krakadyl.core.models import (
     AuthorityVerdict,
     EvidenceCustody,
@@ -133,6 +134,66 @@ def test_recovers_a_package_excluding_the_tampered_file(tmp_path):
     assert outcome.recovered_decision.verdict == AuthorityVerdict.ALLOWED
     assert outcome.recovered_prepared is not None
     assert outcome.recovered_prepared.resources_touched == ("obs-a2",)
+
+
+def test_recovered_action_executes_and_manifest_names_the_excluded_reason(tmp_path):
+    """The gap found by self-red-teaming Cycle 3: a recovered package
+    must not just omit the dropped resource the way an out-of-mandate
+    device is omitted — the manifest must say why it's missing. The
+    caller carries the same reduced observations/requirements from
+    recovery through to execute (same discipline as everywhere else in
+    this system: there is no persistence layer yet, so the caller still
+    owns keeping both calls consistent).
+    """
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    observations = [
+        _observation("obs-a1", "device-A", raw / "a1.jpg", b"authentic photo one"),
+        _observation("obs-a2", "device-A", raw / "a2.jpg", b"authentic photo two"),
+    ]
+    files = {"obs-a1": raw / "a1.jpg", "obs-a2": raw / "a2.jpg"}
+    requirements = [
+        _verified_requirement("req-a1", "obs-a1"),
+        _verified_requirement("req-a2", "obs-a2"),
+    ]
+    files["obs-a1"].write_bytes(b"tampered content, does not match the acquired digest")
+
+    outcome = propose_recovery_route(
+        proposed_action=_proposed_action(),
+        mandate=_mandate(),
+        observations=observations,
+        requirements=requirements,
+        observation_files=files,
+        allowed_device="device-A",
+        destination="reviewer-authorized",
+        now=NOW,
+    )
+    assert outcome.recovered_prepared is not None
+
+    reduced_observations = [o for o in observations if o.id not in outcome.excluded_resources]
+    reduced_requirements = [r for r in requirements if r.observation_id not in outcome.excluded_resources]
+
+    receipt = execute_prepared_action(
+        prepared=outcome.recovered_prepared,
+        decision=outcome.recovered_decision,
+        proposed_action=_proposed_action(),
+        observations=reduced_observations,
+        requirements=reduced_requirements,
+        observation_files=files,
+        current_mandate=_mandate(),
+        consumed_nonces=set(),
+        out_dir=tmp_path / "package",
+        now=NOW,
+    )
+
+    assert receipt.executed is True
+    manifest = json.loads((tmp_path / "package" / "manifest.json").read_text())
+    assert manifest["excluded_resources"] == [
+        {
+            "observation_id": "obs-a1",
+            "reason": "integrity check failed: file no longer matches the digest recorded at acquisition",
+        }
+    ]
 
 
 def test_recovers_excluding_an_unverified_observation(tmp_path):

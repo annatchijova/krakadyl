@@ -44,6 +44,7 @@ from krakadyl.core.models import (
     Decision,
     EvidenceRequirement,
     EvidenceState,
+    ExclusionRecord,
     Mandate,
     Observation,
     PreparedAction,
@@ -145,6 +146,7 @@ class EvidenceCheck:
     integrity_failures: list[str]
     unverified: list[str]
     unverified_ids: list[str]
+    failure_reasons: dict[str, str]
     reasons: list[str]
 
 
@@ -168,9 +170,13 @@ def check_evidence(
     excluded_devices = sorted({o.source for o in observations if o.source != allowed_device})
     requirements_by_observation = {r.observation_id: r for r in requirements if r.observation_id}
 
+    failure_reasons: dict[str, str] = {}
+
     integrity_failures = [
         o.id for o in included if not verify_observation_integrity(o, observation_files.get(o.id, Path("/nonexistent")))
     ]
+    for obs_id in integrity_failures:
+        failure_reasons[obs_id] = "integrity check failed: file no longer matches the digest recorded at acquisition"
 
     unverified: list[str] = []
     unverified_ids: list[str] = []
@@ -179,11 +185,15 @@ def check_evidence(
         if req is None:
             unverified.append(f"{o.id} (no EvidenceRequirement governs its acquisition)")
             unverified_ids.append(o.id)
+            failure_reasons.setdefault(o.id, "no EvidenceRequirement governs its acquisition")
         elif evidence_state_from_requirement(req) != EvidenceState.SUFFICIENT:
             unverified.append(
                 f"{o.id} (requirement '{req.id}' is {req.responsibility.status.value}, not independently verified)"
             )
             unverified_ids.append(o.id)
+            failure_reasons.setdefault(
+                o.id, f"requirement '{req.id}' is {req.responsibility.status.value}, not independently verified"
+            )
 
     reasons: list[str] = []
     if integrity_failures:
@@ -204,6 +214,7 @@ def check_evidence(
         integrity_failures=integrity_failures,
         unverified=unverified,
         unverified_ids=unverified_ids,
+        failure_reasons=failure_reasons,
         reasons=reasons,
     )
 
@@ -241,10 +252,20 @@ def prepare_evidence_package(
     destination: str,
     now: datetime,
     ttl: timedelta = DEFAULT_PREPARED_ACTION_TTL,
+    excluded_resource_reasons: Optional[dict[str, str]] = None,
 ) -> tuple[Decision, Optional[PreparedAction]]:
     """Resolves authority and evidence state for real. Returns a
     Decision always; returns a PreparedAction only when the verdict is
     ALLOWED — nothing is executed here, this only decides and snapshots.
+
+    `excluded_resource_reasons` is for a caller (today, only
+    `propose_recovery_route`) that already dropped specific resources
+    from `observations` before calling this and wants the *reason* for
+    that absence to survive into the `PreparedAction` and, eventually,
+    the manifest — rather than the resource simply not being there, the
+    same way an out-of-mandate device is silently absent. Never derived
+    from anything the model said; always from this module's own
+    deterministic checks.
     """
     resource = f"{proposed_action.mission_id}/{allowed_device}"
     mandate_check = check_mandate(
@@ -294,6 +315,10 @@ def prepare_evidence_package(
         destination=destination,
         resources_touched=tuple(o.id for o in evidence_check.included),
         excluded_sources=tuple(evidence_check.excluded_devices),
+        excluded_resource_reasons=tuple(
+            ExclusionRecord(resource_id=rid, reason=reason)
+            for rid, reason in (excluded_resource_reasons or {}).items()
+        ),
         source_revision_checked=combined_revision,
         mandate_revision_checked=mandate.revision,
         expires_at=now + ttl,
@@ -426,6 +451,9 @@ def execute_prepared_action(
             "device": by_id[prepared.resources_touched[0]].source if prepared.resources_touched else None,
             "destination": prepared.destination,
             "excluded_devices": list(prepared.excluded_sources),
+            "excluded_resources": [
+                {"observation_id": e.resource_id, "reason": e.reason} for e in prepared.excluded_resource_reasons
+            ],
             "included": [],
         }
         for obs_id in prepared.resources_touched:
@@ -569,6 +597,7 @@ def propose_recovery_route(
 
     reduced_observations = [o for o in observations if o.id not in failing_ids]
     reduced_requirements = [r for r in requirements if r.observation_id not in failing_ids]
+    reasons_for_excluded = {oid: evidence_check.failure_reasons[oid] for oid in failing_ids}
 
     decision, prepared = prepare_evidence_package(
         proposed_action=proposed_action,
@@ -580,6 +609,7 @@ def propose_recovery_route(
         destination=destination,
         now=now,
         ttl=ttl,
+        excluded_resource_reasons=reasons_for_excluded,
     )
 
     if decision.verdict != AuthorityVerdict.ALLOWED or prepared is None or not prepared.resources_touched:

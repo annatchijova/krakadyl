@@ -369,6 +369,24 @@ class ProposedAction(BaseModel):
     mission_id: str
 
 
+class ExclusionRecord(BaseModel):
+    """Why one specific resource is absent from a package, distinct from
+    `excluded_sources` (a whole device outside the mandate, which needs
+    no cause — it was simply never in scope). Found missing by
+    self-red-teaming Level 2's recovery mechanism (2026-10-27): a
+    resource dropped because its integrity check failed or its
+    acquisition was never independently verified is a materially
+    different fact from "never in scope," and a forensic package must
+    be able to answer "why isn't this item here," not just omit it
+    silently the same way an out-of-scope device is omitted.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    resource_id: str
+    reason: str
+
+
 class PreparedAction(BaseModel):
     """A frozen snapshot of 'this is safe to do, checked against this
     revision of the mandate and these resource digests' — frozen=True
@@ -401,6 +419,7 @@ class PreparedAction(BaseModel):
     destination: str
     resources_touched: tuple[str, ...]
     excluded_sources: tuple[str, ...] = ()
+    excluded_resource_reasons: tuple[ExclusionRecord, ...] = ()
     source_revision_checked: str
     mandate_revision_checked: str
     expires_at: datetime
