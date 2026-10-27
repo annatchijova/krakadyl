@@ -3,7 +3,10 @@ against the same file), and nonce consumption survives it too — closing
 the known gap tracked in docs/levels.md since Level 2 Cycle 1.
 """
 
+import sqlite3
 from datetime import datetime, timedelta, timezone
+from queue import Queue
+from threading import Barrier, Thread
 
 from krakadyl.core.models import Mandate
 from krakadyl.store import KrakadylStore
@@ -100,3 +103,108 @@ def test_events_are_recorded_in_order(tmp_path):
 
     events = store.list_events("case-001")
     assert [e["kind"] for e in events] == ["prepared", "executed"]
+
+
+def test_duplicate_nonce_rolls_back_before_returning_false(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    first = KrakadylStore(db_path)
+    second = KrakadylStore(db_path)
+
+    assert first.consume_nonce("duplicate") is True
+    assert first.consume_nonce("duplicate") is False
+    assert first._conn.in_transaction is False
+    assert second.consume_nonce("other-writer") is True
+
+
+def test_store_enables_wal_on_the_database_file(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    KrakadylStore(db_path)
+
+    with sqlite3.connect(db_path) as observer:
+        mode = observer.execute("PRAGMA journal_mode").fetchone()[0]
+
+    assert mode == "wal"
+
+
+def test_every_write_transaction_holds_the_instance_write_lock(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+    assert hasattr(store, "_write_lock")
+    traced = []
+    store._conn.set_trace_callback(
+        lambda statement: traced.append((statement, store._write_lock.locked()))
+    )
+
+    store.put(
+        "case-001",
+        "mandate",
+        _mandate(id="mandate-traced"),
+        NOW.isoformat(),
+    )
+    assert store.consume_nonce("traced-nonce") is True
+    assert store.consume_nonce("traced-nonce") is False
+    store.log_event(
+        "case-001",
+        "traced",
+        "Trace the write lock",
+        {"id": "trace-1"},
+        NOW.isoformat(),
+    )
+    store.reset_case("case-001")
+
+    transaction_statements = [
+        (statement, locked)
+        for statement, locked in traced
+        if statement.lstrip().upper().startswith(
+            ("BEGIN", "INSERT", "UPDATE", "DELETE", "COMMIT", "ROLLBACK")
+        )
+    ]
+    assert transaction_statements
+    assert all(locked for _, locked in transaction_statements)
+    assert any(
+        statement.lstrip().upper().startswith("ROLLBACK")
+        for statement, _ in transaction_statements
+    )
+
+
+def test_two_threads_can_write_fifty_distinct_objects_without_loss(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+    barrier = Barrier(2)
+    failures = Queue()
+
+    def write_mandates(prefix: str) -> None:
+        try:
+            for index in range(25):
+                barrier.wait(timeout=2)
+                store.put(
+                    "case-001",
+                    "mandate",
+                    _mandate(id=f"mandate-{prefix}-{index}"),
+                    NOW.isoformat(),
+                )
+        except BaseException as exc:
+            failures.put(exc)
+
+    threads = [
+        Thread(target=write_mandates, args=("a",)),
+        Thread(target=write_mandates, args=("b",)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    caught = []
+    while not failures.empty():
+        caught.append(failures.get_nowait())
+    assert caught == []
+
+    stored_ids = {
+        mandate.id for mandate in store.list("case-001", "mandate", Mandate)
+    }
+    expected_ids = {
+        f"mandate-{prefix}-{index}"
+        for prefix in ("a", "b")
+        for index in range(25)
+    }
+    assert stored_ids == expected_ids

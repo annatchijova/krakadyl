@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from threading import Lock
 from typing import Optional, Type, TypeVar
 
 from pydantic import BaseModel
@@ -54,22 +55,33 @@ CREATE TABLE IF NOT EXISTS events (
 class KrakadylStore:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_lock = Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        journal_mode = self._conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        if journal_mode is None or str(journal_mode[0]).lower() != "wal":
+            self._conn.close()
+            raise RuntimeError("SQLite refused to enable WAL journal mode")
         self._conn.executescript(SCHEMA)
         self._conn.commit()
 
+        # This lock serializes writers on this store instance because
+        # they share one connection's transaction state. Reads remain
+        # unlocked by this branch; that does not promise snapshot
+        # isolation or make close() safe while callers are still active.
+
     def close(self) -> None:
+        """Close only after every caller has stopped using this store."""
         self._conn.close()
 
     # --- generic object storage, one row per domain object ---
 
     def put(self, case_id: str, kind: str, obj: BaseModel, now_iso: str) -> None:
-        self._conn.execute(
-            "INSERT INTO objects (case_id, kind, obj_id, json, updated_at) VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(case_id, kind, obj_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
-            (case_id, kind, obj.id, obj.model_dump_json(), now_iso),
-        )
-        self._conn.commit()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO objects (case_id, kind, obj_id, json, updated_at) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(case_id, kind, obj_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
+                (case_id, kind, obj.id, obj.model_dump_json(), now_iso),
+            )
 
     def get(self, case_id: str, kind: str, obj_id: str, model: Type[T]) -> Optional[T]:
         row = self._conn.execute(
@@ -103,9 +115,9 @@ class KrakadylStore:
         nonce from a previous seeding cycle is simply never looked up
         again, not a correctness issue to clean up here.
         """
-        self._conn.execute("DELETE FROM objects WHERE case_id=?", (case_id,))
-        self._conn.execute("DELETE FROM events WHERE case_id=?", (case_id,))
-        self._conn.commit()
+        with self._write_lock, self._conn:
+            self._conn.execute("DELETE FROM objects WHERE case_id=?", (case_id,))
+            self._conn.execute("DELETE FROM events WHERE case_id=?", (case_id,))
 
     # --- nonces: global, not per-case — a PreparedAction's nonce is
     # already globally unique (secrets.token_hex(8)) ---
@@ -116,8 +128,8 @@ class KrakadylStore:
         False as a replay, never retry silently.
         """
         try:
-            self._conn.execute("INSERT INTO nonces (nonce) VALUES (?)", (nonce,))
-            self._conn.commit()
+            with self._write_lock, self._conn:
+                self._conn.execute("INSERT INTO nonces (nonce) VALUES (?)", (nonce,))
             return True
         except sqlite3.IntegrityError:
             return False
@@ -129,11 +141,11 @@ class KrakadylStore:
     # --- activity feed ---
 
     def log_event(self, case_id: str, kind: str, summary: str, detail: dict, now_iso: str) -> None:
-        self._conn.execute(
-            "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
-            (case_id, now_iso, kind, summary, json.dumps(detail)),
-        )
-        self._conn.commit()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
+                (case_id, now_iso, kind, summary, json.dumps(detail)),
+            )
 
     def list_events(self, case_id: str) -> list[dict]:
         rows = self._conn.execute(
