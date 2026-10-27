@@ -14,6 +14,27 @@ better prepared.
 Built during the [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 (building period: Oct 27 – Nov 4, 2026) by [Anna Tchijova](https://github.com/annatchijova).
 
+## The scenario this exists for
+
+An investigation doesn't always fail because someone made a mistake.
+Sometimes it fails because everyone assumed someone else had already
+done something.
+
+Picture three investigators working the same case. An evidence
+acquisition task was assigned. Someone reported it done. Another
+investigator assumed the evidence had already been preserved.
+
+Nobody verified it independently.
+
+By the time the discrepancy surfaces, that evidence may no longer exist.
+
+This isn't only a technical problem. It's also a problem of
+coordination, cognitive load, working memory, and executive function.
+Investigators face interruptions, shifting priorities, long shifts,
+incomplete information, and handoffs between teams — technical
+expertise doesn't turn human attention and memory into unlimited
+resources.
+
 ## Why this exists
 
 Working with her own forensic/DFIR tooling, Anna kept running into the
@@ -24,17 +45,34 @@ longer recoverable: a volatile artifact wasn't preserved, a chain-of-custody
 field wasn't logged, a source went offline. The cost of finding this out
 late is not symmetric with the cost of finding it out early.
 
-KRAKADYL is the layer that runs *before* that: it tracks what a case
-needs to know, what still needs resolving, and whether the window to
-resolve it is still open — so the investigator (junior or senior, any
-investigator working under time pressure) reaches VIGÍA, SIFT, or any
-other analysis tool with a case that is actually ready to be evaluated.
+KRAKADYL is the layer that runs *before* that — designed to:
+
+- Preserve investigation continuity across people, shifts, and interruptions.
+- Distinguish between work that's assigned, accepted, reported done, and independently verified.
+- Identify missing evidence while it can still be recovered.
+- Record uncertainty, conflicting information, and responsibility — without assigning personal blame.
+- Help investigators find the next concrete, verifiable step without having to mentally reconstruct the whole case file.
+- Keep AI-generated proposals separate from verified authority, through deterministic authorization decisions and auditable records.
+
+**KRAKADYL will not decide what the evidence proves.** That stays with
+the investigator and the appropriate analysis systems. Its job is to
+help people and teams reach those decisions with better-preserved
+evidence, fewer avoidable omissions, and a clearer picture of what's
+still unknown — so the investigator (junior or senior, any investigator
+working under time pressure) reaches VIGÍA, SIFT, or any other analysis
+tool with a case that is actually ready to be evaluated.
 
 **Reducing avoidable `ABSTAIN`s caused by incomplete preparation — while
 preserving every `ABSTAIN` that is actually necessary — is the metric
 that matters.** A case KRAKADYL cannot complete should close honestly as
 "this evidence is not available," never as a narrative pushed into
 looking complete.
+
+This reflects something Anna considers foundational, not incidental:
+**technical competence and executive-function capacity are independent
+variables.** Good tools should account for both — see
+[docs/terminal-first-and-blame.md](docs/terminal-first-and-blame.md) for
+where that principle comes from.
 
 ## How it fits with the rest of the ecosystem
 

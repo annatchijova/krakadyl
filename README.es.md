@@ -14,6 +14,29 @@ herramientas mejor preparada.
 Construido durante el [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 (building period: 27 oct – 4 nov 2026) por [Anna Tchijova](https://github.com/annatchijova).
 
+## El escenario para el que existe
+
+Una investigación no siempre fracasa porque alguien cometió un error. A
+veces fracasa porque todos creyeron que otra persona ya había hecho
+algo.
+
+Imaginemos a tres investigadores trabajando en el mismo caso. Se asignó
+una tarea de adquisición de evidencia. Alguien informó que estaba
+terminada. Otro investigador asumió que la evidencia ya había sido
+preservada.
+
+Pero nadie lo verificó independientemente.
+
+Cuando se descubre la discrepancia, es posible que esa evidencia ya no
+exista.
+
+Esto no es solamente un problema técnico. También es un problema de
+coordinación, carga cognitiva, memoria de trabajo y funciones
+ejecutivas. Los investigadores enfrentan interrupciones, cambios de
+prioridades, jornadas extensas, información incompleta y relevos entre
+equipos — la experiencia técnica no convierte la atención ni la memoria
+humana en recursos ilimitados.
+
 ## Por qué existe
 
 Trabajando con sus propias herramientas forenses/DFIR, Anna se encontró
@@ -26,18 +49,36 @@ de custodia que no se registró, una fuente que quedó inaccesible. El
 costo de enterarse tarde no es simétrico con el costo de enterarse a
 tiempo.
 
-KRAKADYL es la capa que corre *antes* de eso: registra qué necesita
-saber el caso, qué sigue sin resolverse, y si la ventana para resolverlo
-todavía está abierta — para que quien investiga (junior o con
-experiencia, cualquiera bajo presión de tiempo) llegue a VIGÍA, SIFT, o
-cualquier otra herramienta de análisis con un caso que realmente está
-listo para evaluarse.
+KRAKADYL es la capa que corre *antes* de eso — diseñada para:
+
+- Preservar la continuidad de una investigación entre personas, turnos e interrupciones.
+- Distinguir entre trabajo asignado, aceptado, reportado como realizado y verificado independientemente.
+- Identificar evidencia faltante mientras todavía sea posible recuperarla.
+- Registrar incertidumbres, información contradictoria y responsabilidades — sin atribuir culpas personales.
+- Ayudar a los investigadores a identificar el siguiente paso concreto y verificable, sin necesidad de reconstruir mentalmente todo el expediente.
+- Mantener las propuestas generadas por IA separadas de la autoridad verificada, mediante decisiones de autorización deterministas y registros auditables.
+
+**KRAKADYL no decidirá qué demuestra la evidencia.** Esa
+responsabilidad corresponde al investigador y a los sistemas de
+análisis apropiados. Su función es ayudar a las personas y a los
+equipos a llegar a esas decisiones con evidencia mejor preservada,
+menos omisiones evitables y una comprensión más clara de lo que todavía
+se desconoce — para que quien investiga (junior o con experiencia,
+cualquiera bajo presión de tiempo) llegue a VIGÍA, SIFT, o cualquier
+otra herramienta de análisis con un caso que realmente está listo para
+evaluarse.
 
 **La métrica que importa es reducir los `ABSTAIN` evitables por
 preparación incompleta — sin tocar los `ABSTAIN` que son realmente
 necesarios.** Un caso que KRAKADYL no puede completar tiene que cerrar
 honestamente como "esta evidencia no está disponible", nunca como una
 narrativa forzada para que parezca completo.
+
+Esto refleja algo que Anna considera fundamental, no incidental: **la
+competencia técnica y la capacidad de las funciones ejecutivas son
+variables independientes.** Las buenas herramientas deberían contemplar
+ambas — ver [docs/terminal-first-and-blame.md](docs/terminal-first-and-blame.md)
+para el origen de ese principio.
 
 ## Cómo se conecta con el resto del ecosistema
 
