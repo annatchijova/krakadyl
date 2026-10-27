@@ -17,9 +17,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
+from dataclasses import dataclass
 from typing import Optional
 
-from krakadyl.core.models import EvidenceRequirement, Hypothesis, HypothesisStatus
+from krakadyl.core.continuity import evidence_state_from_requirement
+from krakadyl.core.models import (
+    EvidenceRequirement,
+    EvidenceState,
+    Hypothesis,
+    HypothesisStatus,
+    TaskResponsibility,
+    TaskStatus,
+)
 
 
 def compute_combined_revision(resource_digests: dict[str, str]) -> str:
@@ -97,3 +107,118 @@ def find_hypotheses_needing_review(
             flagged.append((h.id, f"discriminating requirement '{req.id}' is no longer resolved"))
 
     return flagged
+
+
+@dataclass
+class HypothesisRecoveryOutcome:
+    """A reviewable next question, never an evidentiary verdict."""
+
+    attempted: bool
+    suggested_new_requirement: Optional[EvidenceRequirement]
+    closed_reason: Optional[str]
+
+
+def propose_hypothesis_recovery(
+    hypothesis: Hypothesis,
+    requirements: list[EvidenceRequirement],
+    *,
+    alternative_source_requirement_id: Optional[str] = None,
+) -> HypothesisRecoveryOutcome:
+    """Propose a fresh discriminating question after one becomes impossible.
+
+    A caller must identify another requirement already in this case as
+    provenance for the alternative source class. This function never
+    infers that a source exists from prose, reuses observation custody,
+    relinks the hypothesis, or marks the proposed work resolved.
+    """
+
+    def close(reason: str) -> HypothesisRecoveryOutcome:
+        return HypothesisRecoveryOutcome(
+            attempted=False,
+            suggested_new_requirement=None,
+            closed_reason=reason,
+        )
+
+    duplicate_ids = sorted(
+        req_id for req_id, count in Counter(r.id for r in requirements).items() if count > 1
+    )
+    if duplicate_ids:
+        return close(f"duplicate requirement id makes recovery ambiguous: {', '.join(duplicate_ids)}")
+
+    flagged = find_hypotheses_needing_review([hypothesis], requirements)
+    if not flagged:
+        return close("hypothesis is not flagged for review — recovery does not apply")
+
+    requirements_by_id = {r.id: r for r in requirements}
+    failed_id = hypothesis.discriminating_requirement_id
+    failed = requirements_by_id.get(failed_id) if failed_id is not None else None
+    if failed is None:
+        return close(
+            f"discriminating requirement '{failed_id}' no longer exists; "
+            "its predicate and source provenance cannot be reconstructed honestly"
+        )
+    if not failed.unresolvable:
+        return close(
+            f"discriminating requirement '{failed.id}' is still open; "
+            "continue it instead of creating a duplicate"
+        )
+    if not failed.predicate.strip() or not failed.acceptable_source_class.strip():
+        return close("the failed requirement lacks a usable predicate or source provenance")
+    if failed.observation_id is not None:
+        return close(
+            "the failed requirement governs a concrete observation; recovery cannot "
+            "silently detach or duplicate that custody relationship"
+        )
+    if failed.blocked_by_authority or failed.blocked_reason:
+        return close("the failed requirement is blocked by authority; recovery cannot create permission")
+    if alternative_source_requirement_id is None:
+        return close("no alternative source requirement was explicitly selected from this case")
+
+    source = requirements_by_id.get(alternative_source_requirement_id)
+    if source is None:
+        return close(
+            f"alternative source requirement '{alternative_source_requirement_id}' "
+            "does not exist in this case"
+        )
+    if source.id == failed.id:
+        return close("the unresolvable requirement cannot serve as its own alternative source")
+    if not source.acceptable_source_class.strip():
+        return close("the selected alternative has no declared source class")
+    if source.unresolvable:
+        return close("the selected alternative source requirement is itself unresolvable")
+    if source.blocked_by_authority or source.blocked_reason:
+        return close("the selected alternative source requirement is blocked by authority")
+    if evidence_state_from_requirement(source) != EvidenceState.SUFFICIENT:
+        return close("the selected alternative source requirement is not independently verified")
+
+    identity = json.dumps(
+        [hypothesis.id, failed.id, source.id],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    recovery_id = f"req-hypothesis-recovery-{hashlib.sha256(identity).hexdigest()}"
+    if recovery_id in requirements_by_id:
+        return close(f"recovery proposal '{recovery_id}' already exists")
+
+    suggestion = EvidenceRequirement(
+        id=recovery_id,
+        predicate=failed.predicate,
+        acceptable_source_class=source.acceptable_source_class,
+        freshness_requirement=failed.freshness_requirement,
+        observation_id=None,
+        resolved=False,
+        unresolvable=False,
+        unresolvable_reason=None,
+        recovery_window=None,
+        blocked_by_authority=False,
+        blocked_reason=None,
+        responsibility=TaskResponsibility(
+            owner=failed.responsibility.owner,
+            status=TaskStatus.UNASSIGNED,
+        ),
+    )
+    return HypothesisRecoveryOutcome(
+        attempted=True,
+        suggested_new_requirement=suggestion,
+        closed_reason=None,
+    )

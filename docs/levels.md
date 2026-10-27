@@ -507,6 +507,29 @@ gained a fourth, literal run of the three-investigators scenario: an
 intact file whose requirement is only `REPORTED_DONE` — `FORBIDDEN`,
 confirmed by actually running it. 51/51 tests passing.
 
+**Cycle 4 (2026-10-27)**: `invalidation.py::propose_hypothesis_recovery`
+now turns one narrow class of hypothesis invalidation into a reviewable
+next question. It applies only when the discriminating requirement still
+exists but is explicitly unresolvable, and the caller identifies another
+independently verified requirement already in the case as provenance for
+an alternative source class. The proposed `EvidenceRequirement` keeps the
+original conceptual predicate but starts open and `UNASSIGNED`: never resolved, never verified,
+never linked to a concrete observation, and never installed on the
+`Hypothesis` automatically. Its identifier is deterministic SHA-256 over
+the hypothesis, failed requirement, and selected source requirement.
+
+The closure cases are deliberate. A missing original requirement cannot be
+reconstructed; an authority-blocked or observation-specific requirement
+cannot be silently detached; a merely unresolved requirement should be
+continued instead of duplicated; and a source class is never inferred from
+free text. Recovery also drops the failed route's recovery window rather
+than claiming that its deadline applies to a different route. The core
+function is not connected to an API endpoint, persistence workflow, or the
+frontend yet, so selecting and saving a proposal remains future integration
+work. `tests/test_hypothesis_recovery.py` covers the proposal and honest
+closures. The same test was also run against a temporary
+automatic-verification mutation and turned red.
+
 **Level 2 end-to-end demo (2026-10-27)**: `demo/run_case_002_level2.py`
 runs the whole level as one real, unmocked sequence rather than leaving
 it as unit tests in isolation — prepare → tamper → execute catches the
