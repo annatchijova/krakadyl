@@ -746,6 +746,9 @@ observations and their provenance; requesting a new, specific capture
 when that's the only way to resolve a discriminating question — never
 treating a mask as verified identity, custody, or causation.
 
+The acquisition boundaries and falsifiable Level 3 acceptance contract are
+defined in [level3-acquisition-contracts.md](level3-acquisition-contracts.md).
+
 ### Level 4 — Shared custody, team investigations
 
 More than one investigator on the same case. This is Level 2's
