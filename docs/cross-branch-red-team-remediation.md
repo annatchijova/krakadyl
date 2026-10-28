@@ -105,13 +105,19 @@ read/decision/write boundary is outside this remediation.
 
 ## Cross-branch integration finding
 
-The existing `feat/muse-rate-limit` and `feat/sqlite-concurrency` branches both
-edit `docs/red-team-api-and-frontend.md`. An in-memory three-way merge showed
+The initial versions of `feat/muse-rate-limit` and `feat/sqlite-concurrency` both
+edited `docs/red-team-api-and-frontend.md`; an in-memory three-way merge showed
 conflicts in the adjacent F5/F6 summary row and Recommendations section. Taking
-one branch's whole file would drop the other branch's finding or current limits.
-This report does not resolve that shared-file conflict or merge branches. Any
-later integration must preserve both F5 and F6, including their distinct scope
-limits, in a deliberate conflict resolution.
+one branch's whole file would have dropped the other finding or its current
+limits.
+
+**Resolved without merging:** forward-only documentation commits moved F5 to
+`docs/muse-rate-limit-remediation.md` (`feat/muse-rate-limit` at `c0a7600`) and F6
+to `docs/sqlite-concurrency-remediation.md` (`feat/sqlite-concurrency` at
+`7dc884a`). Both branches now contain the exact `main` blob for the shared audit
+file: `e83266287d8d8304243f0e71c1b93439aeea7c33`. The branch-specific reports
+preserve each finding and its distinct scope limits. The branches remain
+independent and no merge was performed.
 
 The red-team also refuted two candidate findings:
 
