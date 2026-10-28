@@ -53,6 +53,31 @@ two-device synthetic case as `demo/run_case_001.py` and
 `demo/run_case_002_level2.py`) is seeded into `out/api/krakadyl.db` on
 first backend startup, and persists across restarts and page reloads.
 
+## Regenerate API types
+
+The FastAPI backend must be serving this checkout's `/openapi.json` on
+port 8000. From `frontend/`:
+
+```
+npm ci --prefix tools/openapi-codegen --ignore-scripts
+npm run gen:api-types
+npx tsc -b
+```
+
+Run this whenever a Pydantic request or response model in
+`krakadyl/api/app.py` changes. Commit the regenerated
+`src/api-generated.ts`; do not edit it by hand. The generator has its
+own exact-version lockfile because `openapi-typescript@7.13.0` requires
+TypeScript 5 while the application intentionally compiles with
+TypeScript 7. Keeping those toolchains separate avoids weakening either
+dependency contract.
+
+Most UI-facing types are direct aliases of generated Pydantic schemas.
+Activity events and execution manifests remain narrowly refined in
+`src/api.ts` because those two Python responses currently expose generic
+dictionaries in OpenAPI; see `docs/language-decision.md` for the exact
+limit.
+
 ## What's real vs. what's a demo aid
 
 Every panel except "Simulate (dev only)" calls a real investigative

@@ -1,0 +1,9 @@
+{
+  "name": "krakadyl-openapi-codegen",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -45,9 +45,18 @@ a read-only report. Streamlit/Python lost on interaction control;
 plain JavaScript lost because the state is non-trivial from day one.
 
 Boundary: the core's domain objects (Mission/Mandate/Decision/Receipt/...)
-are the single source of truth, exposed over an HTTP API; TypeScript
-types are generated from the Python schema, never hand-duplicated, so
-the two sides can't silently drift apart.
+are the single source of truth, exposed over an HTTP API. Named Pydantic
+response schemas are generated into `frontend/src/api-generated.ts` by
+`openapi-typescript`; `frontend/src/api.ts` preserves the client API and
+aliases those generated schemas. Regenerate after any response-model
+change in `krakadyl/api/app.py`.
+
+Two endpoint-local shapes are not yet fully drift-proof: `/activity`
+returns `list[dict]` and `ExecuteResponse.manifest` is `dict`, so OpenAPI
+can expose only generic dictionaries. `api.ts` contains narrow local
+refinements for the fields the UI reads from those two responses. Fully
+removing those refinements requires explicit Python response models in a
+separately scoped change; this codegen step does not pretend otherwise.
 
 ## Verification
 
