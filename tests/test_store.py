@@ -3,9 +3,12 @@ against the same file), and nonce consumption survives it too — closing
 the known gap tracked in docs/levels.md since Level 2 Cycle 1.
 """
 
+import sqlite3
 from datetime import datetime, timedelta, timezone
+from queue import Queue
+from threading import Barrier, Thread
 
-from krakadyl.core.models import Mandate
+from krakadyl.core.models import Mandate, Receipt
 from krakadyl.store import KrakadylStore
 
 NOW = datetime(2026, 10, 27, 16, 0, tzinfo=timezone.utc)
@@ -75,6 +78,66 @@ def test_nonce_consumption_survives_a_new_store_instance(tmp_path):
     assert store2.consume_nonce("abc123") is False
 
 
+def test_concurrent_nonce_claims_across_store_instances_have_one_winner(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    stores = [KrakadylStore(db_path), KrakadylStore(db_path)]
+    barrier = Barrier(2)
+    results = Queue()
+
+    def claim(store):
+        barrier.wait(timeout=2)
+        results.put(store.claim_nonce("case-001", "shared-nonce", "prepared-1", NOW.isoformat()))
+
+    threads = [Thread(target=claim, args=(store,)) for store in stores]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert sorted(results.get_nowait() for _ in range(2)) == [False, True]
+    assert [event["kind"] for event in stores[0].list_events("case-001")] == ["execution_claimed"]
+
+
+def test_successful_receipt_wins_concurrent_persistence_across_store_instances(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    stores = [KrakadylStore(db_path), KrakadylStore(db_path)]
+    barrier = Barrier(2)
+    failures = Queue()
+    denied = Receipt(
+        id="receipt-action-1",
+        proposed_action_id="action-1",
+        decision_id="decision-1",
+        executed=False,
+        observed_effect="replay denied",
+        hash="denied-hash",
+        created_at=NOW,
+    )
+    successful = denied.model_copy(update={"executed": True, "observed_effect": "package published", "hash": "success-hash"})
+
+    def persist(store, receipt):
+        try:
+            barrier.wait(timeout=2)
+            store.put_execution_receipt("case-001", receipt, NOW.isoformat())
+        except BaseException as exc:
+            failures.put(exc)
+
+    threads = [
+        Thread(target=persist, args=(stores[0], denied)),
+        Thread(target=persist, args=(stores[1], successful)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert failures.empty()
+    persisted = stores[0].get("case-001", "receipt", denied.id, Receipt)
+    assert persisted.executed is True
+    assert persisted.hash == "success-hash"
+
+
 def test_list_breaks_ties_by_insertion_order_not_just_timestamp(tmp_path):
     """Found by red-team review: ORDER BY updated_at alone has no
     defined tiebreak for two objects written with the identical
@@ -100,3 +163,108 @@ def test_events_are_recorded_in_order(tmp_path):
 
     events = store.list_events("case-001")
     assert [e["kind"] for e in events] == ["prepared", "executed"]
+
+
+def test_duplicate_nonce_rolls_back_before_returning_false(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    first = KrakadylStore(db_path)
+    second = KrakadylStore(db_path)
+
+    assert first.consume_nonce("duplicate") is True
+    assert first.consume_nonce("duplicate") is False
+    assert first._conn.in_transaction is False
+    assert second.consume_nonce("other-writer") is True
+
+
+def test_store_enables_wal_on_the_database_file(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    KrakadylStore(db_path)
+
+    with sqlite3.connect(db_path) as observer:
+        mode = observer.execute("PRAGMA journal_mode").fetchone()[0]
+
+    assert mode == "wal"
+
+
+def test_every_write_transaction_holds_the_instance_write_lock(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+    assert hasattr(store, "_write_lock")
+    traced = []
+    store._conn.set_trace_callback(
+        lambda statement: traced.append((statement, store._write_lock.locked()))
+    )
+
+    store.put(
+        "case-001",
+        "mandate",
+        _mandate(id="mandate-traced"),
+        NOW.isoformat(),
+    )
+    assert store.consume_nonce("traced-nonce") is True
+    assert store.consume_nonce("traced-nonce") is False
+    store.log_event(
+        "case-001",
+        "traced",
+        "Trace the write lock",
+        {"id": "trace-1"},
+        NOW.isoformat(),
+    )
+    store.reset_case("case-001")
+
+    transaction_statements = [
+        (statement, locked)
+        for statement, locked in traced
+        if statement.lstrip().upper().startswith(
+            ("BEGIN", "INSERT", "UPDATE", "DELETE", "COMMIT", "ROLLBACK")
+        )
+    ]
+    assert transaction_statements
+    assert all(locked for _, locked in transaction_statements)
+    assert any(
+        statement.lstrip().upper().startswith("ROLLBACK")
+        for statement, _ in transaction_statements
+    )
+
+
+def test_two_threads_can_write_fifty_distinct_objects_without_loss(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+    barrier = Barrier(2)
+    failures = Queue()
+
+    def write_mandates(prefix: str) -> None:
+        try:
+            for index in range(25):
+                barrier.wait(timeout=2)
+                store.put(
+                    "case-001",
+                    "mandate",
+                    _mandate(id=f"mandate-{prefix}-{index}"),
+                    NOW.isoformat(),
+                )
+        except BaseException as exc:
+            failures.put(exc)
+
+    threads = [
+        Thread(target=write_mandates, args=("a",)),
+        Thread(target=write_mandates, args=("b",)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    caught = []
+    while not failures.empty():
+        caught.append(failures.get_nowait())
+    assert caught == []
+
+    stored_ids = {
+        mandate.id for mandate in store.list("case-001", "mandate", Mandate)
+    }
+    expected_ids = {
+        f"mandate-{prefix}-{index}"
+        for prefix in ("a", "b")
+        for index in range(25)
+    }
+    assert stored_ids == expected_ids

@@ -368,7 +368,7 @@ def execute_prepared_action(
         return _not_executed_receipt(
             proposed_action=proposed_action,
             decision=decision,
-            reasons=["this PreparedAction was already executed (nonce replay)"],
+            reasons=["this PreparedAction nonce was already claimed by a prior execution attempt (replay)"],
             now=now,
             prev_hash=prev_receipt_hash,
         )
