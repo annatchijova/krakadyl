@@ -536,7 +536,8 @@ def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
     files = _observation_files(case_id, observations)
     mandate = _current_mandate(case_id)
     _assert_principal(mandate, body.principal)
-    consumed = store.consumed_nonces()
+    nonce_claimed = store.claim_nonce(case_id, prepared.nonce, prepared.id, now().isoformat())
+    consumed = set() if nonce_claimed else {prepared.nonce}
     out_dir = DATA_DIR / case_id / "packages" / prepared.id
 
     receipt = execute_prepared_action(
@@ -551,9 +552,7 @@ def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
         out_dir=out_dir,
         now=now(),
     )
-    if receipt.executed and prepared.nonce not in store.consumed_nonces():
-        store.consume_nonce(prepared.nonce)
-    store.put(case_id, "receipt", receipt, now().isoformat())
+    store.put_execution_receipt(case_id, receipt, now().isoformat())
     store.log_event(
         case_id,
         "executed" if receipt.executed else "execution_blocked",

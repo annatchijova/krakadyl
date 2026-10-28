@@ -120,6 +120,8 @@ def test_hypothesis_flagged_after_requirement_becomes_unresolvable(client):
 
 
 def test_replay_is_refused_even_through_the_api(client):
+    import krakadyl.api.app as app_module
+
     prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
     prepared_id = prep["prepared"]["id"]
 
@@ -133,6 +135,95 @@ def test_replay_is_refused_even_through_the_api(client):
     ).json()
     assert second["receipt"]["executed"] is False
     assert "replay" in second["receipt"]["observed_effect"]
+    persisted = app_module.store.get("case-001", "receipt", first["receipt"]["id"], app_module.Receipt)
+    assert persisted.executed is True
+
+
+def test_execution_failure_after_nonce_claim_burns_prepared_action(client, monkeypatch):
+    import krakadyl.api.app as app_module
+
+    prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
+    prepared_id = prep["prepared"]["id"]
+
+    def fail_after_claim(**kwargs):
+        raise RuntimeError("simulated executor interruption")
+
+    monkeypatch.setattr(app_module, "execute_prepared_action", fail_after_claim)
+    with pytest.raises(RuntimeError, match="simulated executor interruption"):
+        app_module.execute(
+            "case-001",
+            app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prepared_id),
+        )
+
+    monkeypatch.undo()
+    retry = app_module.execute(
+        "case-001",
+        app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prepared_id),
+    )
+    assert retry.receipt.executed is False
+    assert "claimed by a prior execution attempt" in retry.receipt.observed_effect
+
+
+def test_nonce_claim_storage_error_never_reaches_executor(client, monkeypatch):
+    import sqlite3
+
+    import krakadyl.api.app as app_module
+
+    prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
+    called = []
+    monkeypatch.setattr(
+        app_module.store,
+        "claim_nonce",
+        lambda *args: (_ for _ in ()).throw(sqlite3.OperationalError("database unavailable")),
+    )
+    monkeypatch.setattr(app_module, "execute_prepared_action", lambda **kwargs: called.append(kwargs))
+
+    with pytest.raises(sqlite3.OperationalError, match="database unavailable"):
+        app_module.execute(
+            "case-001",
+            app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prep["prepared"]["id"]),
+        )
+    assert called == []
+
+
+def test_concurrent_execution_claims_nonce_once_and_preserves_success_receipt(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    import krakadyl.api.app as app_module
+
+    prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
+    prepared_id = prep["prepared"]["id"]
+    claim_barrier = Barrier(2)
+    original_execute = app_module.execute_prepared_action
+    original_claim = app_module.store.claim_nonce
+    effects = []
+
+    def synchronized_claim(*args):
+        claim_barrier.wait(timeout=5)
+        return original_claim(*args)
+
+    def synchronized_execute(**kwargs):
+        if kwargs["prepared"].nonce not in kwargs["consumed_nonces"]:
+            effects.append(kwargs["prepared"].nonce)
+        return original_execute(**kwargs)
+
+    monkeypatch.setattr(app_module, "execute_prepared_action", synchronized_execute)
+    monkeypatch.setattr(app_module.store, "claim_nonce", synchronized_claim)
+    request = lambda: app_module.execute(
+        "case-001",
+        app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prepared_id),
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _: request(), range(2)))
+
+    receipts = [response.receipt.model_dump() for response in responses]
+    assert sorted(receipt["executed"] for receipt in receipts) == [False, True]
+    assert len(effects) == 1
+    assert "claimed" in next(r["observed_effect"] for r in receipts if not r["executed"])
+
+    persisted = app_module.store.get("case-001", "receipt", receipts[0]["id"], app_module.Receipt)
+    assert persisted.executed is True
 
 
 def test_dev_tamper_rejects_a_path_traversal_observation_id(client):

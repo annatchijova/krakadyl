@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from queue import Queue
 from threading import Barrier, Thread
 
-from krakadyl.core.models import Mandate
+from krakadyl.core.models import Mandate, Receipt
 from krakadyl.store import KrakadylStore
 
 NOW = datetime(2026, 10, 27, 16, 0, tzinfo=timezone.utc)
@@ -76,6 +76,66 @@ def test_nonce_consumption_survives_a_new_store_instance(tmp_path):
 
     store2 = KrakadylStore(db_path)
     assert store2.consume_nonce("abc123") is False
+
+
+def test_concurrent_nonce_claims_across_store_instances_have_one_winner(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    stores = [KrakadylStore(db_path), KrakadylStore(db_path)]
+    barrier = Barrier(2)
+    results = Queue()
+
+    def claim(store):
+        barrier.wait(timeout=2)
+        results.put(store.claim_nonce("case-001", "shared-nonce", "prepared-1", NOW.isoformat()))
+
+    threads = [Thread(target=claim, args=(store,)) for store in stores]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert sorted(results.get_nowait() for _ in range(2)) == [False, True]
+    assert [event["kind"] for event in stores[0].list_events("case-001")] == ["execution_claimed"]
+
+
+def test_successful_receipt_wins_concurrent_persistence_across_store_instances(tmp_path):
+    db_path = tmp_path / "krakadyl.db"
+    stores = [KrakadylStore(db_path), KrakadylStore(db_path)]
+    barrier = Barrier(2)
+    failures = Queue()
+    denied = Receipt(
+        id="receipt-action-1",
+        proposed_action_id="action-1",
+        decision_id="decision-1",
+        executed=False,
+        observed_effect="replay denied",
+        hash="denied-hash",
+        created_at=NOW,
+    )
+    successful = denied.model_copy(update={"executed": True, "observed_effect": "package published", "hash": "success-hash"})
+
+    def persist(store, receipt):
+        try:
+            barrier.wait(timeout=2)
+            store.put_execution_receipt("case-001", receipt, NOW.isoformat())
+        except BaseException as exc:
+            failures.put(exc)
+
+    threads = [
+        Thread(target=persist, args=(stores[0], denied)),
+        Thread(target=persist, args=(stores[1], successful)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert failures.empty()
+    persisted = stores[0].get("case-001", "receipt", denied.id, Receipt)
+    assert persisted.executed is True
+    assert persisted.hash == "success-hash"
 
 
 def test_list_breaks_ties_by_insertion_order_not_just_timestamp(tmp_path):
