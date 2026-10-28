@@ -493,6 +493,39 @@ def test_propose_with_muse_wires_a_real_adapter_call_through_the_real_pipeline(c
     assert any(e["kind"] == "muse_proposed" for e in events)
 
 
+def test_propose_with_muse_revalidates_mandate_after_external_call(client, monkeypatch):
+    import krakadyl.api.app as app_module
+    from krakadyl.adapters.muse import ProposedActionCandidate
+    from krakadyl.core.models import Mandate
+
+    def revoke_during_call(*, mission_summary, mandate_summary, case_summary, **kwargs):
+        current = app_module._current_mandate("case-001")
+        revoked = Mandate(
+            **{
+                **current.model_dump(),
+                "revoked": True,
+                "revoked_reason": "revoked while Muse was responding",
+                "revision": str(int(current.revision) + 1),
+            }
+        )
+        app_module.store.put("case-001", "mandate", revoked, app_module.now().isoformat())
+        return ProposedActionCandidate(
+            operation="package_export",
+            allowed_device="device-A",
+            destination="reviewer-authorized",
+            reasoning="Prepare the verified evidence package.",
+        )
+
+    monkeypatch.setattr(app_module, "propose_action", revoke_during_call)
+    response = client.post("/api/cases/case-001/actions/propose-with-muse", json={"principal": "investigator-A"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision"]["verdict"] == "forbidden"
+    assert body["prepared"] is None
+    assert "revoked" in " ".join(body["decision"]["reasons"]).lower()
+
+
 def test_propose_with_muse_surfaces_an_adapter_failure_as_502(client, monkeypatch):
     import krakadyl.api.app as app_module
     from krakadyl.adapters.muse import MuseAdapterError
