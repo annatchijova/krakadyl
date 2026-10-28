@@ -21,6 +21,13 @@ after both effects, and it cannot serialize operations on one Python connection.
 The predicted result of an atomic pre-effect claim is one winner and one replay
 denial. Synchronized API and two-store tests confirm that result after the change.
 
+The initial SQLite review also reproduced a transaction leak: after duplicate
+`consume_nonce()` raised `sqlite3.IntegrityError`, the method caught the error but
+left the connection in a transaction. A write through a second store instance
+then failed with `database is locked`. The write lock and connection context
+manager in the original branch fix rolled back before returning the duplicate
+result; the remediation keeps that behavior and adds atomic pre-effect claims.
+
 ## Execution replay admission
 
 The API now atomically claims a prepared action's nonce and writes an
@@ -77,5 +84,5 @@ remediation branch review.
 - `secure-by-construction`
 - `falsifiable-testing`
 - `surgical-patcher`
-- `red-teaming-auditing`
+- `red-team-auditing`
 - `git-discipline`

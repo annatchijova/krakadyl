@@ -30,7 +30,7 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
 | F3 | Low–Medium | CONFIRMED BY INDUCTION | `api/seed.py` / `api/app.py` | `observation_file_path()` interpolates `observation_id` unsanitized; a crafted id resolves outside the case data directory | **Fixed** |
 | F4 | Low | PLAUSIBLE HYPOTHESIS, not reproduced | `store.py` | `list()`'s `ORDER BY updated_at` has no tiebreak for same-timestamp writes; `get_case()` reads `list(...)[-1]` as "most recent" | **Fixed** (hardened regardless of reproduction) |
 | F5 | Low (cost exposure) | CODE FACT | `api/app.py` | No rate limit on `propose-with-muse` — an unauthenticated caller could loop it and spend the project's Meta API budget | **Mitigated by F1's fix, not fully closed** — see Recommendations |
-| F6 | Informational | PLAUSIBLE HYPOTHESIS; related transaction leak CONFIRMED BY INDUCTION | `store.py` | One SQLite connection shared by FastAPI threads had no writer serialization | **Fixed for writers on one store instance** — see F6 limits |
+| F6 | Informational | PLAUSIBLE HYPOTHESIS, not reproduced | `store.py` | Single SQLite connection with `check_same_thread=False`, used from FastAPI's sync threadpool — concurrent writes from two threads are a known SQLite hazard | **Not fixed** — deferred to Level 4 (concurrent investigators), same scope boundary already named in `docs/levels.md` |
 
 ## Findings
 
@@ -104,15 +104,13 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
 - **F1's fix helps but does not close this:** a caller must now assert the correct `principal` to reach the endpoint — but principal is still self-asserted, not authenticated, so this is a speed bump, not a lock. Anyone who can read the frontend's source (trivially, it's a public bundle) learns the literal string `"investigator-A"` to assert.
 - **Not fixed in this round** — a real rate limiter or authenticated-session requirement is more than this round's scope justifies for a single-investigator demo; recorded here so it isn't silently forgotten. See Recommendations.
 
-### F6 — SQLite writers serialized on the shared connection
+### F6 — Single SQLite connection shared across FastAPI's threadpool
 
-**Severity:** Informational for the original concurrency risk; Medium for the related transaction leak found while closing it. **Epistemic level:** original race remains a PLAUSIBLE HYPOTHESIS, not reproduced; transaction leak CONFIRMED BY INDUCTION. **Bucket:** hardening plus a confirmed availability defect.
+**Severity:** Informational **Epistemic level:** PLAUSIBLE HYPOTHESIS, not reproduced **Bucket:** hygiene / known architectural limit
 
-- **Original risk:** `KrakadylStore` opens one `sqlite3.Connection` with `check_same_thread=False` and reuses it from FastAPI's sync threadpool. The baseline two-thread test completed with all 50 rows and no exception, so this report does not claim corruption was reproduced.
-- **Related defect confirmed during pre-patch audit:** after a duplicate `consume_nonce`, the caught `sqlite3.IntegrityError` left `connection.in_transaction=True`; a second store instance then failed to write with `database is locked`. This was reproduced directly against the unfixed code, not inferred from SQLite documentation.
-- **Fix:** one instance `Lock` now covers the complete transaction for every writer (`put`, `consume_nonce`, `log_event`, and both deletes in `reset_case`). Connection context managers commit on success and roll back before releasing the lock on failure. Initialization enables and verifies persistent WAL mode before creating the schema.
-- **Verification:** a trace-callback test observes every `BEGIN`/write/`COMMIT`/`ROLLBACK` while the instance lock is held; substituting a no-op lock made that test fail. The duplicate-nonce regression proves rollback leaves no active transaction and a second connection can write. Two real threads writing 25 distinct objects each completed with the exact 50-object set and no exceptions in 10/10 repeated runs. A separate connection confirms `PRAGMA journal_mode` is `wal`.
-- **Remaining scope:** the lock coordinates writers only within one `KrakadylStore` instance. It does not coordinate multiple instances, processes, or workers; unlocked reads do not gain snapshot-isolation guarantees, and callers must stop all store use before `close()`. The test covers two threads, not adversarial load with hundreds or thousands.
+- `KrakadylStore` opens one `sqlite3.Connection` with `check_same_thread=False` and reuses it for every request. FastAPI runs sync endpoints in a threadpool, so two concurrent requests execute on two threads against the same connection object — a known SQLite hazard (not thread-safe for concurrent writes without external serialization).
+- **Not reproduced** — would require actually racing two real concurrent requests and observing corruption or a lock error; judged out of proportion for a single-demo-user build.
+- **Deliberately deferred, not hidden:** this is exactly Level 4's territory ("shared custody, team investigations" — concurrent investigators on the same case), already named as future work in `docs/levels.md`. Noted here so whoever builds Level 4's persistence layer inherits this as a known starting constraint, not a surprise.
 
 ## Discarded (non-exploitable) vectors
 
@@ -129,4 +127,4 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
 
 - Replace caller-asserted `principal` with real authentication once there's more than one investigator (Level 4 territory) — a session/login layer that the frontend can't just read out of its own bundle.
 - A basic rate limit (even a crude per-process counter) on `propose-with-muse`, independent of identity, as defense in depth against the cost-exposure in F5.
-- Revisit connection ownership at Level 4: the current instance lock serializes this process's writers, but a connection-per-request or coordinated multi-process design is still required for multiple workers and stronger read isolation.
+- Revisit `KrakadylStore`'s single shared connection (F6) when Level 4's concurrent-investigator work starts — likely a connection-per-request pattern or an actual write-serializing lock, not assumed away.
