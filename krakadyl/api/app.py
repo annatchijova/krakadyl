@@ -410,7 +410,9 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
     The principal check runs BEFORE the billed call, not after — found
     by red-team review: checking identity after an expensive external
     call would still let an unauthorized caller trigger (and pay for)
-    the call itself, even if its result were then discarded.
+    the call itself, even if its result were then discarded. The
+    mandate and principal are reloaded after the call so revocation or
+    reassignment during the wait cannot produce a stale ALLOWED result.
     """
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
@@ -426,6 +428,8 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
     except MuseAdapterError as exc:
         raise HTTPException(502, f"Muse call failed or returned an invalid response: {exc}")
 
+    mandate = _current_mandate(case_id)
+    _assert_principal(mandate, body.principal)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
