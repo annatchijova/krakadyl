@@ -414,6 +414,7 @@ class SQLiteAcquisitionGate:
         actual_usage: ResourceUsage,
         result: AcquiredObservation | AnnotationCandidate,
         *,
+        provider_request_id: str | None = None,
         now: datetime,
     ) -> AcquisitionWorkflow:
         _require_aware(now)
@@ -484,7 +485,11 @@ class SQLiteAcquisitionGate:
                 raise ValueError("phase result provenance or usage exceeds its committed intent")
 
             updated_attempt = persisted_attempt.model_copy(
-                update={"state": AttemptState.COMPLETED, "actual_usage": actual_usage}
+                update={
+                    "state": AttemptState.COMPLETED,
+                    "actual_usage": actual_usage,
+                    "provider_request_id": provider_request_id,
+                }
             )
             connection.execute(
                 "UPDATE acquisition_attempts SET state=?, attempt_json=?, result_json=? WHERE attempt_id=?",
@@ -536,7 +541,14 @@ class SQLiteAcquisitionGate:
 
         return self._store.atomic_write(transition)
 
-    def mark_unknown(self, attempt: AdapterAttempt, reason: str, *, now: datetime) -> None:
+    def mark_unknown(
+        self,
+        attempt: AdapterAttempt,
+        reason: str,
+        *,
+        provider_request_id: str | None = None,
+        now: datetime,
+    ) -> None:
         _require_aware(now)
         def transition(connection):
             row = connection.execute(
@@ -552,6 +564,7 @@ class SQLiteAcquisitionGate:
             updated_attempt = persisted.model_copy(update={
                 "state": AttemptState.UNKNOWN_AFTER_DISPATCH,
                 "outcome_reason": reason[:512],
+                "provider_request_id": provider_request_id,
             })
             connection.execute(
                 "UPDATE acquisition_attempts SET state=?, attempt_json=? WHERE attempt_id=?",

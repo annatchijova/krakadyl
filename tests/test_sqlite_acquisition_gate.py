@@ -7,6 +7,7 @@ from threading import Barrier, Event
 import pytest
 
 from krakadyl.core.acquisition import (
+    AdapterAttempt,
     AcquisitionPhase,
     AcquisitionProposal,
     ResourceUsage,
@@ -357,9 +358,16 @@ def test_completed_source_commits_its_full_ceiling_even_when_meter_reports_zero(
     expiry = NOW + timedelta(seconds=proposal.retention.retention_seconds)
     offset_now = expiry.astimezone(timezone(timedelta(hours=5)))
     assert gate.purge_expired_requests(now=offset_now) == 1
-    updated = gate.complete_phase(attempt, _usage(), observation, now=offset_now)
+    updated = gate.complete_phase(
+        attempt, _usage(), observation,
+        provider_request_id="provider-request-canary", now=offset_now,
+    )
 
     assert updated.current_phase == AcquisitionPhase.SOURCE_CAPTURE
+    persisted_attempt = store.read_locked(lambda connection: connection.execute(
+        "SELECT attempt_json FROM acquisition_attempts WHERE attempt_id=?", (attempt.attempt_id,)
+    ).fetchone()[0])
+    assert AdapterAttempt.model_validate_json(persisted_attempt).provider_request_id == "provider-request-canary"
     reservation = store.read_locked(lambda connection: connection.execute(
         "SELECT reserved_json, committed_json FROM acquisition_reservations "
         "WHERE workflow_id=? AND scope_type='requirement'",
@@ -493,7 +501,13 @@ def test_unknown_attempt_survives_reopen_and_only_verified_resolution_releases_l
         workflow, AcquisitionPhase.SOURCE_CAPTURE, request, proposal.retention,
         "test-proof-do-not-persist", now=NOW,
     )
-    gate.mark_unknown(attempt, "synthetic_timeout", now=NOW)
+    gate.mark_unknown(
+        attempt, "synthetic_timeout", provider_request_id="provider-request-unknown", now=NOW
+    )
+    persisted_attempt = store.read_locked(lambda connection: connection.execute(
+        "SELECT attempt_json FROM acquisition_attempts WHERE attempt_id=?", (attempt.attempt_id,)
+    ).fetchone()[0])
+    assert AdapterAttempt.model_validate_json(persisted_attempt).provider_request_id == "provider-request-unknown"
     store.close()
 
     reopened = KrakadylStore(db_path)

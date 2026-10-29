@@ -491,10 +491,18 @@ class AuthorizationGate(Protocol):
         actual_usage: ResourceUsage,
         result: AcquiredObservation | AnnotationCandidate,
         *,
+        provider_request_id: str | None = None,
         now: datetime,
     ) -> AcquisitionWorkflow: ...
 
-    def mark_unknown(self, attempt: AdapterAttempt, reason: str, *, now: datetime) -> None: ...
+    def mark_unknown(
+        self,
+        attempt: AdapterAttempt,
+        reason: str,
+        *,
+        provider_request_id: str | None = None,
+        now: datetime,
+    ) -> None: ...
 
     def abort_before_phase_intent(
         self, workflow_id: str, phase: AcquisitionPhase, reason: str, *, now: datetime
@@ -668,6 +676,7 @@ class AcquisitionCoordinator:
             retention=proposal.retention, credential_proof=credential_proof
         )
         try:
+            response = None
             capture_started = time.monotonic()
             response = self._source.capture(capture_request, capture_attempt)
             source_bytes = self._collect_payload(
@@ -685,10 +694,14 @@ class AcquisitionCoordinator:
             )
             self._validate_observation(observation, workflow, proposal, capture_attempt, source_bytes)
             workflow = self._gate.complete_phase(
-                capture_attempt, response.usage, observation, now=self._clock.now()
+                capture_attempt, response.usage, observation,
+                provider_request_id=getattr(response, "provider_request_id", None), now=self._clock.now()
             )
         except Exception as exc:
-            self._mark_unknown(capture_attempt, type(exc).__name__)
+            self._mark_unknown(
+                capture_attempt, type(exc).__name__,
+                provider_request_id=getattr(response, "provider_request_id", None),
+            )
             raise AcquisitionOutcomeUnknown(capture_attempt.attempt_id, AcquisitionPhase.SOURCE_CAPTURE) from exc
 
         annotation: AnnotationCandidate | None = None
@@ -711,6 +724,7 @@ class AcquisitionCoordinator:
                 retention=proposal.retention, credential_proof=credential_proof
             )
             try:
+                response = None
                 processor_started = time.monotonic()
                 response = self._processor.process(request, source_bytes, processor_attempt)
                 annotation_bytes = self._collect_payload(
@@ -726,10 +740,14 @@ class AcquisitionCoordinator:
                 )
                 self._validate_annotation(annotation, processor_attempt, observation, request, annotation_bytes)
                 workflow = self._gate.complete_phase(
-                    processor_attempt, response.usage, annotation, now=self._clock.now()
+                    processor_attempt, response.usage, annotation,
+                    provider_request_id=getattr(response, "provider_request_id", None), now=self._clock.now()
                 )
             except Exception as exc:
-                self._mark_unknown(processor_attempt, type(exc).__name__)
+                self._mark_unknown(
+                    processor_attempt, type(exc).__name__,
+                    provider_request_id=getattr(response, "provider_request_id", None),
+                )
                 raise AcquisitionOutcomeUnknown(
                     processor_attempt.attempt_id, AcquisitionPhase.PROCESSOR_DERIVATION
                 ) from exc
@@ -791,9 +809,13 @@ class AcquisitionCoordinator:
                 f"{phase.value} may have durable state requiring recovery"
             ) from exc
 
-    def _mark_unknown(self, attempt: AdapterAttempt, reason: str) -> None:
+    def _mark_unknown(
+        self, attempt: AdapterAttempt, reason: str, *, provider_request_id: str | None = None
+    ) -> None:
         try:
-            self._gate.mark_unknown(attempt, reason, now=self._clock.now())
+            self._gate.mark_unknown(
+                attempt, reason, provider_request_id=provider_request_id, now=self._clock.now()
+            )
         except Exception as exc:
             raise AcquisitionRecoveryRequired(
                 f"{attempt.phase.value} dispatch may have occurred and UNKNOWN could not be persisted"

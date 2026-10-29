@@ -108,4 +108,8 @@ Coordinator validation failures after a gate has committed `DISPATCH_INTENT`, bu
 
 There is no concrete credential issuer/verifier, mandate-to-source mapping, evaluator, provider, API integration, remote database, or production budget policy. The injected fakes prove only SQLite lifecycle and transaction behavior. No real evidence or paid service is used.
 
+The coordinator's `duration_ms` ceiling is checked after synchronous adapter calls and stream reads return. It rejects an overrun but cannot interrupt a blocked call. Every concrete adapter must enforce its own transport and read timeouts before it is enabled; this local coordinator does not provide a hard execution deadline.
+
 Skills applied to this design: `software-archaeology`, `secure-by-construction`, `atomic-state-mutation`, `concurrency-reasoning`, `distributed-write-atomicity`, `falsifiable-testing`, `audit-before-patch`, `data-provenance-mapping`, `destination-driven-construction`, `red-team-auditing`, `versioned-schema-evolution`, and `surgical-patcher`.
+
+Skills applied to the provider-correlation and duration-contract follow-up: `audit-before-patch`, `surgical-patcher`, `diagnosing-bugs`, `falsifiable-testing`, `red-team-auditing`, `invariant-hunting`, `concurrency-reasoning`, `distributed-write-atomicity`, `resource-exhaustion-review`, and `git-discipline`.

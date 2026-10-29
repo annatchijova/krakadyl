@@ -197,19 +197,26 @@ class _MemoryGate:
         self.attempts[attempt.attempt_id] = attempt
         return attempt
 
-    def complete_phase(self, attempt, actual_usage, result, *, now):
+    def complete_phase(self, attempt, actual_usage, result, *, provider_request_id=None, now):
         self.completed.append((attempt.attempt_id, actual_usage))
-        self.attempts[attempt.attempt_id] = attempt.model_copy(update={"state": AttemptState.COMPLETED})
+        self.attempts[attempt.attempt_id] = attempt.model_copy(update={
+            "state": AttemptState.COMPLETED,
+            "provider_request_id": provider_request_id,
+        })
         workflow = self.workflow_snapshots[attempt.workflow_id].model_copy(
             update={"current_phase": attempt.phase, "actual_usage": actual_usage}
         )
         self.workflow_snapshots[attempt.workflow_id] = workflow
         return self.workflow_snapshots[attempt.workflow_id]
 
-    def mark_unknown(self, attempt, reason, *, now):
+    def mark_unknown(self, attempt, reason, *, provider_request_id=None, now):
         self.unknown_requirements.add(self.workflow_requirements[attempt.workflow_id])
         self.attempts[attempt.attempt_id] = attempt.model_copy(
-            update={"state": AttemptState.UNKNOWN_AFTER_DISPATCH, "outcome_reason": reason}
+            update={
+                "state": AttemptState.UNKNOWN_AFTER_DISPATCH,
+                "outcome_reason": reason,
+                "provider_request_id": provider_request_id,
+            }
         )
 
     def abort_before_phase_intent(self, workflow_id, phase, reason, *, now):
@@ -331,6 +338,44 @@ def test_synthetic_workflow_keeps_capture_annotation_and_evaluation_separate():
     assert len(gate.used_authorizations) == 1
 
 
+def test_provider_request_id_is_retained_on_completed_attempt():
+    class _IdentifiedSource(_SyntheticSource):
+        def capture(self, request, attempt):
+            response = super().capture(request, attempt)
+            return response.model_copy(update={"provider_request_id": "provider-request-canary"})
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MemoryGate()
+
+    _coordinator(gate=gate, source=_IdentifiedSource()).acquire(
+        proposal, authorization, "fixture-proof"
+    )
+
+    assert gate.attempts["attempt-1"].provider_request_id == "provider-request-canary"
+
+
+def test_provider_request_id_is_retained_when_capture_outcome_is_unknown():
+    class _UnusableIdentifiedSource(_SyntheticSource):
+        def capture(self, request, attempt):
+            return AdapterResponse(
+                payload=object(),
+                usage=_usage(),
+                provider_request_id="provider-request-unknown",
+            )
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MemoryGate()
+
+    with pytest.raises(AcquisitionOutcomeUnknown):
+        _coordinator(gate=gate, source=_UnusableIdentifiedSource()).acquire(
+            proposal, authorization, "fixture-proof"
+        )
+
+    attempt = gate.attempts["attempt-1"]
+    assert attempt.state == AttemptState.UNKNOWN_AFTER_DISPATCH
+    assert attempt.provider_request_id == "provider-request-unknown"
+
+
 def test_empty_processor_output_is_candidate_not_a_negative_evaluation():
     proposal, authorization = _proposal_and_authorization()
     result = _coordinator(processor=_SyntheticProcessor(payload=b"")).acquire(proposal, authorization, "fixture-proof")
@@ -427,7 +472,7 @@ def test_unimplemented_input_transformation_is_rejected_before_workflow_creation
         AcquisitionProposal.model_validate(raw)
 
 
-def test_stream_deadline_failure_closes_the_adapter_stream():
+def test_stream_duration_overrun_is_rejected_after_read_returns_and_stream_closes():
     class _SlowStream:
         closed = False
 
