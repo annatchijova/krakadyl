@@ -54,12 +54,18 @@ CREATE TABLE IF NOT EXISTS acquisition_schema_meta (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     version INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS acquisition_gate_state (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    dispatch_generation INTEGER NOT NULL CHECK (dispatch_generation >= 0)
+);
 CREATE TABLE IF NOT EXISTS acquisition_workflows (
     workflow_id TEXT PRIMARY KEY,
     case_id TEXT NOT NULL,
     requirement_id TEXT NOT NULL,
     authorization_id TEXT NOT NULL UNIQUE,
     proposal_json TEXT NOT NULL,
+    authorization_json TEXT,
+    mandate_digest TEXT,
     workflow_json TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('active', 'unknown', 'completed', 'failed')),
     created_at TEXT NOT NULL
@@ -133,16 +139,49 @@ class KrakadylStore:
             self._conn.close()
             raise RuntimeError("SQLite refused to enable WAL journal mode")
         self._conn.executescript(SCHEMA)
-        self._conn.execute(
-            "INSERT OR IGNORE INTO acquisition_schema_meta (singleton, version) VALUES (1, 1)"
-        )
-        schema_version = self._conn.execute(
-            "SELECT version FROM acquisition_schema_meta WHERE singleton=1"
-        ).fetchone()
-        if schema_version is None or schema_version[0] != 1:
-            self._conn.close()
-            raise RuntimeError("unsupported SQLite acquisition schema version")
         self._conn.commit()
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO acquisition_schema_meta (singleton, version) VALUES (1, 1)"
+            )
+            schema_version = self._conn.execute(
+                "SELECT version FROM acquisition_schema_meta WHERE singleton=1"
+            ).fetchone()
+            if schema_version is None or schema_version[0] not in (1, 2, 3, 4):
+                raise RuntimeError("unsupported SQLite acquisition schema version")
+            if schema_version[0] < 3:
+                workflow_columns = {
+                    row[1] for row in self._conn.execute("PRAGMA table_info(acquisition_workflows)")
+                }
+                attempt_columns = {
+                    row[1] for row in self._conn.execute("PRAGMA table_info(acquisition_attempts)")
+                }
+                if "authorization_json" not in workflow_columns:
+                    self._conn.execute(
+                        "ALTER TABLE acquisition_workflows ADD COLUMN authorization_json TEXT"
+                    )
+                if "mandate_digest" not in workflow_columns:
+                    self._conn.execute(
+                        "ALTER TABLE acquisition_workflows ADD COLUMN mandate_digest TEXT"
+                    )
+                if "result_json" not in attempt_columns:
+                    self._conn.execute("ALTER TABLE acquisition_attempts ADD COLUMN result_json TEXT")
+                self._conn.execute(
+                    "UPDATE acquisition_schema_meta SET version=3 WHERE singleton=1"
+                )
+            self._conn.execute(
+                "INSERT OR IGNORE INTO acquisition_gate_state (singleton, dispatch_generation) VALUES (1, 0)"
+            )
+            if schema_version[0] < 4:
+                self._conn.execute(
+                    "UPDATE acquisition_schema_meta SET version=4 WHERE singleton=1"
+                )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            self._conn.close()
+            raise
 
         # This lock serializes access to the shared connection on this
         # store instance. It does not make close() safe while callers
@@ -163,6 +202,11 @@ class KrakadylStore:
             except BaseException:
                 self._conn.rollback()
                 raise
+
+    def read_locked(self, operation: Callable[[sqlite3.Connection], R]) -> R:
+        """Serialize a bounded read callback against users of the shared connection."""
+        with self._write_lock:
+            return operation(self._conn)
 
     # --- generic object storage, one row per domain object ---
 
