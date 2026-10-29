@@ -457,6 +457,8 @@ class EvidenceSource(Protocol):
 
 
 class EvidenceProcessor(Protocol):
+    def validate_request(self, request: ProcessorRequest, observation_bytes: bytes) -> None: ...
+
     def process(
         self, request: ProcessorRequest, observation_bytes: bytes, attempt: AdapterAttempt
     ) -> AdapterResponse: ...
@@ -544,6 +546,7 @@ class ArtifactRepository(Protocol):
         request: ProcessorRequest,
         response: bytes,
         retention: RetentionDecision,
+        usage: ResourceUsage,
     ) -> AnnotationCandidate: ...
 
     def read_verified(self, observation: AcquiredObservation) -> bytes: ...
@@ -700,7 +703,10 @@ class AcquisitionCoordinator:
         except Exception as exc:
             self._mark_unknown(
                 capture_attempt, type(exc).__name__,
-                provider_request_id=getattr(response, "provider_request_id", None),
+                provider_request_id=(
+                    getattr(exc, "provider_request_id", None)
+                    or getattr(response, "provider_request_id", None)
+                ),
             )
             raise AcquisitionOutcomeUnknown(capture_attempt.attempt_id, AcquisitionPhase.SOURCE_CAPTURE) from exc
 
@@ -717,6 +723,14 @@ class AcquisitionCoordinator:
                 self._abort_before_intent(
                     workflow, AcquisitionPhase.PROCESSOR_DERIVATION,
                     "processor_input_verification_failed"
+                )
+                raise
+            try:
+                self._processor.validate_request(request, source_bytes)
+            except Exception:
+                self._abort_before_intent(
+                    workflow, AcquisitionPhase.PROCESSOR_DERIVATION,
+                    "processor_preflight_failed"
                 )
                 raise
             processor_attempt = self._begin_phase(
@@ -737,8 +751,11 @@ class AcquisitionCoordinator:
                     request,
                     annotation_bytes,
                     proposal.retention,
+                    response.usage,
                 )
-                self._validate_annotation(annotation, processor_attempt, observation, request, annotation_bytes)
+                self._validate_annotation(
+                    annotation, processor_attempt, observation, request, annotation_bytes, response.usage
+                )
                 workflow = self._gate.complete_phase(
                     processor_attempt, response.usage, annotation,
                     provider_request_id=getattr(response, "provider_request_id", None), now=self._clock.now()
@@ -746,7 +763,10 @@ class AcquisitionCoordinator:
             except Exception as exc:
                 self._mark_unknown(
                     processor_attempt, type(exc).__name__,
-                    provider_request_id=getattr(response, "provider_request_id", None),
+                    provider_request_id=(
+                        getattr(exc, "provider_request_id", None)
+                        or getattr(response, "provider_request_id", None)
+                    ),
                 )
                 raise AcquisitionOutcomeUnknown(
                     processor_attempt.attempt_id, AcquisitionPhase.PROCESSOR_DERIVATION
@@ -781,6 +801,10 @@ class AcquisitionCoordinator:
                 and attempt.state == AttemptState.DISPATCH_INTENT
                 and attempt.request_digest == request_digest
                 and attempt.request_reference == request_reference
+                and attempt.reservation_id == workflow.reservation_id
+                and attempt.reserved_usage == getattr(request, "usage_ceiling", None)
+                and attempt.retention_policy_id == retention.policy_id
+                and attempt.retention_policy_version == retention.policy_version
             )
         except Exception:
             matched = False
@@ -896,6 +920,7 @@ class AcquisitionCoordinator:
         observation: AcquiredObservation,
         request: ProcessorRequest,
         content: bytes,
+        actual_usage: ResourceUsage,
     ) -> None:
         if (
             annotation.case_id != observation.case_id
@@ -910,6 +935,7 @@ class AcquisitionCoordinator:
             or annotation.output_reference != f"sha256:{annotation.output_digest}"
             or annotation.output_digest != hashlib.sha256(content).hexdigest()
             or annotation.usage.bytes != len(content)
+            or annotation.usage != actual_usage
             or not _usage_is_within(annotation.usage, request.usage_ceiling)
             or annotation.retention_policy_id != observation.retention_policy_id
             or annotation.retention_policy_version != observation.retention_policy_version

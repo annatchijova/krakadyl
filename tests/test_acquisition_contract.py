@@ -189,7 +189,7 @@ class _MemoryGate:
             request_reference=request_reference,
             request_digest=request_digest,
             reservation_id=workflow.reservation_id,
-            reserved_usage=workflow.reserved_usage,
+            reserved_usage=request.usage_ceiling,
             actual_usage=_usage(),
             retention_policy_id=retention.policy_id,
             retention_policy_version=retention.policy_version,
@@ -262,7 +262,7 @@ class _MemoryArtifacts:
             raise ValueError("stored artifact failed read-time digest verification")
         return content
 
-    def put_annotation(self, case_id, attempt_id, observation, request, response, retention):
+    def put_annotation(self, case_id, attempt_id, observation, request, response, retention, usage):
         request_digest = canonical_record_digest(request)
         request_reference = f"sha256:{request_digest}"
         output_digest = hashlib.sha256(response).hexdigest()
@@ -279,7 +279,7 @@ class _MemoryArtifacts:
             request_digest=request_digest,
             output_reference=f"sha256:{output_digest}",
             output_digest=output_digest,
-            usage=_usage(bytes_count=len(response)),
+            usage=usage,
             is_empty=not response,
             retention_policy_id=retention.policy_id,
             retention_policy_version=retention.policy_version,
@@ -307,6 +307,9 @@ class _SyntheticProcessor:
     def process(self, request, observation_bytes, attempt):
         self.calls.append((request, observation_bytes, attempt))
         return AdapterResponse(payload=BytesIO(self.payload), usage=_usage(bytes_count=len(self.payload)))
+
+    def validate_request(self, request, observation_bytes):
+        return None
 
 
 def _coordinator(gate=None, artifacts=None, source=None, processor=None):
@@ -336,6 +339,30 @@ def test_synthetic_workflow_keeps_capture_annotation_and_evaluation_separate():
     assert len(processor.calls) == 1
     assert len(gate.completed) == 2
     assert len(gate.used_authorizations) == 1
+
+
+def test_processor_preflight_rejection_happens_before_dispatch_intent():
+    class _RejectingProcessor(_SyntheticProcessor):
+        def validate_request(self, request, observation_bytes):
+            raise ValueError("SAM request exceeds its authorized image price ceiling")
+
+        def process(self, request, observation_bytes, attempt):
+            raise AssertionError("processor dispatch occurred after preflight rejection")
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MemoryGate()
+    processor = _RejectingProcessor()
+
+    with pytest.raises(ValueError, match="authorized image price ceiling"):
+        _coordinator(gate=gate, processor=processor).acquire(
+            proposal, authorization, "fixture-proof"
+        )
+
+    assert gate.failed_before_dispatch == [
+        ("workflow-auth-synthetic-1", "processor_preflight_failed")
+    ]
+    assert list(gate.attempts) == ["attempt-1"]
+    assert processor.calls == []
 
 
 def test_provider_request_id_is_retained_on_completed_attempt():
@@ -376,6 +403,50 @@ def test_provider_request_id_is_retained_when_capture_outcome_is_unknown():
     assert attempt.provider_request_id == "provider-request-unknown"
 
 
+def test_provider_request_id_from_processor_exception_is_retained():
+    class _IdentifiedFailure(RuntimeError):
+        provider_request_id = "sam-request-from-http-error"
+
+    class _FailingProcessor(_SyntheticProcessor):
+        def process(self, request, observation_bytes, attempt):
+            raise _IdentifiedFailure("synthetic provider failure")
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MemoryGate()
+
+    with pytest.raises(AcquisitionOutcomeUnknown):
+        _coordinator(gate=gate, processor=_FailingProcessor()).acquire(
+            proposal, authorization, "fixture-proof"
+        )
+
+    attempt = gate.attempts["attempt-2"]
+    assert attempt.state == AttemptState.UNKNOWN_AFTER_DISPATCH
+    assert attempt.provider_request_id == "sam-request-from-http-error"
+
+
+def test_annotation_repository_cannot_drop_processor_usage_provenance():
+    class _UsageDroppingArtifacts(_MemoryArtifacts):
+        def put_annotation(self, case_id, attempt_id, observation, request, response, retention, usage):
+            annotation = super().put_annotation(
+                case_id, attempt_id, observation, request, response, retention, usage
+            )
+            return annotation.model_copy(update={
+                "usage": _usage(bytes_count=len(response), duration_ms=0)
+            })
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MemoryGate()
+
+    with pytest.raises(AcquisitionOutcomeUnknown):
+        _coordinator(gate=gate, artifacts=_UsageDroppingArtifacts()).acquire(
+            proposal, authorization, "fixture-proof"
+        )
+
+    attempt = gate.attempts["attempt-2"]
+    assert attempt.state == AttemptState.UNKNOWN_AFTER_DISPATCH
+    assert attempt.outcome_reason == "ValueError"
+
+
 def test_empty_processor_output_is_candidate_not_a_negative_evaluation():
     proposal, authorization = _proposal_and_authorization()
     result = _coordinator(processor=_SyntheticProcessor(payload=b"")).acquire(proposal, authorization, "fixture-proof")
@@ -404,6 +475,25 @@ def test_malformed_dispatch_result_is_closed_before_adapter_invocation():
 
     proposal, authorization = _proposal_and_authorization()
     gate = _MalformedGate()
+    source = _SyntheticSource()
+
+    with pytest.raises(ValueError, match="matching committed dispatch attempt"):
+        _coordinator(gate=gate, source=source).acquire(proposal, authorization, "fixture-proof")
+
+    assert source.calls == []
+    assert gate.failed_before_dispatch == [
+        ("workflow-auth-synthetic-1", "gate_returned_mismatched_attempt")
+    ]
+
+
+def test_mismatched_dispatch_reservation_is_closed_before_adapter_invocation():
+    class _UnderreservedGate(_MemoryGate):
+        def begin_phase(self, *args, **kwargs):
+            attempt = super().begin_phase(*args, **kwargs)
+            return attempt.model_copy(update={"reserved_usage": _usage(bytes_count=0)})
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _UnderreservedGate()
     source = _SyntheticSource()
 
     with pytest.raises(ValueError, match="matching committed dispatch attempt"):
