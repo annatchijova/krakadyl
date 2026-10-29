@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from queue import Queue
 from threading import Barrier, Thread
 
+import pytest
+
 from krakadyl.core.models import Mandate, Receipt
 from krakadyl.store import KrakadylStore
 
@@ -268,3 +270,20 @@ def test_two_threads_can_write_fifty_distinct_objects_without_loss(tmp_path):
         for index in range(25)
     }
     assert stored_ids == expected_ids
+
+
+def test_atomic_write_rolls_back_all_callback_mutations(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+
+    def fail_after_insert(connection):
+        connection.execute(
+            "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
+            ("case-001", NOW.isoformat(), "partial", "must roll back", "{}"),
+        )
+        raise RuntimeError("injected transaction failure")
+
+    with pytest.raises(RuntimeError, match="injected transaction failure"):
+        store.atomic_write(fail_after_insert)
+
+    assert store.list_events("case-001") == []
+    assert store._conn.in_transaction is False

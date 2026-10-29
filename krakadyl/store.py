@@ -23,11 +23,12 @@ import json
 import sqlite3
 from pathlib import Path
 from threading import Lock
-from typing import Optional, Type, TypeVar
+from typing import Callable, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
+R = TypeVar("R")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
@@ -49,6 +50,74 @@ CREATE TABLE IF NOT EXISTS events (
     summary TEXT NOT NULL,
     detail_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS acquisition_schema_meta (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    version INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS acquisition_workflows (
+    workflow_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    authorization_id TEXT NOT NULL UNIQUE,
+    proposal_json TEXT NOT NULL,
+    workflow_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('active', 'unknown', 'completed', 'failed')),
+    created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS acquisition_active_requirement
+ON acquisition_workflows (case_id, requirement_id)
+WHERE state IN ('active', 'unknown');
+CREATE TABLE IF NOT EXISTS acquisition_attempts (
+    attempt_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL REFERENCES acquisition_workflows(workflow_id),
+    case_id TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    state TEXT NOT NULL,
+    request_reference TEXT NOT NULL,
+    request_digest TEXT NOT NULL,
+    attempt_json TEXT NOT NULL,
+    result_json TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (workflow_id, phase)
+);
+CREATE TABLE IF NOT EXISTS acquisition_requests (
+    attempt_id TEXT PRIMARY KEY REFERENCES acquisition_attempts(attempt_id) ON DELETE CASCADE,
+    case_id TEXT NOT NULL,
+    request_digest TEXT NOT NULL,
+    request_json TEXT NOT NULL,
+    retention_json TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS acquisition_reservations (
+    workflow_id TEXT NOT NULL REFERENCES acquisition_workflows(workflow_id),
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    reserved_json TEXT NOT NULL,
+    committed_json TEXT NOT NULL,
+    PRIMARY KEY (workflow_id, scope_type, scope_id)
+);
+CREATE TABLE IF NOT EXISTS acquisition_revocations (
+    authorization_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    revocation_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS acquisition_resolutions (
+    resolution_id TEXT PRIMARY KEY,
+    attempt_id TEXT NOT NULL REFERENCES acquisition_attempts(attempt_id),
+    case_id TEXT NOT NULL,
+    resolution_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (attempt_id)
+);
+CREATE TABLE IF NOT EXISTS acquisition_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail_json TEXT NOT NULL
+);
 """
 
 
@@ -57,11 +126,22 @@ class KrakadylStore:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_lock = Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn.execute("PRAGMA busy_timeout=5000")
+        self._conn.execute("PRAGMA foreign_keys=ON")
         journal_mode = self._conn.execute("PRAGMA journal_mode=WAL").fetchone()
         if journal_mode is None or str(journal_mode[0]).lower() != "wal":
             self._conn.close()
             raise RuntimeError("SQLite refused to enable WAL journal mode")
         self._conn.executescript(SCHEMA)
+        self._conn.execute(
+            "INSERT OR IGNORE INTO acquisition_schema_meta (singleton, version) VALUES (1, 1)"
+        )
+        schema_version = self._conn.execute(
+            "SELECT version FROM acquisition_schema_meta WHERE singleton=1"
+        ).fetchone()
+        if schema_version is None or schema_version[0] != 1:
+            self._conn.close()
+            raise RuntimeError("unsupported SQLite acquisition schema version")
         self._conn.commit()
 
         # This lock serializes access to the shared connection on this
@@ -71,6 +151,18 @@ class KrakadylStore:
     def close(self) -> None:
         """Close only after every caller has stopped using this store."""
         self._conn.close()
+
+    def atomic_write(self, operation: Callable[[sqlite3.Connection], R]) -> R:
+        """Run one database-wide state transition under the shared write lock."""
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                result = operation(self._conn)
+                self._conn.commit()
+                return result
+            except BaseException:
+                self._conn.rollback()
+                raise
 
     # --- generic object storage, one row per domain object ---
 
