@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from queue import Queue
 from threading import Barrier, Thread
 
+import pytest
+
 from krakadyl.core.models import Mandate, Receipt
 from krakadyl.store import KrakadylStore
 
@@ -268,3 +270,62 @@ def test_two_threads_can_write_fifty_distinct_objects_without_loss(tmp_path):
         for index in range(25)
     }
     assert stored_ids == expected_ids
+
+
+def test_atomic_write_rolls_back_all_callback_mutations(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+
+    def fail_after_insert(connection):
+        connection.execute(
+            "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
+            ("case-001", NOW.isoformat(), "partial", "must roll back", "{}"),
+        )
+        raise RuntimeError("injected transaction failure")
+
+    with pytest.raises(RuntimeError, match="injected transaction failure"):
+        store.atomic_write(fail_after_insert)
+
+    assert store.list_events("case-001") == []
+    assert store._conn.in_transaction is False
+
+
+def test_acquisition_schema_v1_migrates_additively_to_v4(tmp_path):
+    database = tmp_path / "legacy-acquisition.db"
+    connection = sqlite3.connect(database)
+    connection.executescript(
+        "CREATE TABLE acquisition_schema_meta (singleton INTEGER PRIMARY KEY, version INTEGER NOT NULL);"
+        "INSERT INTO acquisition_schema_meta VALUES (1, 1);"
+        "CREATE TABLE acquisition_workflows ("
+        "workflow_id TEXT PRIMARY KEY, case_id TEXT NOT NULL, requirement_id TEXT NOT NULL, "
+        "authorization_id TEXT NOT NULL UNIQUE, proposal_json TEXT NOT NULL, "
+        "workflow_json TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL);"
+        "CREATE TABLE acquisition_attempts ("
+        "attempt_id TEXT PRIMARY KEY, workflow_id TEXT NOT NULL, case_id TEXT NOT NULL, "
+        "phase TEXT NOT NULL, state TEXT NOT NULL, request_reference TEXT NOT NULL, "
+        "request_digest TEXT NOT NULL, attempt_json TEXT NOT NULL, created_at TEXT NOT NULL, "
+        "UNIQUE (workflow_id, phase));"
+        "INSERT INTO acquisition_workflows VALUES "
+        "('workflow-v1', 'case-v1', 'requirement-v1', 'authorization-v1', '{}', '{}', 'active', '2026-10-27T16:00:00+00:00');"
+        "INSERT INTO acquisition_attempts VALUES "
+        "('attempt-v1', 'workflow-v1', 'case-v1', 'source_capture', 'dispatch_intent', 'ref', 'digest', '{}', '2026-10-27T16:00:00+00:00');"
+    )
+    connection.close()
+
+    store = KrakadylStore(database)
+
+    columns = store.read_locked(lambda conn: (
+        {row[1] for row in conn.execute("PRAGMA table_info(acquisition_workflows)")},
+        {row[1] for row in conn.execute("PRAGMA table_info(acquisition_attempts)")},
+        conn.execute("SELECT version FROM acquisition_schema_meta WHERE singleton=1").fetchone()[0],
+        conn.execute("SELECT dispatch_generation FROM acquisition_gate_state WHERE singleton=1").fetchone()[0],
+        conn.execute("SELECT workflow_id, mandate_digest FROM acquisition_workflows").fetchone(),
+        conn.execute("SELECT attempt_id FROM acquisition_attempts").fetchone()[0],
+    ))
+    assert "authorization_json" in columns[0]
+    assert "mandate_digest" in columns[0]
+    assert "result_json" in columns[1]
+    assert columns[2] == 4
+    assert columns[3] == 0
+    assert columns[4] == ("workflow-v1", None)
+    assert columns[5] == "attempt-v1"
+    store.close()

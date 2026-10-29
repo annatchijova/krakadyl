@@ -124,12 +124,13 @@ class _MemoryGate:
         self.used_authorizations = set()
         self.unknown_requirements = set()
         self.workflow_requirements = {}
+        self.workflow_snapshots = {}
         self.attempts = {}
         self.completed = []
         self.phase_counts = {}
         self.failed_before_dispatch = []
 
-    def create_workflow(self, proposal, authorization, *, now):
+    def create_workflow(self, proposal, authorization, credential_proof, *, now):
         if authorization.authorization_id in self.used_authorizations:
             raise ValueError("authorization replay")
         if authorization.proposal_digest != canonical_record_digest(proposal):
@@ -165,9 +166,12 @@ class _MemoryGate:
             actual_usage=_usage(),
         )
         self.workflow_requirements[workflow.workflow_id] = requirement_key
+        self.workflow_snapshots[workflow.workflow_id] = workflow
         return workflow
 
-    def begin_phase(self, workflow, phase, request_reference, request_digest, *, now):
+    def begin_phase(self, workflow, phase, request, retention, credential_proof, *, now):
+        request_digest = canonical_record_digest(request)
+        request_reference = f"sha256:{request_digest}"
         key = (workflow.workflow_id, phase)
         if self.phase_counts.get(key, 0):
             raise ValueError("phase replay")
@@ -187,34 +191,39 @@ class _MemoryGate:
             reservation_id=workflow.reservation_id,
             reserved_usage=workflow.reserved_usage,
             actual_usage=_usage(),
-            retention_policy_id="fixture-retention",
-            retention_policy_version="1",
+            retention_policy_id=retention.policy_id,
+            retention_policy_version=retention.policy_version,
         )
         self.attempts[attempt.attempt_id] = attempt
         return attempt
 
-    def complete_phase(self, attempt, actual_usage, *, now):
+    def complete_phase(self, attempt, actual_usage, result, *, provider_request_id=None, now):
         self.completed.append((attempt.attempt_id, actual_usage))
-        self.attempts[attempt.attempt_id] = attempt.model_copy(update={"state": AttemptState.COMPLETED})
+        self.attempts[attempt.attempt_id] = attempt.model_copy(update={
+            "state": AttemptState.COMPLETED,
+            "provider_request_id": provider_request_id,
+        })
+        workflow = self.workflow_snapshots[attempt.workflow_id].model_copy(
+            update={"current_phase": attempt.phase, "actual_usage": actual_usage}
+        )
+        self.workflow_snapshots[attempt.workflow_id] = workflow
+        return self.workflow_snapshots[attempt.workflow_id]
 
-    def mark_unknown(self, attempt, reason, *, now):
+    def mark_unknown(self, attempt, reason, *, provider_request_id=None, now):
         self.unknown_requirements.add(self.workflow_requirements[attempt.workflow_id])
         self.attempts[attempt.attempt_id] = attempt.model_copy(
-            update={"state": AttemptState.UNKNOWN_AFTER_DISPATCH, "outcome_reason": reason}
+            update={
+                "state": AttemptState.UNKNOWN_AFTER_DISPATCH,
+                "outcome_reason": reason,
+                "provider_request_id": provider_request_id,
+            }
         )
 
-    def fail_before_dispatch(self, workflow, reason, *, now):
-        self.failed_before_dispatch.append((workflow.workflow_id, reason))
+    def abort_before_phase_intent(self, workflow_id, phase, reason, *, now):
+        self.failed_before_dispatch.append((workflow_id, reason))
 
-
-class _MemoryRequests:
-    def __init__(self):
-        self.values = {}
-
-    def put_request(self, case_id, request, retention):
-        digest = canonical_record_digest(request)
-        self.values[digest] = (request, retention)
-        return f"sha256:{digest}"
+    def fail_attempt_before_dispatch(self, workflow_id, phase, request_digest, reason, *, now):
+        self.failed_before_dispatch.append((workflow_id, reason))
 
 
 class _MemoryArtifacts:
@@ -303,7 +312,6 @@ class _SyntheticProcessor:
 def _coordinator(gate=None, artifacts=None, source=None, processor=None):
     return AcquisitionCoordinator(
         gate=gate or _MemoryGate(),
-        requests=_MemoryRequests(),
         artifacts=artifacts or _MemoryArtifacts(),
         source=source or _SyntheticSource(),
         processor=processor if processor is not None else _SyntheticProcessor(),
@@ -317,7 +325,7 @@ def test_synthetic_workflow_keeps_capture_annotation_and_evaluation_separate():
     source = _SyntheticSource()
     processor = _SyntheticProcessor()
 
-    result = _coordinator(gate=gate, source=source, processor=processor).acquire(proposal, authorization)
+    result = _coordinator(gate=gate, source=source, processor=processor).acquire(proposal, authorization, "fixture-proof")
 
     assert isinstance(result, AcquisitionResult)
     assert result.observation.digest == hashlib.sha256(RAW).hexdigest()
@@ -330,9 +338,47 @@ def test_synthetic_workflow_keeps_capture_annotation_and_evaluation_separate():
     assert len(gate.used_authorizations) == 1
 
 
+def test_provider_request_id_is_retained_on_completed_attempt():
+    class _IdentifiedSource(_SyntheticSource):
+        def capture(self, request, attempt):
+            response = super().capture(request, attempt)
+            return response.model_copy(update={"provider_request_id": "provider-request-canary"})
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MemoryGate()
+
+    _coordinator(gate=gate, source=_IdentifiedSource()).acquire(
+        proposal, authorization, "fixture-proof"
+    )
+
+    assert gate.attempts["attempt-1"].provider_request_id == "provider-request-canary"
+
+
+def test_provider_request_id_is_retained_when_capture_outcome_is_unknown():
+    class _UnusableIdentifiedSource(_SyntheticSource):
+        def capture(self, request, attempt):
+            return AdapterResponse(
+                payload=object(),
+                usage=_usage(),
+                provider_request_id="provider-request-unknown",
+            )
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MemoryGate()
+
+    with pytest.raises(AcquisitionOutcomeUnknown):
+        _coordinator(gate=gate, source=_UnusableIdentifiedSource()).acquire(
+            proposal, authorization, "fixture-proof"
+        )
+
+    attempt = gate.attempts["attempt-1"]
+    assert attempt.state == AttemptState.UNKNOWN_AFTER_DISPATCH
+    assert attempt.provider_request_id == "provider-request-unknown"
+
+
 def test_empty_processor_output_is_candidate_not_a_negative_evaluation():
     proposal, authorization = _proposal_and_authorization()
-    result = _coordinator(processor=_SyntheticProcessor(payload=b"")).acquire(proposal, authorization)
+    result = _coordinator(processor=_SyntheticProcessor(payload=b"")).acquire(proposal, authorization, "fixture-proof")
 
     assert result.annotation is not None
     assert result.annotation.is_empty is True
@@ -346,9 +392,27 @@ def test_changed_proposal_after_authorization_is_rejected_before_capture():
     source = _SyntheticSource()
 
     with pytest.raises(ValueError, match="proposal changed after authorization"):
-        _coordinator(source=source).acquire(changed, authorization)
+        _coordinator(source=source).acquire(changed, authorization, "fixture-proof")
 
     assert source.calls == []
+
+
+def test_malformed_dispatch_result_is_closed_before_adapter_invocation():
+    class _MalformedGate(_MemoryGate):
+        def begin_phase(self, *args, **kwargs):
+            return object()
+
+    proposal, authorization = _proposal_and_authorization()
+    gate = _MalformedGate()
+    source = _SyntheticSource()
+
+    with pytest.raises(ValueError, match="matching committed dispatch attempt"):
+        _coordinator(gate=gate, source=source).acquire(proposal, authorization, "fixture-proof")
+
+    assert source.calls == []
+    assert gate.failed_before_dispatch == [
+        ("workflow-auth-synthetic-1", "gate_returned_mismatched_attempt")
+    ]
 
 
 def test_unknown_source_outcome_blocks_new_grant_for_the_same_requirement():
@@ -358,11 +422,11 @@ def test_unknown_source_outcome_blocks_new_grant_for_the_same_requirement():
     coordinator = _coordinator(gate=gate, source=source)
 
     with pytest.raises(AcquisitionOutcomeUnknown):
-        coordinator.acquire(proposal, authorization)
+        coordinator.acquire(proposal, authorization, "fixture-proof")
 
     retry_authorization = authorization.model_copy(update={"authorization_id": "auth-synthetic-retry"})
     with pytest.raises(ValueError, match="unreconciled unknown attempt"):
-        coordinator.acquire(proposal, retry_authorization)
+        coordinator.acquire(proposal, retry_authorization, "fixture-proof")
 
     assert len(source.calls) == 1
     assert gate.attempts["attempt-1"].state == AttemptState.UNKNOWN_AFTER_DISPATCH
@@ -377,7 +441,7 @@ def test_oversized_stream_is_rejected_before_artifact_persistence_or_processing(
 
     with pytest.raises(AcquisitionOutcomeUnknown, match="source_capture"):
         _coordinator(gate=gate, artifacts=artifacts, source=source, processor=processor).acquire(
-            proposal, authorization
+            proposal, authorization, "fixture-proof"
         )
 
     assert artifacts.contents == {}
@@ -390,6 +454,15 @@ def test_resource_usage_rejects_boolean_counts_at_the_boundary():
         ResourceUsage(usd_micros=False, bytes=0, frames=0, duration_ms=0)
 
 
+def test_need_hypothesis_ids_require_unique_canonical_order():
+    proposal, _ = _proposal_and_authorization()
+    raw = proposal.need.model_dump()
+    raw["hypothesis_ids"] = ("hypothesis-z", "hypothesis-a")
+
+    with pytest.raises(ValidationError, match="sorted and unique"):
+        AcquisitionNeedSnapshot.model_validate(raw)
+
+
 def test_unimplemented_input_transformation_is_rejected_before_workflow_creation():
     proposal, _ = _proposal_and_authorization()
     raw = proposal.model_dump()
@@ -399,7 +472,7 @@ def test_unimplemented_input_transformation_is_rejected_before_workflow_creation
         AcquisitionProposal.model_validate(raw)
 
 
-def test_stream_deadline_failure_closes_the_adapter_stream():
+def test_stream_duration_overrun_is_rejected_after_read_returns_and_stream_closes():
     class _SlowStream:
         closed = False
 
@@ -429,7 +502,7 @@ def test_read_time_digest_mismatch_blocks_processor_dispatch():
             gate=gate,
             artifacts=_MemoryArtifacts(corrupt_after_write=True),
             processor=processor,
-        ).acquire(proposal, authorization)
+        ).acquire(proposal, authorization, "fixture-proof")
 
     assert processor.calls == []
     assert list(gate.attempts) == ["attempt-1"]

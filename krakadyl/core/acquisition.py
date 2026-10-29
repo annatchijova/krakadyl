@@ -101,6 +101,13 @@ class AttemptState(str, Enum):
     COMPLETED = "completed"
     FAILED_BEFORE_DISPATCH = "failed_before_dispatch"
     UNKNOWN_AFTER_DISPATCH = "unknown_after_dispatch"
+    RECONCILED_NOT_DISPATCHED = "reconciled_not_dispatched"
+    CLOSED_AS_UNKNOWN = "closed_as_unknown"
+
+
+class UnknownDisposition(str, Enum):
+    CONFIRMED_NOT_DISPATCHED = "confirmed_not_dispatched"
+    ACCEPTED_AS_UNKNOWN = "accepted_as_unknown"
 
 
 class EvaluationOutcome(str, Enum):
@@ -155,6 +162,8 @@ class AcquisitionNeedSnapshot(AcquisitionRecord):
     def _answer_classes_are_unique(self) -> AcquisitionNeedSnapshot:
         if len(set(self.answer_classes)) != len(self.answer_classes):
             raise ValueError("answer classes must be unique")
+        if len(set(self.hypothesis_ids)) != len(self.hypothesis_ids) or tuple(sorted(self.hypothesis_ids)) != self.hypothesis_ids:
+            raise ValueError("hypothesis IDs must be sorted and unique")
         return self
 
 
@@ -392,6 +401,40 @@ class EvidenceEvaluation(AcquisitionRecord):
         return self
 
 
+class UnknownResolution(AcquisitionRecord):
+    case_id: str = Field(min_length=1)
+    resolution_id: str = Field(min_length=1)
+    workflow_id: str = Field(min_length=1)
+    attempt_id: str = Field(min_length=1)
+    disposition: UnknownDisposition
+    actor_identity: str = Field(min_length=1)
+    rationale: str = Field(min_length=1, max_length=16_384)
+    resolved_at: datetime
+
+    @field_validator("resolved_at")
+    @classmethod
+    def _resolution_time_must_be_aware(cls, value: datetime) -> datetime:
+        if value.utcoffset() is None:
+            raise ValueError("resolution timestamp must include a timezone")
+        return value
+
+
+class AuthorizationRevocation(AcquisitionRecord):
+    case_id: str = Field(min_length=1)
+    authorization_id: str = Field(min_length=1)
+    revocation_id: str = Field(min_length=1)
+    actor_identity: str = Field(min_length=1)
+    rationale: str = Field(min_length=1, max_length=16_384)
+    revoked_at: datetime
+
+    @field_validator("revoked_at")
+    @classmethod
+    def _revocation_time_must_be_aware(cls, value: datetime) -> datetime:
+        if value.utcoffset() is None:
+            raise ValueError("revocation timestamp must include a timezone")
+        return value
+
+
 class AdapterResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
@@ -423,24 +466,61 @@ class AuthorizationGate(Protocol):
     """The implementation must make each method's database transition atomic."""
 
     def create_workflow(
-        self, proposal: AcquisitionProposal, authorization: AcquisitionAuthorization, *, now: datetime
+        self,
+        proposal: AcquisitionProposal,
+        authorization: AcquisitionAuthorization,
+        credential_proof: object,
+        *,
+        now: datetime,
     ) -> AcquisitionWorkflow: ...
 
     def begin_phase(
         self,
         workflow: AcquisitionWorkflow,
         phase: AcquisitionPhase,
-        request_reference: str,
-        request_digest: str,
+        request: AcquisitionRecord,
+        retention: RetentionDecision,
+        credential_proof: object,
         *,
         now: datetime,
     ) -> AdapterAttempt: ...
 
-    def complete_phase(self, attempt: AdapterAttempt, actual_usage: ResourceUsage, *, now: datetime) -> None: ...
+    def complete_phase(
+        self,
+        attempt: AdapterAttempt,
+        actual_usage: ResourceUsage,
+        result: AcquiredObservation | AnnotationCandidate,
+        *,
+        provider_request_id: str | None = None,
+        now: datetime,
+    ) -> AcquisitionWorkflow: ...
 
-    def mark_unknown(self, attempt: AdapterAttempt, reason: str, *, now: datetime) -> None: ...
+    def mark_unknown(
+        self,
+        attempt: AdapterAttempt,
+        reason: str,
+        *,
+        provider_request_id: str | None = None,
+        now: datetime,
+    ) -> None: ...
 
-    def fail_before_dispatch(self, workflow: AcquisitionWorkflow, reason: str, *, now: datetime) -> None: ...
+    def abort_before_phase_intent(
+        self, workflow_id: str, phase: AcquisitionPhase, reason: str, *, now: datetime
+    ) -> None: ...
+
+    def fail_attempt_before_dispatch(
+        self, workflow_id: str, phase: AcquisitionPhase, request_digest: str, reason: str, *, now: datetime
+    ) -> None: ...
+
+    def reconcile_unknown(
+        self, attempt_id: str, resolution: UnknownResolution, credential_proof: object, *, now: datetime
+    ) -> AcquisitionWorkflow: ...
+
+    def revoke_authorization(
+        self, revocation: AuthorizationRevocation, credential_proof: object, *, now: datetime
+    ) -> None: ...
+
+    def recover_interrupted_attempts(self, recovery_proof: object, *, now: datetime) -> int: ...
 
 
 class ArtifactRepository(Protocol):
@@ -467,12 +547,6 @@ class ArtifactRepository(Protocol):
     ) -> AnnotationCandidate: ...
 
     def read_verified(self, observation: AcquiredObservation) -> bytes: ...
-
-
-class RequestRepository(Protocol):
-    def put_request(
-        self, case_id: str, request: AcquisitionRecord, retention: RetentionDecision
-    ) -> str: ...
 
 
 class EvaluationSink(Protocol):
@@ -543,19 +617,21 @@ class AcquisitionOutcomeUnknown(RuntimeError):
         self.phase = phase
 
 
+class AcquisitionRecoveryRequired(RuntimeError):
+    """A durable gate transition failed and needs explicit recovery."""
+
+
 class AcquisitionCoordinator:
     def __init__(
         self,
         *,
         gate: AuthorizationGate,
-        requests: RequestRepository,
         artifacts: ArtifactRepository,
         source: EvidenceSource,
         clock: Clock,
         processor: EvidenceProcessor | None = None,
     ):
         self._gate = gate
-        self._requests = requests
         self._artifacts = artifacts
         self._source = source
         self._clock = clock
@@ -565,10 +641,13 @@ class AcquisitionCoordinator:
         self,
         proposal: AcquisitionProposal,
         authorization: AcquisitionAuthorization,
+        credential_proof: object,
     ) -> AcquisitionResult:
         if proposal.processing_plan is not None and self._processor is None:
             raise ValueError("approved processing plan has no configured processor")
-        workflow = self._gate.create_workflow(proposal, authorization, now=self._clock.now())
+        workflow = self._gate.create_workflow(
+            proposal, authorization, credential_proof, now=self._clock.now()
+        )
         proposal_digest = canonical_record_digest(proposal)
         if (
             workflow.case_id != proposal.case_id
@@ -576,7 +655,9 @@ class AcquisitionCoordinator:
             or workflow.authorization_id != authorization.authorization_id
             or workflow.actor_identity != authorization.authorizer_identity
         ):
-            raise ValueError("authorization gate returned a workflow that does not match the approved proposal")
+            raise AcquisitionRecoveryRequired(
+                "authorization gate returned a mismatched workflow; durable state must be reconciled"
+            )
 
         capture_request = SourceCaptureRequest(
             case_id=proposal.case_id,
@@ -591,9 +672,11 @@ class AcquisitionCoordinator:
             usage_ceiling=proposal.source_usage_ceiling,
         )
         capture_attempt = self._begin_phase(
-            workflow, AcquisitionPhase.SOURCE_CAPTURE, capture_request, retention=proposal.retention
+            workflow, AcquisitionPhase.SOURCE_CAPTURE, capture_request,
+            retention=proposal.retention, credential_proof=credential_proof
         )
         try:
+            response = None
             capture_started = time.monotonic()
             response = self._source.capture(capture_request, capture_attempt)
             source_bytes = self._collect_payload(
@@ -610,31 +693,38 @@ class AcquisitionCoordinator:
                 proposal.retention,
             )
             self._validate_observation(observation, workflow, proposal, capture_attempt, source_bytes)
-            self._gate.complete_phase(capture_attempt, response.usage, now=self._clock.now())
+            workflow = self._gate.complete_phase(
+                capture_attempt, response.usage, observation,
+                provider_request_id=getattr(response, "provider_request_id", None), now=self._clock.now()
+            )
         except Exception as exc:
-            self._gate.mark_unknown(capture_attempt, type(exc).__name__, now=self._clock.now())
+            self._mark_unknown(
+                capture_attempt, type(exc).__name__,
+                provider_request_id=getattr(response, "provider_request_id", None),
+            )
             raise AcquisitionOutcomeUnknown(capture_attempt.attempt_id, AcquisitionPhase.SOURCE_CAPTURE) from exc
 
         annotation: AnnotationCandidate | None = None
         if proposal.processing_plan is not None:
             plan = proposal.processing_plan
-            if plan is None:
-                raise RuntimeError("processing plan disappeared after workflow creation")
-            request = processor_request_for(plan, observation)
-            verify_processor_request(plan, observation, request)
             try:
+                request = processor_request_for(plan, observation)
+                verify_processor_request(plan, observation, request)
                 source_bytes = self._artifacts.read_verified(observation)
                 if hashlib.sha256(source_bytes).hexdigest() != observation.digest:
                     raise ValueError("artifact repository returned bytes with a mismatched digest")
             except Exception:
-                self._gate.fail_before_dispatch(
-                    workflow, "processor_input_verification_failed", now=self._clock.now()
+                self._abort_before_intent(
+                    workflow, AcquisitionPhase.PROCESSOR_DERIVATION,
+                    "processor_input_verification_failed"
                 )
                 raise
             processor_attempt = self._begin_phase(
-                workflow, AcquisitionPhase.PROCESSOR_DERIVATION, request, retention=proposal.retention
+                workflow, AcquisitionPhase.PROCESSOR_DERIVATION, request,
+                retention=proposal.retention, credential_proof=credential_proof
             )
             try:
+                response = None
                 processor_started = time.monotonic()
                 response = self._processor.process(request, source_bytes, processor_attempt)
                 annotation_bytes = self._collect_payload(
@@ -649,9 +739,15 @@ class AcquisitionCoordinator:
                     proposal.retention,
                 )
                 self._validate_annotation(annotation, processor_attempt, observation, request, annotation_bytes)
-                self._gate.complete_phase(processor_attempt, response.usage, now=self._clock.now())
+                workflow = self._gate.complete_phase(
+                    processor_attempt, response.usage, annotation,
+                    provider_request_id=getattr(response, "provider_request_id", None), now=self._clock.now()
+                )
             except Exception as exc:
-                self._gate.mark_unknown(processor_attempt, type(exc).__name__, now=self._clock.now())
+                self._mark_unknown(
+                    processor_attempt, type(exc).__name__,
+                    provider_request_id=getattr(response, "provider_request_id", None),
+                )
                 raise AcquisitionOutcomeUnknown(
                     processor_attempt.attempt_id, AcquisitionPhase.PROCESSOR_DERIVATION
                 ) from exc
@@ -665,33 +761,65 @@ class AcquisitionCoordinator:
         request: AcquisitionRecord,
         *,
         retention: RetentionDecision,
+        credential_proof: object,
     ) -> AdapterAttempt:
         request_digest = canonical_record_digest(request)
+        request_reference = f"sha256:{request_digest}"
         try:
-            request_reference = self._requests.put_request(workflow.case_id, request, retention)
-        except Exception:
-            self._gate.fail_before_dispatch(workflow, "request_persistence_failed", now=self._clock.now())
+            attempt = self._gate.begin_phase(
+                workflow, phase, request, retention, credential_proof, now=self._clock.now()
+            )
+        except Exception as exc:
+            self._abort_before_intent(workflow, phase, type(exc).__name__)
             raise
-        if request_reference != f"sha256:{request_digest}":
-            self._gate.fail_before_dispatch(workflow, "request_reference_not_content_addressed", now=self._clock.now())
-            raise ValueError("request repository must return a content-addressed canonical request reference")
-        attempt = self._gate.begin_phase(
-            workflow,
-            phase,
-            request_reference,
-            request_digest,
-            now=self._clock.now(),
-        )
-        if (
-            attempt.case_id != workflow.case_id
-            or attempt.workflow_id != workflow.workflow_id
-            or attempt.phase != phase
-            or attempt.state != AttemptState.DISPATCH_INTENT
-            or attempt.request_digest != request_digest
-            or attempt.request_reference != request_reference
-        ):
+        try:
+            matched = (
+                isinstance(attempt, AdapterAttempt)
+                and attempt.case_id == workflow.case_id
+                and attempt.workflow_id == workflow.workflow_id
+                and attempt.phase == phase
+                and attempt.state == AttemptState.DISPATCH_INTENT
+                and attempt.request_digest == request_digest
+                and attempt.request_reference == request_reference
+            )
+        except Exception:
+            matched = False
+        if not matched:
+            try:
+                self._gate.fail_attempt_before_dispatch(
+                    workflow.workflow_id, phase, request_digest,
+                    "gate_returned_mismatched_attempt", now=self._clock.now()
+                )
+            except Exception as exc:
+                raise AcquisitionRecoveryRequired(
+                    "dispatch intent may be committed but could not be safely closed"
+                ) from exc
             raise ValueError("dispatch gate did not return a matching committed dispatch attempt")
         return attempt
+
+    def _abort_before_intent(
+        self, workflow: AcquisitionWorkflow, phase: AcquisitionPhase, reason: str
+    ) -> None:
+        try:
+            self._gate.abort_before_phase_intent(
+                workflow.workflow_id, phase, reason, now=self._clock.now()
+            )
+        except Exception as exc:
+            raise AcquisitionRecoveryRequired(
+                f"{phase.value} may have durable state requiring recovery"
+            ) from exc
+
+    def _mark_unknown(
+        self, attempt: AdapterAttempt, reason: str, *, provider_request_id: str | None = None
+    ) -> None:
+        try:
+            self._gate.mark_unknown(
+                attempt, reason, provider_request_id=provider_request_id, now=self._clock.now()
+            )
+        except Exception as exc:
+            raise AcquisitionRecoveryRequired(
+                f"{attempt.phase.value} dispatch may have occurred and UNKNOWN could not be persisted"
+            ) from exc
 
     @staticmethod
     def _collect_payload(
