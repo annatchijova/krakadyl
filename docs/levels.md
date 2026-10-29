@@ -748,6 +748,8 @@ treating a mask as verified identity, custody, or causation.
 
 The acquisition boundaries and falsifiable Level 3 acceptance contract are
 defined in [level3-acquisition-contracts.md](level3-acquisition-contracts.md).
+The adversarial contract review is recorded in
+[red-team-level3-acquisition-contract.md](red-team-level3-acquisition-contract.md).
 
 ### Level 4 — Shared custody, team investigations
 
