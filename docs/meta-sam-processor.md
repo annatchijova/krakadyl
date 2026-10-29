@@ -21,10 +21,12 @@ Meta's current documentation says Standard-mode content is not used to train Met
 
 ## Verification boundary
 
-Offline adapter tests use synthetic bytes and an injected transport. The live smoke run used only a generated synthetic PNG; it does not establish retention terms, model accuracy, production authorization, budget-ledger integration, or Level 3 completion. No empty response is a negative finding about the case. No SAM output is automatically verified or promoted to evidence.
+Offline adapter tests use synthetic bytes and an injected transport. The live smoke run used only a generated synthetic PNG; it does not establish retention terms, model accuracy, production authorization, budget-ledger integration, or Level 3 completion. On 2026-10-29, one additional live run passed through `AcquisitionCoordinator` and `SQLiteAcquisitionGate` using a temporary SQLite database, injected synthetic policy implementations, and a generated 128×128 PNG (429 bytes). Meta returned a completed, non-empty annotation and a provider request ID; the gate persisted a completed workflow and attempt, linked the annotation to the observation digest, and committed 2,500 USD micros as its conservative usage bound. No evaluation was produced. This is a one-run integration observation, not a provider billing receipt or evidence of visual correctness. No empty response is a negative finding about the case. No SAM output is automatically verified or promoted to evidence.
 
 The prompt's linguistic form is not automatically proven to be a noun phrase. The exact prompt remains part of the approved request digest; reviewers must authorize its content. Provider response text and segmentation tokens remain untrusted data.
 
 ## Skills applied
 
 `software-archaeology`, `secure-by-construction`, `validate-at-the-boundary`, `data-provenance-mapping`, `resource-exhaustion-review`, `falsifiable-testing`, `secret-lifecycle-discipline`, `git-discipline`, `audit-before-patch`, `beyond-the-fix`, and `invariant-hunting`.
+
+The SQLite-backed live smoke follow-up used `destination-driven-construction`, `git-discipline`, `software-archaeology`, `secret-lifecycle-discipline`, `data-provenance-mapping`, `irreversible-action-gate`, `red-team-auditing`, `falsifiable-testing`, `surgical-patcher`, and `daubert-defensible-writing`.
