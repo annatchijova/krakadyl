@@ -516,6 +516,25 @@ def test_runtime_rejects_anonymous_observation_actor(graph_case):
     assert any("observation actor must be non-empty" in failure for failure in failures)
 
 
+def test_runtime_rejects_naive_observation_timestamps(graph_case):
+    observations, files, requirement, target = graph_case
+    naive_target = target.model_copy(update={
+        "captured_at": NOW.replace(tzinfo=None),
+        "evidence_custody": target.evidence_custody.model_copy(update={
+            "acquired_at": NOW.replace(tzinfo=None),
+        }),
+    })
+    malformed = [
+        naive_target if observation.id == target.id else observation
+        for observation in observations
+    ]
+
+    failures = validate_verification_dependencies(requirement, malformed, files)
+
+    assert any("observation captured_at must include a timezone" in failure for failure in failures)
+    assert any("custody acquired_at must include a timezone" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={

@@ -59,6 +59,13 @@ def validate_verification_dependencies(
             failures.append(f"observation source must be non-empty: '{observation.id}'")
         if not observation.actor.strip():
             failures.append(f"observation actor must be non-empty: '{observation.id}'")
+        if observation.captured_at is None or observation.captured_at.utcoffset() is None:
+            failures.append(f"observation captured_at must include a timezone: '{observation.id}'")
+        if (
+            observation.evidence_custody.acquired_at is None
+            or observation.evidence_custody.acquired_at.utcoffset() is None
+        ):
+            failures.append(f"custody acquired_at must include a timezone: '{observation.id}'")
         if observation.invalidated and not observation.invalidation_reason:
             failures.append(f"observation '{observation.id}' invalidated without a reason")
         elif not observation.invalidated and observation.invalidation_reason is not None:
