@@ -324,6 +324,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cases/{case_id}/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Team */
+        get: operations["get_team_api_cases__case_id__team_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/requirements/{requirement_id}/team-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Team Statement */
+        post: operations["post_team_statement_api_cases__case_id__requirements__requirement_id__team_records_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Handoff */
+        get: operations["get_handoff_api_cases__case_id__handoff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/handoffs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Handoff */
+        post: operations["post_handoff_api_cases__case_id__handoffs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/handoffs/{handoff_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Accept Handoff */
+        post: operations["post_accept_handoff_api_cases__case_id__handoffs__handoff_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dev/cases/{case_id}/tamper": {
         parameters: {
             query?: never;
@@ -796,6 +881,30 @@ export interface components {
             latest_prepared_action: components["schemas"]["PreparedAction"] | null;
             latest_decision: components["schemas"]["Decision"] | null;
         };
+        /**
+         * ClaimKind
+         * @enum {string}
+         */
+        ClaimKind: "acknowledged" | "reported_done" | "blocked" | "verified" | "disputed" | "resolution";
+        /** Conflict */
+        Conflict: {
+            /** Conflict Id */
+            conflict_id: string;
+            /** Requirement Id */
+            requirement_id: string;
+            kind: components["schemas"]["ConflictKind"];
+            /** Record Ids */
+            record_ids: string[];
+            /** Parties */
+            parties: string[];
+            /** Description */
+            description: string;
+        };
+        /**
+         * ConflictKind
+         * @enum {string}
+         */
+        ConflictKind: "competing_completion" | "disputed" | "evidence_mismatch" | "status_contradiction";
         /** CustodyTransfer */
         CustodyTransfer: {
             /** From Holder */
@@ -946,6 +1055,23 @@ export interface components {
             requirement_status: string | null;
             /** Independently Verified */
             independently_verified: boolean;
+            /**
+             * Team Conflict
+             * @default false
+             */
+            team_conflict: boolean;
+        };
+        /** EvidenceRef */
+        EvidenceRef: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "observation" | "acquired_observation";
+            /** Ref Id */
+            ref_id: string;
+            /** Digest */
+            digest: string;
         };
         /**
          * EvidenceRequirement
@@ -1034,6 +1160,46 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HandoffItem */
+        HandoffItem: {
+            /** Requirement Id */
+            requirement_id: string;
+            /** Summary */
+            summary: string;
+            /** Owner */
+            owner: string;
+            /**
+             * Provenance
+             * @default []
+             */
+            provenance: string[];
+            /** Minutes Left */
+            minutes_left?: number | null;
+        };
+        /** HandoffRequest */
+        HandoffRequest: {
+            /** To Actor */
+            to_actor: string;
+            /** Seen State Digest */
+            seen_state_digest: string;
+            /** Transfer Requirement Ids */
+            transfer_requirement_ids?: string[];
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /** HandoffView */
+        HandoffView: {
+            handoff: components["schemas"]["ShiftHandoff"];
+            /** Events */
+            events: components["schemas"]["ShiftEvent"][];
+            /** Pending For */
+            pending_for: {
+                [key: string]: string[];
+            };
+        };
         /**
          * Hypothesis
          * @description `status` was a plain, unvalidated string until self-red-teaming
@@ -1070,6 +1236,15 @@ export interface components {
          * @enum {string}
          */
         HypothesisStatus: "proposed" | "accepted" | "rejected";
+        /** InFlightAcquisition */
+        InFlightAcquisition: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Requirement Id */
+            requirement_id: string;
+            /** State */
+            state: string;
+        };
         /**
          * Mandate
          * @description Mandates are immutable snapshots, not mutated in place — a change
@@ -1155,6 +1330,69 @@ export interface components {
             muse_reasoning: string;
             decision: components["schemas"]["Decision"];
             prepared: components["schemas"]["PreparedAction"] | null;
+        };
+        /**
+         * NextMove
+         * @description What the invariant actually guarantees: a clear answer, never a
+         *     fabricated single priority where none is defensible.
+         *
+         *     - primary set: one defensible recommendation, ranked on
+         *       recovery-window urgency alone (KNOWN/ESTIMATED windows only —
+         *       see `conditional_watch` for what can't be time-ranked).
+         *     - primary None, uncertain True: two or more candidates share the
+         *       same most-urgent window — the honest answer is "no single
+         *       defensible priority," not an arbitrary pick.
+         *     - `conditional_watch`: open requirements whose recovery window is
+         *       CONDITIONAL or UNKNOWN — they can't be time-ranked against the
+         *       others, so instead of silently sinking to the bottom of a
+         *       priority list they stay visible here, separately.
+         *     - `blocked`: requirements with a legitimate claim on attention that
+         *       the agent currently has no authorized path for.
+         *
+         *     `dependents_count` (requirement id -> count of *distinct*
+         *     hypothesis ids) is exposed alongside the ranking, never folded into
+         *     it — see the Oct 27 correction below. **Known, tracked limitation,
+         *     not silently claimed solved**: this counts whatever hypothesis ids
+         *     are listed, not only ones a human or the policy engine has marked
+         *     "accepted" — an agent that generates many superficial hypotheses
+         *     could still inflate the number shown here, even though it can no
+         *     longer change which requirement gets picked as primary. Filtering
+         *     to accepted hypotheses needs Hypothesis objects passed in, which
+         *     this function doesn't take yet.
+         */
+        NextMove: {
+            /** Primary */
+            primary?: string | null;
+            /**
+             * Alternatives
+             * @default []
+             */
+            alternatives: string[];
+            /**
+             * Uncertain
+             * @default false
+             */
+            uncertain: boolean;
+            /**
+             * Blocked
+             * @default []
+             */
+            blocked: [
+                string,
+                string
+            ][];
+            /**
+             * Conditional Watch
+             * @default []
+             */
+            conditional_watch: string[];
+            /**
+             * Dependents Count
+             * @default {}
+             */
+            dependents_count: {
+                [key: string]: number;
+            };
         };
         /** Observation */
         Observation: {
@@ -1467,6 +1705,101 @@ export interface components {
             /** Refusal */
             refusal: string | null;
         };
+        /** ShiftEvent */
+        ShiftEvent: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Event Id */
+            event_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "handoff" | "accepted";
+            /** Actor */
+            actor: string;
+            /** To Actor */
+            to_actor?: string | null;
+            /** Handoff Id */
+            handoff_id?: string | null;
+            /** State Digest */
+            state_digest: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Transfer
+             * @default []
+             */
+            transfer: [
+                string,
+                string
+            ][];
+            /**
+             * Transferred
+             * @default []
+             */
+            transferred: string[];
+            /**
+             * Not Transferred
+             * @default []
+             */
+            not_transferred: [
+                string,
+                string
+            ][];
+            /** State Changed Since Handoff */
+            state_changed_since_handoff?: boolean | null;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+        };
+        /** ShiftHandoff */
+        ShiftHandoff: {
+            /** Case Id */
+            case_id: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** State Digest */
+            state_digest: string;
+            /** Open Conflicts */
+            open_conflicts: components["schemas"]["Conflict"][];
+            /** Urgent Unverified */
+            urgent_unverified: components["schemas"]["HandoffItem"][];
+            /** Claimed Unverified */
+            claimed_unverified: components["schemas"]["HandoffItem"][];
+            /** Not Acknowledged */
+            not_acknowledged: components["schemas"]["HandoffItem"][];
+            /** Blocked */
+            blocked: components["schemas"]["HandoffItem"][];
+            /** Uncertain Status */
+            uncertain_status: components["schemas"]["HandoffItem"][];
+            /** Acquisitions In Flight */
+            acquisitions_in_flight: components["schemas"]["InFlightAcquisition"][];
+            /** Hypotheses Needing Review */
+            hypotheses_needing_review: [
+                string,
+                string
+            ][];
+            /** Verified */
+            verified: components["schemas"]["HandoffItem"][];
+            /** Closed Unresolvable */
+            closed_unresolvable: components["schemas"]["HandoffItem"][];
+            next_move: components["schemas"]["NextMove"];
+        };
         /** StoredAcquisitionAuthorization */
         StoredAcquisitionAuthorization: {
             /** Id */
@@ -1561,6 +1894,88 @@ export interface components {
          * @enum {string}
          */
         TaskStatus: "unassigned" | "assigned" | "acknowledged" | "in_progress" | "reported_done" | "verified_done" | "blocked" | "expired" | "cancelled" | "unknown";
+        /** TeamOverview */
+        TeamOverview: {
+            /** Enabled */
+            enabled: boolean;
+            /** Operators */
+            operators: string[];
+            /** Requirements */
+            requirements: components["schemas"]["TeamRequirementView"][];
+            /** Records */
+            records: components["schemas"]["TeamRecord"][];
+        };
+        /** TeamRecord */
+        TeamRecord: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Record Id */
+            record_id: string;
+            /** Requirement Id */
+            requirement_id: string;
+            kind: components["schemas"]["ClaimKind"];
+            /** Actor */
+            actor: string;
+            /** Statement */
+            statement: string;
+            /**
+             * Evidence Refs
+             * @default []
+             */
+            evidence_refs: components["schemas"]["EvidenceRef"][];
+            /**
+             * Refers To
+             * @default []
+             */
+            refers_to: string[];
+            /** Verification Method */
+            verification_method?: string | null;
+            /** Resolves Conflict Id */
+            resolves_conflict_id?: string | null;
+            /** Decision */
+            decision?: ("keep_current_state" | "reopen_requirement") | null;
+            /** Requirement Revision Seen */
+            requirement_revision_seen: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+        };
+        /** TeamRequirementView */
+        TeamRequirementView: {
+            requirement: components["schemas"]["EvidenceRequirement"];
+            /** Requirement Revision */
+            requirement_revision: string;
+            /** Open Conflicts */
+            open_conflicts: components["schemas"]["Conflict"][];
+            /** Resolved Conflicts */
+            resolved_conflicts: components["schemas"]["Conflict"][];
+        };
+        /** TeamStatementRequest */
+        TeamStatementRequest: {
+            kind: components["schemas"]["ClaimKind"];
+            /** Statement */
+            statement: string;
+            /** Expected Requirement Revision */
+            expected_requirement_revision: string;
+            /** Evidence Refs */
+            evidence_refs?: components["schemas"]["EvidenceRef"][];
+            /** Refers To */
+            refers_to?: string[];
+            /** Verification Method */
+            verification_method?: string | null;
+            /** Resolves Conflict Id */
+            resolves_conflict_id?: string | null;
+            /** Decision */
+            decision?: string | null;
+        };
         /**
          * UnknownDisposition
          * @enum {string}
@@ -1999,7 +2414,9 @@ export interface operations {
     get_acquired_observation_api_cases__case_id__acquisitions__workflow_id__observation_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
                 workflow_id: string;
@@ -2031,7 +2448,9 @@ export interface operations {
     get_acquired_annotation_api_cases__case_id__acquisitions__workflow_id__annotation_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
                 workflow_id: string;
@@ -2174,6 +2593,177 @@ export interface operations {
             };
         };
     };
+    get_team_api_cases__case_id__team_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_team_statement_api_cases__case_id__requirements__requirement_id__team_records_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamStatementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_handoff_api_cases__case_id__handoff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_handoff_api_cases__case_id__handoffs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_accept_handoff_api_cases__case_id__handoffs__handoff_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                handoff_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dev_tamper_api_dev_cases__case_id__tamper_post: {
         parameters: {
             query?: never;
@@ -2284,7 +2874,9 @@ export interface operations {
     dev_reset_api_dev_cases__case_id__reset_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };

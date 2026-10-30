@@ -773,6 +773,17 @@ with evidence attached. Conflicting claims surface loudly, not silently.
 A shift handoff view answers "what do I need to know to pick this up"
 from recorded state — not from scrolling messages.
 
+**Status as of 2026-10-30**: implemented and red-teamed on
+`feat/level4-shared-custody` (stacked on the Level 3 branch for its
+proven operator identity) — append-only team records, four derived
+conflict kinds that make governed evidence CONFLICTING at prepare and
+execute, verification only by someone other than the claimant,
+resolution only by a non-party, and a handoff bound to the exact view
+it was made from that moves ownership but never authority. See
+[level4-shared-custody.md](level4-shared-custody.md) and
+[red-team-level4-shared-custody.md](red-team-level4-shared-custody.md).
+Not merged while Level 3's live closing run is pending.
+
 ### Level 5 — Comparable routes
 
 "What would this case allow under a different evidence or authority

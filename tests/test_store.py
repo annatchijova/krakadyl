@@ -289,7 +289,7 @@ def test_atomic_write_rolls_back_all_callback_mutations(tmp_path):
     assert store._conn.in_transaction is False
 
 
-def test_acquisition_schema_v1_migrates_additively_to_v5(tmp_path):
+def test_acquisition_schema_v1_migrates_additively_to_v6(tmp_path):
     database = tmp_path / "legacy-acquisition.db"
     connection = sqlite3.connect(database)
     connection.executescript(
@@ -325,7 +325,7 @@ def test_acquisition_schema_v1_migrates_additively_to_v5(tmp_path):
     assert "authorization_json" in columns[0]
     assert "mandate_digest" in columns[0]
     assert "result_json" in columns[1]
-    assert columns[2] == 5
+    assert columns[2] == 6
     assert columns[3] == 0
     assert columns[4] == ("workflow-v1", None)
     assert columns[5] == "attempt-v1"
