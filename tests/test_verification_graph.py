@@ -535,6 +535,25 @@ def test_runtime_rejects_naive_observation_timestamps(graph_case):
     assert any("custody acquired_at must include a timezone" in failure for failure in failures)
 
 
+def test_runtime_rejects_incomplete_custody_provenance(graph_case):
+    observations, files, requirement, target = graph_case
+    incomplete_target = target.model_copy(update={
+        "evidence_custody": target.evidence_custody.model_copy(update={
+            "acquired_by": "",
+            "acquisition_method": "",
+        }),
+    })
+    malformed = [
+        incomplete_target if observation.id == target.id else observation
+        for observation in observations
+    ]
+
+    failures = validate_verification_dependencies(requirement, malformed, files)
+
+    assert any("custody acquired_by must be non-empty" in failure for failure in failures)
+    assert any("custody acquisition_method must be non-empty" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
