@@ -702,13 +702,18 @@ def assemble_evidence_package(
     now: datetime,
     consumed_nonces: Optional[set[str]] = None,
     prev_receipt_hash: Optional[str] = None,
+    resolvable_requirement_ids: frozenset[str] = frozenset(),
+    conflicted_requirement_ids: frozenset[str] = frozenset(),
 ) -> tuple[Decision, Receipt]:
     """Convenience wrapper: prepare and execute back to back, for
     callers with no real gap between the two. `consumed_nonces` defaults
     to a fresh set per call, since one-shot callers have no replay
     concern across calls they don't share state between; pass your own
     set explicitly if you're calling this repeatedly and want replay
-    protection across those calls.
+    protection across those calls. Level 3 acquisition routes and Level 4
+    team conflicts must be passed through here as well; omitting either
+    context would let this convenience path disagree with the API's
+    full policy path.
     """
     decision, prepared = prepare_evidence_package(
         proposed_action=proposed_action,
@@ -719,6 +724,8 @@ def assemble_evidence_package(
         allowed_device=allowed_device,
         destination=destination,
         now=now,
+        resolvable_requirement_ids=resolvable_requirement_ids,
+        conflicted_requirement_ids=conflicted_requirement_ids,
     )
     if prepared is None:
         return decision, _not_executed_receipt(
@@ -740,5 +747,6 @@ def assemble_evidence_package(
         out_dir=out_dir,
         now=now,
         prev_receipt_hash=prev_receipt_hash,
+        conflicted_requirement_ids=conflicted_requirement_ids,
     )
     return decision, receipt

@@ -289,6 +289,27 @@ def test_evidence_without_independent_verification_is_forbidden(tmp_path, two_de
     assert "not independently verified" in receipt.observed_effect
 
 
+def test_assembly_wrapper_preserves_shared_custody_conflicts(tmp_path, two_device_case):
+    observations, files, requirements = two_device_case
+
+    decision, receipt = assemble_evidence_package(
+        proposed_action=_proposed_action(),
+        mandate=_mandate(),
+        observations=observations,
+        requirements=requirements,
+        observation_files=files,
+        allowed_device="device-A",
+        destination="reviewer-authorized",
+        out_dir=tmp_path / "package",
+        now=NOW,
+        conflicted_requirement_ids=frozenset({"req-a1"}),
+    )
+
+    assert decision.verdict == AuthorityVerdict.FORBIDDEN
+    assert receipt.executed is False
+    assert not (tmp_path / "package").exists()
+
+
 def test_receipt_chain_links_to_previous_hash(tmp_path, two_device_case):
     observations, files, requirements = two_device_case
     _, first_receipt = assemble_evidence_package(
