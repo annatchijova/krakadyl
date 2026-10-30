@@ -15,7 +15,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from krakadyl.core.models import EvidenceRequirement, Observation
+from krakadyl.core.models import EvidenceRequirement, Observation, TaskStatus
 from krakadyl.store import KrakadylStore
 
 
@@ -76,6 +76,16 @@ def validate_verification_dependencies(
             failures.append("invalidation reason requires invalidated=True")
     if not requirement.verification_records:
         return tuple(failures)
+
+    responsibility = requirement.responsibility
+    if responsibility.status == TaskStatus.VERIFIED_DONE:
+        if not responsibility.verified_by or not responsibility.verification_method:
+            failures.append("VERIFIED_DONE requires independent verification")
+        elif (
+            not responsibility.verification_method.startswith("tool:")
+            and responsibility.verified_by == responsibility.reported_done_by
+        ):
+            failures.append("VERIFIED_DONE requires independent verification")
 
     duplicate_verification_ids = sorted(
         verification_id

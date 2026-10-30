@@ -554,6 +554,21 @@ def test_runtime_rejects_incomplete_custody_provenance(graph_case):
     assert any("custody acquisition_method must be non-empty" in failure for failure in failures)
 
 
+def test_runtime_rejects_self_reported_structured_verification(graph_case):
+    observations, files, requirement, _ = graph_case
+    self_reported = requirement.model_copy(update={
+        "responsibility": requirement.responsibility.model_copy(update={
+            "reported_done_by": "investigator-C",
+            "verified_by": "investigator-C",
+            "verification_method": "structured-peer-review",
+        }),
+    })
+
+    failures = validate_verification_dependencies(self_reported, observations, files)
+
+    assert any("independent verification" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
