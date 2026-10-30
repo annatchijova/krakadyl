@@ -302,6 +302,20 @@ def test_runtime_rejects_target_as_its_own_verification_source(graph_case):
     assert any("target observation cannot be a verification source" in failure for failure in failures)
 
 
+def test_runtime_rejects_verification_records_without_primary_basis(graph_case):
+    observations, files, requirement, _ = graph_case
+    no_basis = requirement.model_copy(update={
+        "verification_records": tuple(
+            record.model_copy(update={"basis": ()})
+            for record in requirement.verification_records
+        ),
+    })
+
+    failures = validate_verification_dependencies(no_basis, observations, files)
+
+    assert any("verification record has no primary basis" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={

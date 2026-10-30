@@ -78,6 +78,11 @@ def validate_verification_dependencies(
             "verification records require distinct verifiers: "
             + ", ".join(duplicate_verifier_identities)
         )
+    for record in requirement.verification_records:
+        if not record.basis:
+            failures.append(
+                f"verification record has no primary basis: '{record.verification_id}'"
+            )
 
     by_id = {observation.id: observation for observation in observations}
     records_by_id = {record.verification_id: record for record in requirement.verification_records}
