@@ -15,43 +15,42 @@ requirement blocks publication.
 
 **Missing guarantee:** the system does not yet represent the complete evidence
 verification graph for every case as typed state. Structured
-`VerificationRecord`/`VerificationBasis` values now validate direct sources and
-reject directly shared primary sources, but legacy requirements still use
-`verified_against` as provenance text, and the structured graph does not yet
-model recursive verification nodes or logical invalidation events. Therefore
-the system cannot independently prove that:
+`VerificationRecord`/`VerificationBasis` values now validate direct and
+recursive sources, reject shared primary ancestry, and recheck current source
+bytes. Legacy requirements still use `verified_against` as provenance text, and
+the structured graph does not yet model first-class logical invalidation events.
+Therefore the system cannot independently prove that:
 
-- every primary source used by a verification is still valid when execution
-  happens if the source changed without a corresponding requirement update;
-- two apparently independent verifications do not share a common primary
-  ancestor;
-- invalidation propagates automatically from a source node through all
-  dependent verifications and requirements.
+- every legacy primary source used by a verification is still valid when
+  execution happens if the source changed without a corresponding requirement
+  update;
+- an external semantic invalidation event propagates automatically from a
+  source node through all dependent verifications and requirements.
 
 **Impact:** a source can become semantically invalid while the derived
-`EvidenceRequirement` bytes remain unchanged. The current revision fence cannot
-detect a change it cannot see. This is not a claim that the receipt seal is
-broken; it is a boundary of the evidence model before sealing.
+`EvidenceRequirement` bytes remain unchanged and no source record emits a
+typed invalidation. The current revision fence and byte checks cannot detect a
+change that no represented state records. This is not a claim that the receipt
+seal is broken; it is a boundary of the evidence model before sealing.
 
-**Required closure:** extend the typed, append-only graph with recursive
-source-node IDs, validity/invalidation events, and dependency edges. At
-preparation and execution, walk the full transitive closure and require current
-integrity/validity for every node. Independence must be computed from disjoint
-source ancestry, not inferred from different human names. A source invalidation
-must atomically mark dependent verifications and requirements stale or make
-execution abstain until reevaluation.
+**Required closure:** extend the typed, append-only graph with source validity
+and invalidation events. At preparation and execution, walk the full transitive
+closure and require current validity for every node. Independence must be
+computed from disjoint source ancestry, not inferred from different human
+names. A source invalidation must atomically mark dependent verifications and
+requirements stale or make execution abstain until reevaluation.
 
 **Adversarial acceptance cases:**
 
 1. Two investigators verify a target using the same primary source; the graph
    rejects the pair as not independently corroborating. **Implemented for
-   structured direct sources.**
+   structured direct and recursive sources.**
 2. Two investigators verify a target using disjoint valid primary sources; the
    graph accepts the independence claim. **Implemented for structured direct
-   sources.**
+   and recursive sources.**
 3. Prepare with valid sources, invalidate one primary source without editing the
    derived requirement, then execute; publication is refused. **Implemented for
-   structured direct sources.**
+   structured sources when invalidation changes observable source bytes.**
 4. Change only a derived requirement; the existing revision fence still refuses
    execution. **Implemented.**
 

@@ -248,6 +248,7 @@ class VerificationRecord(BaseModel):
     verifier_identity: str = Field(min_length=1)
     target_observation_id: str = Field(min_length=1)
     basis: tuple[VerificationBasis, ...] = Field(min_length=1)
+    parent_verification_ids: tuple[str, ...] = ()
     method: str = Field(min_length=1, max_length=256)
     recorded_at: datetime
 
@@ -258,6 +259,10 @@ class VerificationRecord(BaseModel):
         ids = [item.observation_id for item in self.basis]
         if len(set(ids)) != len(ids):
             raise ValueError("verification basis observations must be unique")
+        if self.verification_id in self.parent_verification_ids:
+            raise ValueError("a verification cannot depend on itself")
+        if len(set(self.parent_verification_ids)) != len(self.parent_verification_ids):
+            raise ValueError("parent verification IDs must be unique")
         return self
 
 
@@ -387,14 +392,39 @@ class EvidenceRequirement(BaseModel):
             raise ValueError("structured verification records require an observation_id")
         if len({record.verification_id for record in self.verification_records}) != len(self.verification_records):
             raise ValueError("verification record IDs must be unique")
+        records_by_id = {record.verification_id: record for record in self.verification_records}
+        for record in self.verification_records:
+            if any(parent not in records_by_id for parent in record.parent_verification_ids):
+                raise ValueError("verification record references an unknown parent")
         if len({record.verifier_identity for record in self.verification_records}) != len(self.verification_records):
             raise ValueError("independent verification records require distinct verifiers")
+        referenced_ids = {
+            parent
+            for record in self.verification_records
+            for parent in record.parent_verification_ids
+        }
+        roots = [record for record in self.verification_records if record.verification_id not in referenced_ids]
+        if not roots or any(record.target_observation_id != self.observation_id for record in roots):
+            raise ValueError("verification graph root targets a different observation")
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(record_id: str) -> None:
+            if record_id in visiting:
+                raise ValueError("verification dependency graph contains a cycle")
+            if record_id in visited:
+                return
+            visiting.add(record_id)
+            for parent in records_by_id[record_id].parent_verification_ids:
+                visit(parent)
+            visiting.remove(record_id)
+            visited.add(record_id)
+
         for record in self.verification_records:
-            if record.target_observation_id != self.observation_id:
-                raise ValueError("verification record targets a different observation")
-        for index, first in enumerate(self.verification_records):
+            visit(record.verification_id)
+        for index, first in enumerate(roots):
             first_sources = {item.observation_id for item in first.basis}
-            for second in self.verification_records[index + 1:]:
+            for second in roots[index + 1:]:
                 shared = first_sources.intersection(item.observation_id for item in second.basis)
                 if shared:
                     raise ValueError(

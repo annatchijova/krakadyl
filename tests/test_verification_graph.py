@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 
 from krakadyl.core.executor import execute_prepared_action, prepare_evidence_package, sha256_file
+from krakadyl.core.verification import validate_verification_dependencies
 from krakadyl.core.models import (
     AuthorityVerdict,
     EvidenceRequirement,
@@ -147,3 +148,48 @@ def test_invalidated_primary_source_blocks_execution_without_requirement_update(
     assert receipt.executed is False
     assert "verification dependency graph invalid" in receipt.observed_effect
     assert not (tmp_path / "package" / "manifest.json").exists()
+
+
+def test_recursive_shared_primary_source_is_not_independent(graph_case):
+    observations, files, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    primary_two = next(item for item in observations if item.id == "obs-primary-2")
+    recursive = requirement.model_copy(update={
+        "verification_records": (
+            VerificationRecord(
+                verification_id="parent-check",
+                verifier_identity="investigator-B",
+                target_observation_id=primary_one.id,
+                basis=(VerificationBasis(
+                    observation_id=primary_two.id, observation_digest=primary_two.digest,
+                ),),
+                method="check source one against source two",
+                recorded_at=NOW,
+            ),
+            VerificationRecord(
+                verification_id="root-one",
+                verifier_identity="investigator-C",
+                target_observation_id=target.id,
+                basis=(VerificationBasis(
+                    observation_id=primary_one.id, observation_digest=primary_one.digest,
+                ),),
+                parent_verification_ids=("parent-check",),
+                method="review target through source one",
+                recorded_at=NOW,
+            ),
+            VerificationRecord(
+                verification_id="root-two",
+                verifier_identity="investigator-D",
+                target_observation_id=target.id,
+                basis=(VerificationBasis(
+                    observation_id=primary_two.id, observation_digest=primary_two.digest,
+                ),),
+                method="review target through source two",
+                recorded_at=NOW,
+            ),
+        ),
+    })
+
+    failures = validate_verification_dependencies(recursive, observations, files)
+
+    assert any("share primary source" in failure for failure in failures)

@@ -36,9 +36,27 @@ def validate_verification_dependencies(
         return ()
 
     by_id = {observation.id: observation for observation in observations}
+    records_by_id = {record.verification_id: record for record in requirement.verification_records}
     failures: list[str] = []
-    for record in requirement.verification_records:
+    checked_sources: set[tuple[str, str]] = set()
+    active: set[str] = set()
+
+    def closure(record_id: str) -> set[str]:
+        if record_id in active:
+            failures.append(f"verification dependency cycle at '{record_id}'")
+            return set()
+        record = records_by_id.get(record_id)
+        if record is None:
+            failures.append(f"verification parent '{record_id}' is absent")
+            return set()
+        active.add(record_id)
+        sources: set[str] = set()
         for basis in record.basis:
+            sources.add(basis.observation_id)
+            marker = (basis.observation_id, basis.observation_digest)
+            if marker in checked_sources:
+                continue
+            checked_sources.add(marker)
             observation = by_id.get(basis.observation_id)
             if observation is None:
                 failures.append(f"verification source '{basis.observation_id}' is absent")
@@ -48,4 +66,24 @@ def validate_verification_dependencies(
                 continue
             if not _file_matches(observation, observation_files.get(observation.id, Path("/nonexistent"))):
                 failures.append(f"verification source '{basis.observation_id}' failed integrity")
+        for parent_id in record.parent_verification_ids:
+            sources.update(closure(parent_id))
+        active.remove(record_id)
+        return sources
+
+    referenced_ids = {
+        parent
+        for record in requirement.verification_records
+        for parent in record.parent_verification_ids
+    }
+    roots = [record for record in requirement.verification_records if record.verification_id not in referenced_ids]
+    root_sources = [closure(record.verification_id) for record in roots]
+    for index, first in enumerate(root_sources):
+        for second in root_sources[index + 1:]:
+            shared = first.intersection(second)
+            if shared:
+                failures.append(
+                    "independent verification roots share primary source(s): "
+                    + ", ".join(sorted(shared))
+                )
     return tuple(dict.fromkeys(failures))
