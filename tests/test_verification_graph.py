@@ -59,6 +59,7 @@ def _requirement(target, first_source, second_source):
                 verification_id="verification-one",
                 verifier_identity="investigator-C",
                 target_observation_id=target.id,
+                target_observation_digest=target.digest,
                 basis=(VerificationBasis(
                     observation_id=first_source.id,
                     observation_digest=first_source.digest,
@@ -70,6 +71,7 @@ def _requirement(target, first_source, second_source):
                 verification_id="verification-two",
                 verifier_identity="investigator-D",
                 target_observation_id=target.id,
+                target_observation_digest=target.digest,
                 basis=(VerificationBasis(
                     observation_id=second_source.id,
                     observation_digest=second_source.digest,
@@ -267,6 +269,7 @@ def test_verification_record_target_integrity_is_rechecked(graph_case):
                 verification_id="parent-check",
                 verifier_identity="investigator-B",
                 target_observation_id=primary_one.id,
+                target_observation_digest=primary_one.digest,
                 basis=(VerificationBasis(
                     observation_id=primary_two.id, observation_digest=primary_two.digest,
                 ),),
@@ -277,6 +280,7 @@ def test_verification_record_target_integrity_is_rechecked(graph_case):
                 verification_id="root-check",
                 verifier_identity="investigator-C",
                 target_observation_id=target.id,
+                target_observation_digest=target.digest,
                 basis=(VerificationBasis(
                     observation_id=primary_two.id, observation_digest=primary_two.digest,
                 ),),
@@ -293,7 +297,7 @@ def test_verification_record_target_integrity_is_rechecked(graph_case):
     assert any("verification target 'obs-primary-1' failed integrity" in failure for failure in failures)
 
 
-def test_verification_target_digest_must_match_custody_digest(graph_case):
+def test_verification_target_digest_drift_is_rejected(graph_case):
     observations, files, requirement, target = graph_case
     drifted_target = target.model_copy(update={"digest": "f" * 64})
     drifted_observations = [
@@ -303,7 +307,28 @@ def test_verification_target_digest_must_match_custody_digest(graph_case):
 
     failures = validate_verification_dependencies(requirement, drifted_observations, files)
 
-    assert any("verification target 'obs-target' failed integrity" in failure for failure in failures)
+    assert any("verification target 'obs-target' digest changed since verification" in failure for failure in failures)
+
+
+def test_verification_target_digest_is_bound_at_verification_time(graph_case):
+    observations, files, requirement, target = graph_case
+    replacement = b"target bytes replaced after verification"
+    files[target.id].write_bytes(replacement)
+    replacement_digest = sha256_file(files[target.id])
+    drifted_target = target.model_copy(update={
+        "digest": replacement_digest,
+        "evidence_custody": target.evidence_custody.model_copy(update={
+            "integrity_digest": replacement_digest,
+        }),
+    })
+    drifted_observations = [
+        drifted_target if observation.id == target.id else observation
+        for observation in observations
+    ]
+
+    failures = validate_verification_dependencies(requirement, drifted_observations, files)
+
+    assert any("verification target 'obs-target' digest changed since verification" in failure for failure in failures)
 
 
 @pytest.fixture

@@ -257,6 +257,9 @@ class VerificationRecord(BaseModel):
     verification_id: str = Field(min_length=1)
     verifier_identity: str = Field(min_length=1)
     target_observation_id: str = Field(min_length=1)
+    # Optional for deserializing pre-binding records; execution must reject
+    # structured records that do not carry this historical target snapshot.
+    target_observation_digest: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     basis: tuple[VerificationBasis, ...] = Field(min_length=1)
     parent_verification_ids: tuple[str, ...] = ()
     method: str = Field(min_length=1, max_length=256)

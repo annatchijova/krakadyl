@@ -57,6 +57,10 @@ def validate_verification_dependencies(
             failures.append(
                 f"verification target '{target.id}' is invalidated: {target.invalidation_reason}"
             )
+        elif record.target_observation_digest is None:
+            failures.append(f"verification target '{target.id}' has no digest snapshot")
+        elif target.digest != record.target_observation_digest:
+            failures.append(f"verification target '{target.id}' digest changed since verification")
         elif not _file_matches(target, observation_files.get(target.id, Path("/nonexistent"))):
             failures.append(f"verification target '{target.id}' failed integrity")
 
