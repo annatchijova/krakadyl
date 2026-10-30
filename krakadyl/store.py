@@ -158,6 +158,21 @@ BEFORE UPDATE ON shift_events
 BEGIN
     SELECT RAISE(ABORT, 'shift events are append-only');
 END;
+CREATE TABLE IF NOT EXISTS counterfactuals (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    counterfactual_id TEXT NOT NULL UNIQUE,
+    case_id TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    counterfactual_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+-- Level 5: hypotheticals live here and only here — never in `objects`,
+-- which is what every real decision reads.
+CREATE TRIGGER IF NOT EXISTS counterfactuals_append_only
+BEFORE UPDATE ON counterfactuals
+BEGIN
+    SELECT RAISE(ABORT, 'counterfactuals are append-only');
+END;
 CREATE TABLE IF NOT EXISTS acquisition_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     case_id TEXT NOT NULL,
@@ -190,7 +205,7 @@ class KrakadylStore:
             schema_version = self._conn.execute(
                 "SELECT version FROM acquisition_schema_meta WHERE singleton=1"
             ).fetchone()
-            if schema_version is None or schema_version[0] not in (1, 2, 3, 4, 5, 6):
+            if schema_version is None or schema_version[0] not in (1, 2, 3, 4, 5, 6, 7):
                 raise RuntimeError("unsupported SQLite acquisition schema version")
             if schema_version[0] < 3:
                 workflow_columns = {
@@ -215,12 +230,13 @@ class KrakadylStore:
             self._conn.execute(
                 "INSERT OR IGNORE INTO acquisition_gate_state (singleton, dispatch_generation) VALUES (1, 0)"
             )
-            if schema_version[0] < 6:
-                # v5 added acquisition_evaluations and v6 team_records and
-                # shift_events (with their append-only triggers), both created above by
+            if schema_version[0] < 7:
+                # v5 added acquisition_evaluations, v6 team_records and
+                # shift_events, v7 counterfactuals (the last three with
+                # append-only triggers), all created above by
                 # CREATE ... IF NOT EXISTS; no existing row changes.
                 self._conn.execute(
-                    "UPDATE acquisition_schema_meta SET version=6 WHERE singleton=1"
+                    "UPDATE acquisition_schema_meta SET version=7 WHERE singleton=1"
                 )
             self._conn.commit()
         except BaseException:
@@ -340,6 +356,7 @@ class KrakadylStore:
             self._conn.execute("DELETE FROM acquisition_events WHERE case_id=?", (case_id,))
             self._conn.execute("DELETE FROM team_records WHERE case_id=?", (case_id,))
             self._conn.execute("DELETE FROM shift_events WHERE case_id=?", (case_id,))
+            self._conn.execute("DELETE FROM counterfactuals WHERE case_id=?", (case_id,))
             self._conn.execute("DELETE FROM acquisition_revocations WHERE case_id=?", (case_id,))
             self._conn.execute("DELETE FROM acquisition_workflows WHERE case_id=?", (case_id,))
 
