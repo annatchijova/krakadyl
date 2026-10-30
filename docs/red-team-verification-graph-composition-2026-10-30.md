@@ -148,6 +148,24 @@ and byte integrity; `test_verification_target_digest_drift_is_rejected`
 covers metadata divergence; `test_verification_target_digest_is_bound_at_verification_time`
 covers a coherent replacement of both bytes and custody metadata.
 
+### RT-VERIFY-09 — Distinct observation IDs could duplicate one primary source
+
+**Observation:** root independence was compared by `observation_id`, so two
+records could use different IDs for observations carrying the same source
+identity and still be counted as independent roots.
+
+**Induction:** a duplicate observation with a new ID, the same `source`, the
+same digest, and the same underlying file passed the old validator. The
+validator now carries source identities through recursive closure and rejects
+roots that share one, while retaining the existing ID-level check. Equal
+digests from distinct source identities remain a negative control and are
+accepted.
+
+**Status:** fixed by `a8e42fa`; regressions
+`test_distinct_ids_for_the_same_primary_source_are_not_independent` and
+`test_same_digest_from_distinct_primary_sources_can_remain_independent` cover
+the adversarial case and its bounded negative control.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -171,8 +189,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced fourteen passing tests after the
-target-snapshot fix. The full locked suite produced **391 passed**. The live Meta
+The focused verification graph suite produced sixteen passing tests after the
+source-identity fix. The full locked suite produced **393 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -194,6 +212,9 @@ lack typed dependency closure and remain `WARN`. Structured verification records
 created before target-digest binding may deserialize with a missing snapshot,
 but validation rejects them until they are rebuilt with the historical target
 digest; this is deliberate honest degradation rather than an inferred value.
+Source identity is currently the canonical `Observation.source` string; aliases
+that refer to one external source under different names remain outside this
+check and must be normalized at acquisition.
 
 ## Claim audit
 
@@ -201,8 +222,9 @@ digest; this is deliberate honest degradation rather than an inferred value.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Fourteen graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Sixteen graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
+| Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
