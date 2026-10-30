@@ -65,7 +65,7 @@ from krakadyl.acquisition_runtime import (  # noqa: E402
     OperatorCredentials,
     hash_token,
 )
-from krakadyl.adapters.sam import IMAGE_PRICE_USD_MICROS, MetaSamProcessor  # noqa: E402
+from krakadyl.adapters.sam import IMAGE_PRICE_USD_MICROS, MetaSamProcessor, SamAdapterError  # noqa: E402
 from krakadyl.adapters.sam_annotation import parse_sam_annotation  # noqa: E402
 from krakadyl.api.seed import CAPTURE_MANDATE_ID, CASE_ID, CLOCK_REQUIREMENT_ID, ensure_seeded  # noqa: E402
 from krakadyl.core.acquisition import (  # noqa: E402
@@ -200,6 +200,22 @@ def _one_run(name, image, sam_prompt, runtime, store, tokens, out_dir, report, s
     entry = {"run": name, "sam_prompt": sam_prompt, "requirement_before": before.model_dump(mode="json")}
     try:
         result = runtime.acquire(proposal, grant, tokens[ACTOR], image)
+    except SamAdapterError as exc:
+        if getattr(exc, "dispatch_started", True) is not False:
+            raise
+        history = acquisition_history(store, CASE_ID)
+        current = history[-1] if history else None
+        attempt_state = current.attempts[-1].state if current and current.attempts else "unknown"
+        entry.update({
+            "outcome": "FAILED BEFORE DISPATCH — not retried",
+            "failure_type": type(exc).__name__,
+            "failure_reason": str(exc),
+            "workflow_id": current.workflow.workflow_id if current else None,
+            "attempt_state": attempt_state,
+        })
+        report["runs"].append(entry)
+        print(f"  {entry['outcome']} ({entry['failure_reason']}). Stopping without another call.")
+        return False
     except AcquisitionOutcomeUnknown as exc:
         entry["outcome"] = f"UNKNOWN after dispatch ({exc.phase.value}, attempt {exc.attempt_id}) — not retried"
         report["runs"].append(entry)
@@ -307,6 +323,10 @@ def main() -> int:
             if still_open:
                 _one_run("run-B-adversarial", seven_segment_clock_png(), "digital clock",
                          runtime, store, tokens, out_dir, report, args.scripted_outcome)
+            elif report["runs"] and report["runs"][-1].get("outcome", "").startswith(
+                ("UNKNOWN", "FAILED BEFORE DISPATCH")
+            ):
+                print("\nRun A did not settle; run B was not dispatched (no further spend).")
             else:
                 print("\nRun A resolved the requirement, so run B was not dispatched (no further spend).")
         finally:

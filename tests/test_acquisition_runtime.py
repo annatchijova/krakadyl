@@ -22,7 +22,7 @@ from krakadyl.acquisition_runtime import (
     hash_token,
     runtime_from_environment,
 )
-from krakadyl.adapters.sam import MetaSamProcessor
+from krakadyl.adapters.sam import MetaSamProcessor, SamAdapterError
 from krakadyl.core.acquisition import AcquisitionOutcomeUnknown, EvaluationOutcome, requirement_revision_digest
 from krakadyl.core.continuity import evidence_state_from_requirement, find_urgent_discrepancies
 from krakadyl.core.evaluation import (
@@ -288,6 +288,25 @@ def test_unknown_outcome_blocks_evaluation_abstention_and_new_acquisition(env):
     with pytest.raises(ValueError, match="active acquisition"):
         _acquire(store, runtime)
     assert sam.calls == 1
+
+
+def test_pre_dispatch_transport_failure_releases_workflow_without_unknown_lock(env):
+    store, runtime, _, _ = env
+
+    def transport(*args):
+        raise SamAdapterError("Meta SAM DNS resolution failed", dispatch_started=False)
+
+    runtime.sam_processor = MetaSamProcessor(api_key="test-key", transport=transport)
+    proposal = _proposal(store, runtime)
+    authorization = runtime.authorize(proposal, TOKENS["investigator-A"], NOW)
+
+    with pytest.raises(SamAdapterError, match="DNS resolution"):
+        runtime.acquire(proposal, authorization, TOKENS["investigator-A"], PNG)
+
+    history = acquisition_history(store, CASE)
+    assert history[0].state == "failed"
+    assert history[0].workflow.unknown is False
+    assert history[0].attempts[-1].state == "failed_before_dispatch"
 
 
 def test_unknown_token_cannot_authorize(env):

@@ -9,6 +9,7 @@ import pytest
 from krakadyl.adapters.sam import (
     MetaSamProcessor,
     SamAdapterError,
+    _default_transport,
     _call_with_absolute_deadline,
     _read_bounded_body,
 )
@@ -173,6 +174,22 @@ def test_sam_dispatch_error_keeps_provider_request_id_without_exposing_response_
 
     assert captured.value.provider_request_id == "req-rate-limit"
     assert "sensitive provider body" not in str(captured.value)
+
+
+def test_sam_dns_failure_is_explicitly_pre_dispatch(monkeypatch):
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+
+    def fail_dns(*args, **kwargs):
+        raise socket.gaierror(-2, "Name or service not known")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fail_dns)
+
+    with pytest.raises(SamAdapterError) as captured:
+        _default_transport("https://api.meta.ai/v1/responses", {}, b"{}", 1)
+
+    assert captured.value.dispatch_started is False
+    assert captured.value.provider_request_id is None
 
 
 def test_sam_processor_completes_coordinator_as_untrusted_annotation_only():

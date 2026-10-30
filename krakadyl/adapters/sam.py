@@ -6,11 +6,13 @@ import base64
 import hashlib
 import http.client
 import json
+import os
 import threading
 import time
 from collections.abc import Callable
 from io import BytesIO
 import socket
+from urllib.parse import urlsplit
 
 from krakadyl.core.acquisition import (
     AcquisitionPhase,
@@ -36,9 +38,29 @@ Transport = Callable[[str, dict[str, str], bytes, float], tuple[int, dict[str, s
 
 
 class SamAdapterError(RuntimeError):
-    def __init__(self, message: str, *, provider_request_id: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider_request_id: str | None = None,
+        dispatch_started: bool = True,
+    ):
         super().__init__(message)
         self.provider_request_id = provider_request_id
+        self.dispatch_started = dispatch_started
+
+
+def _proxy_from_environment() -> tuple[str, int] | None:
+    value = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    if not value:
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password:
+        raise SamAdapterError(
+            "HTTPS_PROXY must be an unauthenticated http:// proxy URL",
+            dispatch_started=False,
+        )
+    return parsed.hostname, parsed.port or 8080
 
 
 def _default_transport(
@@ -46,7 +68,14 @@ def _default_transport(
 ) -> tuple[int, dict[str, str], bytes]:
     if url != API_URL:
         raise SamAdapterError("Meta SAM transport rejected a non-fixed endpoint")
-    connection = http.client.HTTPSConnection("api.meta.ai", timeout=timeout)
+    proxy = _proxy_from_environment()
+    connection = http.client.HTTPSConnection(
+        proxy[0] if proxy else "api.meta.ai",
+        proxy[1] if proxy else 443,
+        timeout=timeout,
+    )
+    if proxy:
+        connection.set_tunnel("api.meta.ai", 443)
     deadline = time.monotonic() + timeout
     response_headers: dict[str, str] = {}
     request_id: str | None = None
@@ -100,17 +129,29 @@ def _default_transport(
             provider_request_id=request_id,
         )
         return response.status, response_headers, response_body
-    except SamAdapterError:
-        raise
+    except SamAdapterError as exc:
+        raise SamAdapterError(
+            str(exc),
+            provider_request_id=exc.provider_request_id or request_id,
+            dispatch_started=exc.dispatch_started,
+        ) from exc
+    except socket.gaierror as exc:
+        raise SamAdapterError(
+            "Meta SAM DNS resolution failed",
+            provider_request_id=request_id,
+            dispatch_started=False,
+        ) from exc
     except (socket.timeout, TimeoutError) as exc:
         raise SamAdapterError(
             "Meta SAM request exceeded its absolute duration limit",
             provider_request_id=request_id,
+            dispatch_started=True,
         ) from exc
     except (OSError, http.client.HTTPException) as exc:
         raise SamAdapterError(
             f"Meta SAM transport failed ({type(exc).__name__})",
             provider_request_id=request_id,
+            dispatch_started=True,
         ) from exc
     finally:
         connection.close()

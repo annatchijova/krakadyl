@@ -724,6 +724,10 @@ class AcquisitionCoordinator:
                 provider_request_id=getattr(response, "provider_request_id", None), now=self._clock.now()
             )
         except Exception as exc:
+            if self._fail_before_dispatch(
+                workflow, capture_attempt, capture_request, exc
+            ):
+                raise
             self._mark_unknown(
                 capture_attempt, type(exc).__name__,
                 provider_request_id=(
@@ -784,6 +788,10 @@ class AcquisitionCoordinator:
                     provider_request_id=getattr(response, "provider_request_id", None), now=self._clock.now()
                 )
             except Exception as exc:
+                if self._fail_before_dispatch(
+                    workflow, processor_attempt, request, exc
+                ):
+                    raise
                 self._mark_unknown(
                     processor_attempt, type(exc).__name__,
                     provider_request_id=(
@@ -796,6 +804,29 @@ class AcquisitionCoordinator:
                 ) from exc
 
         return AcquisitionResult(workflow=workflow, observation=observation, annotation=annotation)
+
+    def _fail_before_dispatch(
+        self,
+        workflow: AcquisitionWorkflow,
+        attempt: AdapterAttempt,
+        request: AcquisitionRecord,
+        error: Exception,
+    ) -> bool:
+        if getattr(error, "dispatch_started", True) is not False:
+            return False
+        try:
+            self._gate.fail_attempt_before_dispatch(
+                workflow.workflow_id,
+                attempt.phase,
+                canonical_record_digest(request),
+                type(error).__name__,
+                now=self._clock.now(),
+            )
+        except Exception as exc:
+            raise AcquisitionRecoveryRequired(
+                "pre-dispatch failure could not be durably closed"
+            ) from exc
+        return True
 
     def _begin_phase(
         self,
