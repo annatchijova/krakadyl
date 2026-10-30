@@ -108,6 +108,44 @@ The first item requires deciding the identity provider, read scopes, token
 lifecycle, and frontend session behavior. The current API deliberately fails
 closed when no operator verifier is configured.
 
+## Integrated invariant round — authentication before resource lookup
+
+### RT-AUTH-01 — protected POST routes disclosed case existence before auth
+
+**Severity:** Low–medium information disclosure  **Epistemic level:**
+**CONFIRMED BY INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** an unauthenticated request must not learn whether a case exists;
+authentication must precede every case lookup on a protected route.
+
+**Abduction:** the read endpoints and `execute` authenticated before checking
+the case, but several other protected POST handlers called `_case_or_404`
+first. If true, an anonymous request would receive different status codes for
+an existing and nonexistent case.
+
+**Deduction:** call `prepare`, `propose_with_muse`, `analyze_note`, and
+`recover` directly with no authorization against `case-001` and
+`does-not-exist`; predict `(401, 404)` before the fix.
+
+**Induction:** the live code produced `(401, 404)` for all four handlers at
+commit `872354a`. After moving `_operator` before `_case_or_404`, the same
+experiment produced `(401, 401)` for all four. The regression test is
+`tests/test_api.py::test_anonymous_actions_do_not_reveal_case_existence`.
+
+**Causal chain:**
+
+```text
+anonymous POST /api/cases/{id}/actions/*
+    -> _case_or_404(id)
+    -> 404 for unknown id, continue for known id
+    -> _operator(authorization)
+    -> 401
+```
+
+The corrected chain authenticates before resolving the case. The same ordering
+was applied to the Level 3 acquisition, Level 4 team/handoff, and Level 5
+counterfactual write routes as a variant sweep.
+
 ## Refuted vectors
 
 - SQL injection was **FALSIFIED** by tracing the live query sites: external

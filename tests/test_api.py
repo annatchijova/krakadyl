@@ -69,6 +69,20 @@ def test_case_metadata_surface_requires_a_bearer_operator(client, path):
     assert response.status_code == 401
 
 
+@pytest.mark.parametrize("path, payload", [
+    ("/api/cases/{case_id}/actions/prepare", {}),
+    ("/api/cases/{case_id}/actions/propose-with-muse", {}),
+    ("/api/cases/{case_id}/analyze-note", {"note_text": "x"}),
+    ("/api/cases/{case_id}/actions/recover", {}),
+])
+def test_anonymous_actions_do_not_reveal_case_existence(client, path, payload):
+    headers = {"Authorization": ""}
+    existing = client.post(path.format(case_id="case-001"), headers=headers, json=payload)
+    missing = client.post(path.format(case_id="does-not-exist"), headers=headers, json=payload)
+    assert existing.status_code == 401
+    assert missing.status_code == 401
+
+
 def test_bearer_identity_is_sufficient_without_a_principal_body(client):
     response = client.post("/api/cases/case-001/actions/prepare", json={})
     assert response.status_code == 200

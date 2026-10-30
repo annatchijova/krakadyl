@@ -482,6 +482,7 @@ def get_prepared(
 def prepare(
     case_id: str, body: PrepareRequest, authorization: Optional[str] = Header(default=None),
 ) -> PrepareResponse:
+    _operator(authorization)
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
     _authenticated_principal(mandate, body.principal, authorization)
@@ -534,6 +535,7 @@ def propose_with_muse(
     mandate and principal are reloaded after the call so revocation or
     reassignment during the wait cannot produce a stale ALLOWED result.
     """
+    _operator(authorization)
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
     _authenticated_principal(mandate, body.principal, authorization)
@@ -609,6 +611,7 @@ def analyze_note(
     the optional `laya` dependency isn't available — an absent optional
     component degrades this one feature, not the rest of the case.
     """
+    _operator(authorization)
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
     _authenticated_principal(mandate, body.principal, authorization)
@@ -706,6 +709,7 @@ def execute(
 def recover(
     case_id: str, body: RecoverRequest, authorization: Optional[str] = Header(default=None),
 ) -> RecoverResponse:
+    _operator(authorization)
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
     _authenticated_principal(mandate, body.principal, authorization)
@@ -937,8 +941,8 @@ def propose_acquisition(
     case_id: str, requirement_id: str, body: ProposeAcquisitionRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> StoredAcquisitionProposal:
-    _case_or_404(case_id)
     identity, _ = _operator(authorization)
+    _case_or_404(case_id)
     runtime = _require_acquisition()
     requirement = _requirement_or_404(case_id, requirement_id)
     try:
@@ -977,8 +981,8 @@ def propose_acquisition(
 def authorize_acquisition(
     case_id: str, proposal_id: str, authorization: Optional[str] = Header(default=None),
 ) -> StoredAcquisitionAuthorization:
-    _case_or_404(case_id)
     identity, token = _operator(authorization)
+    _case_or_404(case_id)
     stored = store.get(case_id, "acquisition_proposal", proposal_id, StoredAcquisitionProposal)
     if stored is None:
         raise HTTPException(404, "no such acquisition proposal")
@@ -1016,8 +1020,8 @@ async def capture_acquisition(
     """The request body is the operator's photograph (image/png or
     image/jpeg). It is held in memory until the gate admits the
     workflow; nothing is written if admission fails."""
-    _case_or_404(case_id)
     identity, token = _operator(authorization)
+    _case_or_404(case_id)
     runtime = _require_acquisition()
     record = store.get(case_id, "acquisition_authorization", authorization_id, StoredAcquisitionAuthorization)
     if record is None:
@@ -1114,8 +1118,8 @@ def evaluate_acquisition(
     case_id: str, workflow_id: str, body: EvaluateRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> AcquisitionRecordView:
-    _case_or_404(case_id)
     identity, _ = _operator(authorization)
+    _case_or_404(case_id)
     try:
         record_evaluation(
             store, case_id=case_id, workflow_id=workflow_id,
@@ -1135,8 +1139,8 @@ def abstain(
     case_id: str, requirement_id: str, body: AbstainRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> EvidenceRequirement:
-    _case_or_404(case_id)
     identity, _ = _operator(authorization)
+    _case_or_404(case_id)
     _requirement_or_404(case_id, requirement_id)
     try:
         return abstain_requirement(
@@ -1153,8 +1157,8 @@ def reconcile_attempt(
     case_id: str, attempt_id: str, body: ReconcileRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> AcquisitionRecordView:
-    _case_or_404(case_id)
     identity, token = _operator(authorization)
+    _case_or_404(case_id)
     runtime = _require_acquisition()
     owner = next(
         (h for h in acquisition_history(store, case_id) if any(a.attempt.attempt_id == attempt_id for a in h.attempts)),
@@ -1316,8 +1320,8 @@ def post_team_statement(
     case_id: str, requirement_id: str, body: TeamStatementRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> TeamOverview:
-    _case_or_404(case_id)
     identity, _ = _operator(authorization)
+    _case_or_404(case_id)
     _requirement_or_404(case_id, requirement_id)
     try:
         record_team_statement(
@@ -1353,8 +1357,8 @@ def get_handoff(case_id: str, authorization: Optional[str] = Header(default=None
 def post_handoff(
     case_id: str, body: HandoffRequest, authorization: Optional[str] = Header(default=None),
 ) -> HandoffView:
-    _case_or_404(case_id)
     identity, _ = _operator(authorization)
+    _case_or_404(case_id)
     try:
         record_handoff(
             store, case_id=case_id, from_actor=identity, to_actor=body.to_actor,
@@ -1371,8 +1375,8 @@ def post_handoff(
 def post_accept_handoff(
     case_id: str, handoff_id: str, authorization: Optional[str] = Header(default=None),
 ) -> HandoffView:
-    _case_or_404(case_id)
     identity, _ = _operator(authorization)
+    _case_or_404(case_id)
     try:
         accept_handoff(
             store, case_id=case_id, handoff_id=handoff_id, actor=identity,
@@ -1434,8 +1438,8 @@ def get_counterfactuals(
 def post_counterfactual(
     case_id: str, body: CounterfactualRequest, authorization: Optional[str] = Header(default=None),
 ) -> CounterfactualView:
-    _case_or_404(case_id)
     identity, _ = _operator(authorization)
+    _case_or_404(case_id)
     try:
         counterfactual = evaluate_counterfactual(
             _case_inputs(case_id), body.question, tuple(body.deltas), created_by=identity, now=now(),
