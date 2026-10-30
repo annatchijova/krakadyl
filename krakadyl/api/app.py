@@ -312,10 +312,19 @@ def _case_summaries(case_id: str) -> tuple[str, str, str]:
 
 
 def _persist_prepare_result(
-    case_id: str, proposed_action: ProposedAction, decision: Decision, prepared: Optional[PreparedAction]
+    case_id: str,
+    proposed_action: ProposedAction,
+    decision: Decision,
+    prepared: Optional[PreparedAction],
+    *,
+    event_kind: str,
+    summary: str,
+    detail: dict,
 ) -> None:
     ts = now().isoformat()
-    store.put_prepare_result(case_id, proposed_action, decision, prepared, ts)
+    store.put_prepare_result_and_log_event(
+        case_id, proposed_action, decision, prepared, event_kind, summary, detail, ts
+    )
 
 
 # --- response shapes (UI-facing views composed from the real domain
@@ -563,13 +572,14 @@ def prepare(
         resolvable_requirement_ids=_resolvable_ids(case_id, requirements),
         conflicted_requirement_ids=_conflicted_ids(case_id, requirements),
     )
-    _persist_prepare_result(case_id, proposed_action, decision, prepared)
-    store.log_event(
+    _persist_prepare_result(
         case_id,
-        "prepared",
-        f"Prepared '{proposed_action.operation}' on {body.allowed_device} — verdict {decision.verdict.value}",
-        {"proposed_action_id": proposed_action.id, "reasons": decision.reasons},
-        now().isoformat(),
+        proposed_action,
+        decision,
+        prepared,
+        event_kind="prepared",
+        summary=f"Prepared '{proposed_action.operation}' on {body.allowed_device} — verdict {decision.verdict.value}",
+        detail={"proposed_action_id": proposed_action.id, "reasons": decision.reasons},
     )
     return PrepareResponse(decision=decision, prepared=prepared)
 
@@ -636,17 +646,18 @@ def propose_with_muse(
         resolvable_requirement_ids=_resolvable_ids(case_id, requirements),
         conflicted_requirement_ids=_conflicted_ids(case_id, requirements),
     )
-    _persist_prepare_result(case_id, proposed_action, decision, prepared)
-    store.log_event(
+    _persist_prepare_result(
         case_id,
-        "muse_proposed",
-        f"Muse proposed '{candidate.operation}' on {candidate.allowed_device} — verdict {decision.verdict.value}",
-        {
+        proposed_action,
+        decision,
+        prepared,
+        event_kind="muse_proposed",
+        summary=f"Muse proposed '{candidate.operation}' on {candidate.allowed_device} — verdict {decision.verdict.value}",
+        detail={
             "proposed_action_id": proposed_action.id,
             "muse_reasoning": candidate.reasoning,
             "reasons": decision.reasons,
         },
-        now().isoformat(),
     )
     return MuseProposeResponse(
         muse_operation=candidate.operation,
@@ -796,14 +807,23 @@ def recover(
         conflicted_requirement_ids=_conflicted_ids(case_id, requirements),
     )
     if outcome.recovered_prepared is not None:
-        _persist_prepare_result(case_id, proposed_action, outcome.recovered_decision, outcome.recovered_prepared)
-    store.log_event(
-        case_id,
-        "recovery_proposed" if outcome.recovered_prepared else "recovery_closed",
-        outcome.closed_reason or f"Recovered, excluding {', '.join(outcome.excluded_resources)}",
-        {"excluded_resources": outcome.excluded_resources, "attempted": outcome.attempted},
-        now().isoformat(),
-    )
+        _persist_prepare_result(
+            case_id,
+            proposed_action,
+            outcome.recovered_decision,
+            outcome.recovered_prepared,
+            event_kind="recovery_proposed",
+            summary=outcome.closed_reason or f"Recovered, excluding {', '.join(outcome.excluded_resources)}",
+            detail={"excluded_resources": outcome.excluded_resources, "attempted": outcome.attempted},
+        )
+    else:
+        store.log_event(
+            case_id,
+            "recovery_closed",
+            outcome.closed_reason or f"Recovered, excluding {', '.join(outcome.excluded_resources)}",
+            {"excluded_resources": outcome.excluded_resources, "attempted": outcome.attempted},
+            now().isoformat(),
+        )
     return RecoverResponse(
         attempted=outcome.attempted,
         excluded_resources=outcome.excluded_resources,

@@ -181,6 +181,27 @@ def test_prepare_then_execute_happy_path(client):
     assert exe["manifest"]["excluded_devices"] == ["device-B"]
 
 
+def test_prepare_rolls_back_result_when_activity_event_cannot_be_written(client):
+    import sqlite3
+    import krakadyl.api.app as app_module
+
+    app_module.store.atomic_write(lambda connection: connection.execute(
+        "CREATE TRIGGER fail_prepared_event BEFORE INSERT ON events "
+        "WHEN NEW.kind='prepared' BEGIN SELECT RAISE(ABORT, 'activity unavailable'); END"
+    ))
+
+    with pytest.raises(sqlite3.IntegrityError, match="activity unavailable"):
+        app_module.prepare(
+            "case-001",
+            app_module.PrepareRequest(principal="investigator-A"),
+            authorization="Bearer token-a",
+        )
+
+    assert app_module.store.list("case-001", "proposed_action", app_module.ProposedAction) == []
+    assert app_module.store.list("case-001", "decision", app_module.Decision) == []
+    assert app_module.store.list("case-001", "prepared_action", app_module.PreparedAction) == []
+
+
 def test_full_level_2_narrative_tamper_catch_recover_execute(client):
     # 1. Prepare while everything is fine.
     prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()

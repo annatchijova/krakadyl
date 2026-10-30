@@ -265,6 +265,40 @@ RT-ATOMIC-01, not a duplicate occurrence: RT-ATOMIC-01 leaves a partial action
 bundle, while this variant leaves a real acquisition object without its audit
 event. The same helper/transaction boundary does not cover either path.
 
+### RT-ATOMIC-03 — prepared action state could commit without its activity event
+
+**Severity:** Medium provenance gap  **Epistemic level:** **CONFIRMED BY
+INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** a prepared result that can later be retrieved or executed must
+be committed together with the activity event that explains its creation. A
+failure writing that event must roll back the proposal, decision, and prepared
+action as one logical transition.
+
+**Firstness:** `_persist_prepare_result` committed the three result objects,
+then each API route called `store.log_event` in a separate transaction. The
+same split existed in the Muse and recovered-action paths.
+
+**Abduction:** an event-store failure after the result commit would leave an
+action available through the prepared-action endpoint without a corresponding
+activity record.
+
+**Deduction:** install a SQLite trigger that aborts `prepared` event inserts,
+invoke the real HTTP prepare function, and inspect all three object kinds. The
+unfixed path should raise while leaving the result objects; the corrected path
+should raise with all three absent.
+
+**Induction:** the unfixed regression test observed one persisted proposal,
+decision, and prepared action after the injected event failure. After the
+patch the same test passed with all three rolled back. The regular prepare,
+Muse, recovery, store rollback, and execution tests remained green.
+
+**Remediation:** `put_prepare_result_and_log_event` now writes the complete
+result bundle and its event under one `BEGIN IMMEDIATE` transaction. Prepare
+and Muse use it for every result; recovery uses it when it creates a prepared
+route and retains a separate event-only transaction when it merely closes
+without one.
+
 ### RT-RESOURCE-01 — Laya note input had no request-size ceiling
 
 **Severity:** Low–medium availability  **Epistemic level:** **CONFIRMED BY
@@ -398,6 +432,8 @@ The findings in this integrated round were repaired after the induction probes:
 - **RT-AUTH-05:** acquisition authorization rejects mandate-revision, validity,
   and scope changes before persisting a grant; capture retains its atomic final
   gate.
+- **RT-ATOMIC-03:** prepared result bundles and their activity events now share
+  one transaction across prepare, Muse, and recovery creation paths.
 
 The store rollback tests, acquisition/core tests, compile check, frontend build,
 and lint pass. The local sandbox still has an AnyIO worker-thread limitation,

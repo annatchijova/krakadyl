@@ -304,6 +304,30 @@ class KrakadylStore:
 
         self.atomic_write(transition)
 
+    def put_prepare_result_and_log_event(
+        self,
+        case_id: str,
+        proposed_action: BaseModel,
+        decision: BaseModel,
+        prepared: Optional[BaseModel],
+        event_kind: str,
+        summary: str,
+        detail: dict,
+        now_iso: str,
+    ) -> None:
+        """Persist a prepared result and its activity event atomically."""
+        def transition(connection: sqlite3.Connection) -> None:
+            self._put_object(connection, case_id, "proposed_action", proposed_action, now_iso)
+            self._put_object(connection, case_id, "decision", decision, now_iso)
+            if prepared is not None:
+                self._put_object(connection, case_id, "prepared_action", prepared, now_iso)
+            connection.execute(
+                "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
+                (case_id, now_iso, event_kind, summary, json.dumps(detail)),
+            )
+
+        self.atomic_write(transition)
+
     def put_and_log_event(
         self,
         case_id: str,
