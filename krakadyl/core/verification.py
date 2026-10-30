@@ -66,6 +66,18 @@ def validate_verification_dependencies(
         f"duplicate verification id '{verification_id}' makes verification graph ambiguous"
         for verification_id in duplicate_verification_ids
     )
+    duplicate_verifier_identities = sorted(
+        verifier_identity
+        for verifier_identity, count in Counter(
+            record.verifier_identity for record in requirement.verification_records
+        ).items()
+        if count > 1
+    )
+    if duplicate_verifier_identities:
+        failures.append(
+            "verification records require distinct verifiers: "
+            + ", ".join(duplicate_verifier_identities)
+        )
 
     by_id = {observation.id: observation for observation in observations}
     records_by_id = {record.verification_id: record for record in requirement.verification_records}
@@ -144,6 +156,9 @@ def validate_verification_dependencies(
                     f"verification root targets '{root.target_observation_id}' but requirement governs "
                     f"'{requirement.observation_id}'"
                 )
+    root_verifier_identities = {root.verifier_identity for root in roots}
+    if roots and requirement.responsibility.verified_by not in root_verifier_identities:
+        failures.append("verified_by must match a root structured verifier")
     root_sources = [closure(record.verification_id) for record in roots]
     for index, (first_ids, first_identities) in enumerate(root_sources):
         for second_ids, second_identities in root_sources[index + 1:]:

@@ -256,6 +256,33 @@ def test_verification_roots_must_match_the_requirement_target(graph_case):
                for failure in failures)
 
 
+def test_verification_roots_require_distinct_verifiers(graph_case):
+    observations, files, requirement, _ = graph_case
+    same_verifier = requirement.model_copy(update={
+        "verification_records": tuple(
+            record.model_copy(update={"verifier_identity": "investigator-C"})
+            for record in requirement.verification_records
+        ),
+    })
+
+    failures = validate_verification_dependencies(same_verifier, observations, files)
+
+    assert any("verification records require distinct verifiers" in failure for failure in failures)
+
+
+def test_requirement_verifier_must_be_one_of_the_runtime_roots(graph_case):
+    observations, files, requirement, _ = graph_case
+    mismatched = requirement.model_copy(update={
+        "responsibility": requirement.responsibility.model_copy(update={
+            "verified_by": "investigator-E",
+        }),
+    })
+
+    failures = validate_verification_dependencies(mismatched, observations, files)
+
+    assert any("verified_by must match a root structured verifier" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
