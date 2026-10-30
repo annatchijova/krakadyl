@@ -480,6 +480,29 @@ def test_runtime_rejects_anonymous_observation_source(graph_case):
     assert any("observation source must be non-empty" in failure for failure in failures)
 
 
+def test_runtime_rejects_empty_observation_id(graph_case):
+    observations, files, requirement, target = graph_case
+    empty_target = target.model_copy(update={"id": ""})
+    malformed_requirement = requirement.model_copy(update={
+        "observation_id": "",
+        "verification_records": tuple(
+            record.model_copy(update={"target_observation_id": ""})
+            for record in requirement.verification_records
+        ),
+    })
+    malformed_observations = [
+        empty_target if observation.id == target.id else observation
+        for observation in observations
+    ]
+    malformed_files = {**files, "": files[target.id]}
+
+    failures = validate_verification_dependencies(
+        malformed_requirement, malformed_observations, malformed_files,
+    )
+
+    assert any("observation ID must be non-empty" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
