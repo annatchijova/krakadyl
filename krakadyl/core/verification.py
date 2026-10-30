@@ -57,6 +57,8 @@ def validate_verification_dependencies(
             failures.append("observation ID must be non-empty")
         if not observation.source.strip():
             failures.append(f"observation source must be non-empty: '{observation.id}'")
+        if not observation.actor.strip():
+            failures.append(f"observation actor must be non-empty: '{observation.id}'")
         if observation.invalidated and not observation.invalidation_reason:
             failures.append(f"observation '{observation.id}' invalidated without a reason")
         elif not observation.invalidated and observation.invalidation_reason is not None:

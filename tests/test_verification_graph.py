@@ -503,6 +503,19 @@ def test_runtime_rejects_empty_observation_id(graph_case):
     assert any("observation ID must be non-empty" in failure for failure in failures)
 
 
+def test_runtime_rejects_anonymous_observation_actor(graph_case):
+    observations, files, requirement, target = graph_case
+    anonymous_actor = target.model_copy(update={"actor": ""})
+    malformed = [
+        anonymous_actor if observation.id == target.id else observation
+        for observation in observations
+    ]
+
+    failures = validate_verification_dependencies(requirement, malformed, files)
+
+    assert any("observation actor must be non-empty" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
