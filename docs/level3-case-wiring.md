@@ -72,10 +72,14 @@ Defaults: 4 SAM images per requirement, 20 per case/mandate, 40 per deployment (
 
 ## Verification snapshot — 2026-10-30
 
-- `pytest`: 261 passed (Python 3.13, fresh venv). Offline demos `run_case_001.py` and `run_case_002_level2.py` still pass.
+- `pytest`: 261 passed before the red team, 270 after (Python 3.13, fresh venv). Offline demos `run_case_001.py` and `run_case_002_level2.py` still pass.
 - Frontend: `tsc -b`, `oxlint` (one pre-existing warning in `App.tsx`), `vite build` clean.
 - Browser (Playwright, Chromium): capture-only deployment with two operator tokens. Proposed → authorized → uploaded a generated PNG → investigator-A evaluated `supports` (shown "claimed, not verified") → investigator-C evaluated `supports` (shown "resolved · verified"). No page errors.
-- Not verified in a browser: the SAM box overlay (SAM disabled in that run; the overlay's data path is covered by the API test with a fake transport).
+- SAM box overlay: verified in the browser after the red team, with a fake SAM transport (no Meta call).
+
+## Red team
+
+Done after the first four commits; eight findings reproduced and fixed (evaluation bound to the approved question, reconciliation limited to the authorizer, integrity re-verified at evaluation, completed captures evaluable after a failed SAM phase, authenticated evidence reads, authenticated dev reset, owner-only abstention, earlier claimant preserved). See [red-team-level3-case-wiring.md](red-team-level3-case-wiring.md), which also lists the accepted residual risks.
 
 ## What is still open — and blocks calling Level 3 complete
 

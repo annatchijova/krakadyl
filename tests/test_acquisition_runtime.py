@@ -156,6 +156,7 @@ def _evaluate(store, result, evaluator, outcome, revision=None):
         outcome=outcome,
         rationale="Reference clock and device clock both read 16:42.",
         now=NOW,
+        verify_artifacts=lambda observation, annotation: None,
     )
 
 
@@ -269,12 +270,13 @@ def test_unknown_outcome_blocks_evaluation_abstention_and_new_acquisition(env):
     assert history[0].state == "unknown"
     assert history[0].observation is not None and history[0].annotation is None
 
-    with pytest.raises(EvaluationRejected, match="not completed"):
+    with pytest.raises(EvaluationRejected, match="not settled"):
         record_evaluation(
             store, case_id=CASE, workflow_id=history[0].workflow.workflow_id,
             expected_requirement_revision=requirement_revision_digest(_current(store)),
             evaluator_identity="investigator-C", criterion_id="c", criterion_version="1",
             outcome=EvaluationOutcome.SUPPORTS_REQUIREMENT, rationale="r", now=NOW,
+            verify_artifacts=runtime.artifacts.verify_for_evaluation,
         )
     with pytest.raises(EvaluationRejected, match="unknown outcome"):
         abstain_requirement(

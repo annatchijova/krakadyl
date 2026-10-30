@@ -35,7 +35,7 @@ import json
 import secrets
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Callable, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -144,11 +144,15 @@ def _transition(
     independent = evaluation.evaluator_identity not in {acquisition_actor, previous_claimant}
     base = requirement.responsibility.model_dump()
     if not independent:
+        # An earlier claimant stays on record (red team F8): overwriting
+        # them with the newer self-evaluator would erase who said it
+        # first. The self-evaluation itself is kept in the evaluation
+        # table and the activity log.
         responsibility = TaskResponsibility(**{
             **base,
             "status": TaskStatus.REPORTED_DONE,
-            "reported_done_by": evaluation.evaluator_identity,
-            "reported_done_at": evaluation.evaluated_at,
+            "reported_done_by": previous_claimant or evaluation.evaluator_identity,
+            "reported_done_at": requirement.responsibility.reported_done_at or evaluation.evaluated_at,
         })
         updated = EvidenceRequirement(**{**requirement.model_dump(), "responsibility": responsibility.model_dump()})
         return updated, (
@@ -189,32 +193,60 @@ def record_evaluation(
     outcome: EvaluationOutcome,
     rationale: str,
     now: datetime,
+    verify_artifacts: Callable[[AcquiredObservation, Optional[AnnotationCandidate]], None],
 ) -> tuple[EvidenceEvaluation, EvidenceRequirement]:
     """`evaluator_identity` must already be verified by the caller's
     credential check; this function never accepts an asserted name from
-    request data on its own authority."""
+    request data on its own authority.
+
+    `verify_artifacts` must re-hash the stored capture (and annotation,
+    when there is one) and raise if either no longer matches — an
+    evaluation is a use of those bytes, and the contract requires every
+    use to verify them (red team F3). It runs inside the transaction,
+    immediately before the evaluation is written."""
     now_iso = _utc_iso(now)
 
     def transition(connection: sqlite3.Connection):
         row = connection.execute(
-            "SELECT case_id, requirement_id, state, workflow_json FROM acquisition_workflows WHERE workflow_id=?",
+            "SELECT case_id, requirement_id, state, workflow_json, proposal_json "
+            "FROM acquisition_workflows WHERE workflow_id=?",
             (workflow_id,),
         ).fetchone()
         if row is None or row[0] != case_id:
             raise EvaluationRejected("acquisition workflow does not exist in this case")
-        if row[2] != "completed":
+        # 'failed' is evaluable when its capture completed (red team F6):
+        # a reconciled processor phase must not throw away an already
+        # preserved observation. 'active'/'unknown' never are.
+        if row[2] not in ("completed", "failed"):
             raise EvaluationRejected(
-                f"acquisition workflow is '{row[2]}', not completed — there is no recorded observation to evaluate"
+                f"acquisition workflow is '{row[2]}' — its outcome is not settled, so there is nothing to evaluate yet"
             )
         workflow = AcquisitionWorkflow.model_validate_json(row[3])
+        proposal = AcquisitionProposal.model_validate_json(row[4])
         observation, annotation = _phase_results(connection, workflow_id)
         if observation is None:
-            raise EvaluationRejected("completed workflow has no recorded observation")
+            raise EvaluationRejected("this acquisition recorded no observation to evaluate")
         requirement = _load_requirement(connection, case_id, row[1])
         if requirement_revision_digest(requirement) != expected_requirement_revision:
             raise EvaluationRejected("requirement changed since it was shown to the evaluator; reload and evaluate again")
         if requirement.resolved or requirement.unresolvable:
             raise EvaluationRejected("requirement is already resolved or closed as unresolvable")
+        # Red team F1: the capture answers the question it was approved
+        # for. A requirement reworded since then needs a new capture,
+        # not a reinterpretation of an old one.
+        if (
+            requirement.discriminating_question != proposal.need.question
+            or tuple(requirement.answer_classes) != proposal.need.answer_classes
+        ):
+            raise EvaluationRejected(
+                "this capture was approved for a different question or answer classes than the requirement states now"
+            )
+        try:
+            verify_artifacts(observation, annotation)
+        except (OSError, ValueError) as exc:
+            raise EvaluationRejected(
+                "stored capture or annotation failed integrity verification; it cannot be evaluated"
+            ) from exc
 
         evaluation = EvidenceEvaluation(
             case_id=case_id,
@@ -278,6 +310,12 @@ def abstain_requirement(
         requirement = _load_requirement(connection, case_id, requirement_id)
         if requirement_revision_digest(requirement) != expected_requirement_revision:
             raise EvaluationRejected("requirement changed since it was shown; reload before abstaining")
+        # Red team F7: declaring evidence unobtainable is the decision of
+        # whoever is responsible for obtaining it.
+        if actor_identity != requirement.responsibility.owner:
+            raise EvaluationRejected(
+                f"only the requirement owner ({requirement.responsibility.owner}) can close it as unresolvable"
+            )
         if requirement.resolved or requirement.unresolvable:
             raise EvaluationRejected("requirement is already resolved or closed as unresolvable")
         if connection.execute(

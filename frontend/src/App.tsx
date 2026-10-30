@@ -29,6 +29,8 @@ function App() {
   const [museReasoning, setMuseReasoning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Operator token for Level 3 actions — React state only, never persisted.
+  const [operatorToken, setOperatorToken] = useState("");
 
   const refresh = useCallback(async () => {
     const [o, a] = await Promise.all([api.getCase(CASE_ID), api.getActivity(CASE_ID)]);
@@ -94,7 +96,7 @@ function App() {
     guarded(() => api.devUnresolveHypothesisRequirement(CASE_ID).then(() => undefined));
   const handleReset = () =>
     guarded(async () => {
-      await api.devReset(CASE_ID);
+      await api.devReset(CASE_ID, operatorToken);
       setDecision(null);
       setPrepared(null);
       setRecoverInfo(null);
@@ -118,7 +120,13 @@ function App() {
           <div>
             <EvidencePanel evidence={overview.evidence} />
             <div className="section-gap">
-              <AcquisitionPanel caseId={CASE_ID} caseVersion={activity.length} onChanged={refresh} />
+              <AcquisitionPanel
+                caseId={CASE_ID}
+                caseVersion={activity.length}
+                onChanged={refresh}
+                token={operatorToken}
+                onTokenChange={setOperatorToken}
+              />
             </div>
             <div className="section-gap">
               <LayaNotePanel busy={busy} onAnalyze={(noteText) => api.analyzeNote(CASE_ID, noteText)} />

@@ -157,7 +157,15 @@ class OperatorResolutionVerifier:
         self._credentials = credentials
 
     def verify(self, resolution, authorization, proof, now) -> str:
-        return self._credentials.identify(proof)
+        # Red team F2: CONFIRMED_NOT_DISPATCHED refunds the reservation and
+        # both dispositions unblock the requirement, so only the operator
+        # who authorized (and dispatched) that workflow may settle it.
+        identity = self._credentials.identify(proof)
+        if identity != authorization.authorizer_identity:
+            raise CredentialRejected(
+                f"only {authorization.authorizer_identity}, who authorized this acquisition, can reconcile it"
+            )
+        return identity
 
 
 class OperatorRevocationVerifier:
@@ -365,6 +373,13 @@ class FilesystemArtifactRepository:
 
     def read_annotation(self, annotation: AnnotationCandidate) -> bytes:
         return self._read(annotation.case_id, "annotations", annotation.output_digest)
+
+    def verify_for_evaluation(
+        self, observation: AcquiredObservation, annotation: Optional[AnnotationCandidate]
+    ) -> None:
+        self.read_verified(observation)
+        if annotation is not None:
+            self.read_annotation(annotation)
 
 
 def image_mime(content: bytes) -> Optional[str]:

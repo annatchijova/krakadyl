@@ -999,8 +999,14 @@ def _history_or_404(case_id: str, workflow_id: str) -> AcquisitionRecordView:
     raise HTTPException(404, "no such acquisition workflow")
 
 
+# Raw captured bytes and model output need a proven operator (red team
+# F4); the metadata in GET /acquisition stays as open as the Level 1/2
+# read endpoints, which docs/red-team-api-and-frontend.md already covers.
 @app.get("/api/cases/{case_id}/acquisitions/{workflow_id}/observation")
-def get_acquired_observation(case_id: str, workflow_id: str) -> Response:
+def get_acquired_observation(
+    case_id: str, workflow_id: str, authorization: Optional[str] = Header(default=None),
+) -> Response:
+    _operator(authorization)
     runtime = _require_acquisition()
     item = _history_or_404(case_id, workflow_id)
     if item.observation is None:
@@ -1014,7 +1020,10 @@ def get_acquired_observation(case_id: str, workflow_id: str) -> Response:
 
 
 @app.get("/api/cases/{case_id}/acquisitions/{workflow_id}/annotation", response_model=AnnotationView)
-def get_acquired_annotation(case_id: str, workflow_id: str) -> AnnotationView:
+def get_acquired_annotation(
+    case_id: str, workflow_id: str, authorization: Optional[str] = Header(default=None),
+) -> AnnotationView:
+    _operator(authorization)
     runtime = _require_acquisition()
     item = _history_or_404(case_id, workflow_id)
     if item.annotation is None:
@@ -1054,6 +1063,7 @@ def evaluate_acquisition(
             evaluator_identity=identity, criterion_id=body.criterion_id,
             criterion_version=body.criterion_version, outcome=body.outcome,
             rationale=body.rationale, now=now(),
+            verify_artifacts=_require_acquisition().artifacts.verify_for_evaluation,
         )
     except EvaluationRejected as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -1199,7 +1209,12 @@ def dev_unresolve_requirement(case_id: str) -> dict:
 
 
 @dev_router.post("/api/dev/cases/{case_id}/reset")
-def dev_reset(case_id: str) -> dict:
+def dev_reset(case_id: str, authorization: Optional[str] = Header(default=None)) -> dict:
+    # Red team F5: reset also deletes acquisition records (their audit
+    # trail), so once acquisition is enabled it needs a proven operator,
+    # unlike the other dev simulations, which only touch demo files.
+    if acquisition is not None:
+        _operator(authorization)
     store.reset_case(case_id)
     ensure_seeded(store, DATA_DIR)
     return {"ok": True}

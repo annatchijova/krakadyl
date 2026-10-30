@@ -39,25 +39,46 @@ function usd(micros: number) {
   return `$${(micros / 1_000_000).toFixed(4)}`;
 }
 
-function CaptureWithBoxes({ caseId, record }: { caseId: string; record: AcquisitionRecordView }) {
+function CaptureWithBoxes({ caseId, record, token }: { caseId: string; record: AcquisitionRecordView; token: string }) {
   const [annotation, setAnnotation] = useState<AnnotationView | null>(null);
-  const [annotationError, setAnnotationError] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const workflowId = record.workflow.workflow_id;
   const hasAnnotation = record.annotation !== null;
 
   useEffect(() => {
-    if (!hasAnnotation) return;
-    acquisitionApi.annotation(caseId, workflowId).then(setAnnotation, (e) => setAnnotationError(String(e)));
-  }, [caseId, workflowId, hasAnnotation]);
+    if (!token) return;
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    acquisitionApi.observationObjectUrl(caseId, workflowId, token).then(
+      (url) => {
+        objectUrl = url;
+        if (cancelled) URL.revokeObjectURL(url);
+        else setImageUrl(url);
+      },
+      (e) => setLoadError(String(e)),
+    );
+    if (hasAnnotation) {
+      acquisitionApi.annotation(caseId, workflowId, token).then(setAnnotation, (e) => setLoadError(String(e)));
+    }
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [caseId, workflowId, hasAnnotation, token]);
+
+  if (!token) {
+    return <p className="reason-text">Enter an operator token to view the capture.</p>;
+  }
 
   return (
     <div>
       <div style={{ position: "relative", maxWidth: 320 }}>
-        <img
-          src={acquisitionApi.observationUrl(caseId, workflowId)}
+        {imageUrl && <img
+          src={imageUrl}
           alt={`capture ${record.observation?.digest.slice(0, 12)}`}
           style={{ display: "block", width: "100%", borderRadius: 6, border: "1px solid var(--border)" }}
-        />
+        />}
         {annotation && annotation.frame_width && annotation.frame_height && (
           <svg
             viewBox={`0 0 ${annotation.frame_width} ${annotation.frame_height}`}
@@ -89,7 +110,7 @@ function CaptureWithBoxes({ caseId, record }: { caseId: string; record: Acquisit
           {annotation?.trust ?? "untrusted model output"}
         </p>
       )}
-      {annotationError && <p className="reason-text" style={{ color: "#ff9d96" }}>{annotationError}</p>}
+      {loadError && <p className="reason-text" style={{ color: "#ff9d96" }}>{loadError}</p>}
     </div>
   );
 }
@@ -129,7 +150,7 @@ function HistoryItem({
         {record.attempts.map((a) => `${a.attempt.phase} ${a.state}`).join(", ")} · spent{" "}
         {usd(record.workflow.actual_usage.usd_micros)}
       </p>
-      {record.observation && <CaptureWithBoxes caseId={caseId} record={record} />}
+      {record.observation && <CaptureWithBoxes caseId={caseId} record={record} token={token} />}
 
       {record.evaluations.map((e) => (
         <div key={e.evaluation_id} className="activity-item" style={{ marginTop: "0.4rem" }}>
@@ -175,7 +196,7 @@ function HistoryItem({
         </div>
       ))}
 
-      {record.state === "completed" && open && (
+      {(record.state === "completed" || record.state === "failed") && record.observation && open && (
         <div className="section-gap">
           <p className="reason-text" style={{ margin: "0 0 0.3rem 0" }}>
             Evaluate against: “{route.requirement.discriminating_question}”. Only an evaluator other than{" "}
@@ -376,8 +397,12 @@ export function AcquisitionPanel({
   caseId,
   caseVersion,
   onChanged,
+  token,
+  onTokenChange,
 }: {
   caseId: string;
+  token: string;
+  onTokenChange: (token: string) => void;
   // Changes whenever the case's activity log does (including a dev
   // reset), so this panel re-reads instead of showing stale grants.
   caseVersion: number;
@@ -385,7 +410,6 @@ export function AcquisitionPanel({
 }) {
   const [overview, setOverview] = useState<AcquisitionOverview | null>(null);
   const [loadedAtMs, setLoadedAtMs] = useState(0);
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -429,7 +453,7 @@ export function AcquisitionPanel({
           type="password"
           style={fieldStyle}
           value={token}
-          onChange={(e) => setToken(e.target.value)}
+          onChange={(e) => onTokenChange(e.target.value)}
           placeholder="Operator token (kept in this tab only)"
           autoComplete="off"
         />

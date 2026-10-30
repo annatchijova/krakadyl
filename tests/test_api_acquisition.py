@@ -135,9 +135,9 @@ def test_full_lifecycle_over_http(api):
     assert body["state"] == "completed" and body["evaluations"] == []
     assert sam.calls == 1
 
-    image = client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/observation")
+    image = client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/observation", headers=C)
     assert image.content == PNG and image.headers["content-type"] == "image/png"
-    annotation = client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/annotation").json()
+    annotation = client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/annotation", headers=C).json()
     assert annotation["sidecar_status"] == "parsed"
     assert annotation["boxes"][0]["x1"] == 2 and annotation["frame_width"] == 32
     assert annotation["trust"].startswith("untrusted")
@@ -190,7 +190,7 @@ def test_non_discriminating_result_then_abstention(api):
     client, sam = api
     sam.text = ""
     workflow_id = _capture(client).json()["workflow"]["workflow_id"]
-    assert client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/annotation").json()["sidecar_status"] == "empty"
+    assert client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/annotation", headers=A).json()["sidecar_status"] == "empty"
     assert _evaluate(client, workflow_id, C, outcome="no_discriminating_change").status_code == 200
     route, _ = _route(client)
     assert route["route"] is not None  # still open, another route remains possible
@@ -234,7 +234,7 @@ def test_unknown_outcome_is_visible_blocks_retry_and_is_reconciled_by_a_human(ap
 def test_dev_reset_clears_acquisition_records(api):
     client, _ = api
     _capture(client, sam_prompt=None)
-    assert client.post("/api/dev/cases/case-001/reset").status_code == 200
+    assert client.post("/api/dev/cases/case-001/reset", headers=A).status_code == 200
     overview = client.get("/api/cases/case-001/acquisition").json()
     assert overview["history"] == [] and overview["proposals"] == []
     assert _capture(client, sam_prompt=None).status_code == 200

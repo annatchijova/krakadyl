@@ -105,10 +105,16 @@ export const acquisitionApi = {
       headers: { "Content-Type": file.type, Authorization: `Bearer ${token}` },
       body: file,
     }),
-  observationUrl: (caseId: string, workflowId: string) =>
-    `${API_BASE}/api/cases/${caseId}/acquisitions/${workflowId}/observation`,
-  annotation: (caseId: string, workflowId: string) =>
-    request<AnnotationView>(`/api/cases/${caseId}/acquisitions/${workflowId}/annotation`),
+  // Captured bytes need the operator token, which an <img src> cannot
+  // send — fetched as a blob instead; the caller revokes the object URL.
+  observationObjectUrl: async (caseId: string, workflowId: string, token: string) => {
+    const path = `/api/cases/${caseId}/acquisitions/${workflowId}/observation`;
+    const resp = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!resp.ok) throw new Error(`GET ${path} -> ${resp.status}: ${await resp.text()}`);
+    return URL.createObjectURL(await resp.blob());
+  },
+  annotation: (caseId: string, workflowId: string, token: string) =>
+    request<AnnotationView>(`/api/cases/${caseId}/acquisitions/${workflowId}/annotation`, { headers: bearer(token) }),
   evaluate: (
     caseId: string,
     workflowId: string,
@@ -176,6 +182,11 @@ export const api = {
     request<{ ok: boolean }>(`/api/dev/cases/${caseId}/unresolve-hypothesis-requirement`, {
       method: "POST",
     }),
-  devReset: (caseId: string) =>
-    request<{ ok: boolean }>(`/api/dev/cases/${caseId}/reset`, { method: "POST" }),
+  // Needs the operator token once acquisition is enabled: reset also
+  // deletes acquisition records.
+  devReset: (caseId: string, token: string) =>
+    request<{ ok: boolean }>(`/api/dev/cases/${caseId}/reset`, {
+      method: "POST",
+      headers: token ? bearer(token) : { "Content-Type": "application/json" },
+    }),
 };
