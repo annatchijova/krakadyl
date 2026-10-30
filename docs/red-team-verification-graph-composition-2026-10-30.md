@@ -123,6 +123,20 @@ the structured verifiers.
 negative control. The follow-up regression also requires the identity to be a
 root verifier, not merely a parent verifier in the same graph.
 
+### RT-VERIFY-08 — A parent verification could name a missing target
+
+**Observation:** basis observations were checked for presence, digest, and
+invalidation, but a parent record's `target_observation_id` was not required to
+exist in the current observation set.
+
+**Induction:** a graph containing a parent target that was not present in the
+case produced no dependency failure before the fix. The validator now rejects
+missing or invalidated targets for every verification record, not only the
+root requirement target.
+
+**Status:** fixed by `pending commit`; regression
+`test_verification_record_target_must_exist` covers the missing-target case.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -146,7 +160,7 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced ten passing tests after the
+The focused verification graph suite produced eleven passing tests after the
 attribution fix. The full locked suite produced **387 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.

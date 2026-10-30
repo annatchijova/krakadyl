@@ -49,6 +49,15 @@ def validate_verification_dependencies(
     checked_sources: set[tuple[str, str]] = set()
     active: set[str] = set()
 
+    for record in requirement.verification_records:
+        target = by_id.get(record.target_observation_id)
+        if target is None:
+            failures.append(f"verification target '{record.target_observation_id}' is absent")
+        elif target.invalidated:
+            failures.append(
+                f"verification target '{target.id}' is invalidated: {target.invalidation_reason}"
+            )
+
     def closure(record_id: str) -> set[str]:
         if record_id in active:
             failures.append(f"verification dependency cycle at '{record_id}'")

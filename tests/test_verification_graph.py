@@ -223,6 +223,40 @@ def test_verification_observation_dependencies_cannot_cycle(graph_case):
         EvidenceRequirement(**cyclic.model_dump())
 
 
+def test_verification_record_target_must_exist(graph_case):
+    observations, files, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    dangling = requirement.model_copy(update={
+        "verification_records": (
+            VerificationRecord(
+                verification_id="dangling-parent",
+                verifier_identity="investigator-B",
+                target_observation_id="obs-not-present",
+                basis=(VerificationBasis(
+                    observation_id=primary_one.id, observation_digest=primary_one.digest,
+                ),),
+                method="check missing target",
+                recorded_at=NOW,
+            ),
+            VerificationRecord(
+                verification_id="root-check",
+                verifier_identity="investigator-C",
+                target_observation_id=target.id,
+                basis=(VerificationBasis(
+                    observation_id=primary_one.id, observation_digest=primary_one.digest,
+                ),),
+                parent_verification_ids=("dangling-parent",),
+                method="check target",
+                recorded_at=NOW,
+            ),
+        ),
+    })
+
+    failures = validate_verification_dependencies(dangling, observations, files)
+
+    assert any("verification target 'obs-not-present' is absent" in failure for failure in failures)
+
+
 @pytest.fixture
 def graph_case(tmp_path):
     target, target_path = _observation(tmp_path, "obs-target", "device-A", b"target bytes")
