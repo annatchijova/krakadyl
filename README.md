@@ -159,6 +159,21 @@ use. Every button calls a real endpoint; nothing in the UI re-decides
 what the executor already decided. See `frontend/README.md` for how to
 run both.
 
+For the reproducible MVP environment, use Python 3.11 and the committed
+`uv.lock`:
+
+```
+uv sync --locked --extra dev --extra api
+uv run pytest -q tests --ignore=tests/test_laya_adapter.py
+cd frontend && npm ci --ignore-scripts && npm run build && npm run lint
+```
+
+The API and frontend require an operator bearer token. Generate one with
+`python tools/operator_token.py investigator-A investigator-C`, configure the
+printed hashes as `KRAKADYL_OPERATOR_TOKENS`, then follow `frontend/README.md`.
+The GitHub Actions workflow runs the same locked Python and frontend checks
+without Meta credentials.
+
 **Level 3 (acquisition), wired but not yet closed:** an open requirement
 that states a discriminating question can now get a new capture —
 proposed, authorized by a human holding a real operator token,

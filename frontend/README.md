@@ -15,6 +15,23 @@ Backend (from the repo root, with the `api` extra installed —
 KRAKADYL_DATA_DIR=out/api uvicorn krakadyl.api.app:app --port 8000
 ```
 
+For the reproducible MVP environment, install from the repository lockfile
+with Python 3.11:
+
+```
+uv sync --locked --extra dev --extra api
+```
+
+Generate operator credentials before starting the backend:
+
+```
+python tools/operator_token.py investigator-A investigator-C
+export KRAKADYL_OPERATOR_TOKENS='...'   # use the generated hash mapping
+```
+
+The frontend opens with an operator authentication screen. The token remains
+in tab memory only and is required for case reads as well as actions.
+
 The "Ask Muse" and "Handoff note (Laya)" panels need their own extras
 (`pip install -e '.[api,laya]'`) plus `META_API_KEY` in `.env` for
 Muse. Without the `laya` extra installed, "Analyze with Laya" returns
@@ -102,6 +119,7 @@ to demonstrate Level 2's staleness/recovery mechanism on demand
 (tampering a file, revoking a mandate, making a hypothesis's
 discriminating requirement unresolvable) — a real deployment would gate
 or remove `krakadyl/api/app.py`'s `/api/dev/...` router entirely, not
-ship it next to the real actions.
+ship it next to the real actions. It is disabled by default and
+bearer-protected when explicitly enabled for a local rehearsal.
 
 Use "Reset case" to replay the demo narrative from a clean state.

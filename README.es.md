@@ -168,6 +168,21 @@ de dos dispositivos que usan los demos. Cada botón llama a un endpoint
 real; nada en la interfaz vuelve a decidir lo que el ejecutor ya
 decidió. Ver `frontend/README.md` para correr ambos.
 
+Para el entorno reproducible del MVP, usá Python 3.11 y el `uv.lock`
+committeado:
+
+```
+uv sync --locked --extra dev --extra api
+uv run pytest -q tests --ignore=tests/test_laya_adapter.py
+cd frontend && npm ci --ignore-scripts && npm run build && npm run lint
+```
+
+La API y el frontend requieren un token bearer de operador. Generá uno con
+`python tools/operator_token.py investigator-A investigator-C`, configurá los
+hashes que imprime como `KRAKADYL_OPERATOR_TOKENS` y seguí
+`frontend/README.md`. El workflow de GitHub ejecuta estos mismos checks sin
+credenciales de Meta.
+
 **Level 3 (adquisición), conectado pero todavía sin cerrar:** un
 requisito abierto que plantea una pregunta discriminante ahora puede
 obtener una captura nueva — propuesta, autorizada por una persona con un
