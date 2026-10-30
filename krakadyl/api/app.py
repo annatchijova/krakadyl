@@ -233,6 +233,20 @@ def _observation_files(case_id: str, observations: list[Observation]) -> dict[st
     return {o.id: observation_file_path(DATA_DIR, case_id, o.id) for o in observations}
 
 
+def _currently_verified(
+    observation: Observation,
+    requirement: Optional[EvidenceRequirement],
+    observations: list[Observation],
+    files: dict[str, Path],
+) -> bool:
+    return (
+        requirement is not None
+        and not observation.invalidated
+        and evidence_state_from_requirement(requirement) == EvidenceState.SUFFICIENT
+        and not validate_verification_dependencies(requirement, observations, files)
+    )
+
+
 def _proposed_action(case_id: str, allowed_device: str, destination: str) -> ProposedAction:
     return ProposedAction(
         id=f"action-{uuid.uuid4().hex[:10]}",
@@ -282,11 +296,7 @@ def _case_summaries(case_id: str) -> tuple[str, str, str]:
             if verify_observation_integrity(o, files.get(o.id, Path("/nonexistent")))
             else "INTEGRITY FAILED (file no longer matches its acquired digest)"
         )
-        verified = (
-            "independently verified"
-            if (req is not None and evidence_state_from_requirement(req) == EvidenceState.SUFFICIENT)
-            else "NOT independently verified"
-        )
+        verified = "independently verified" if _currently_verified(o, req, observations, files) else "NOT independently verified"
         lines.append(f"{o.id} ({o.source}): {integrity}, {verified}")
     case_summary = "\n".join(lines) if lines else "no observations recorded"
 
@@ -425,12 +435,7 @@ def get_case(case_id: str, authorization: Optional[str] = Header(default=None)) 
     evidence_items = []
     for o in observations:
         req = requirements_by_obs.get(o.id)
-        verification_current = (
-            req is not None
-            and not o.invalidated
-            and evidence_state_from_requirement(req) == EvidenceState.SUFFICIENT
-            and not validate_verification_dependencies(req, observations, files)
-        )
+        verification_current = _currently_verified(o, req, observations, files)
         evidence_items.append(
             EvidenceItem(
                 observation=o,

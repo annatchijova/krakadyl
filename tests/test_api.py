@@ -62,6 +62,10 @@ def test_observation_invalidation_requires_authentication_and_records_actor(clie
     invalidated_item = next(item for item in overview["evidence"] if item["observation"]["id"] == "obs-a1")
     assert invalidated_item["independently_verified"] is False
 
+    import krakadyl.api.app as app_module
+    _, _, case_summary = app_module._case_summaries("case-001")
+    assert "obs-a1 (device-A): integrity ok, NOT independently verified" in case_summary
+
     events = client.get("/api/cases/case-001/activity").json()
     invalidation = next(event for event in events if event["kind"] == "observation_invalidated")
     assert invalidation["detail"]["actor_identity"] == "investigator-A"
