@@ -197,6 +197,20 @@ def test_acceptance_detects_unrelated_state_change_after_handoff(case):
     assert accepted.state_changed_since_handoff is True
 
 
+def test_acceptance_rejects_a_view_for_another_case(case):
+    store, refs = case
+    handoff = _handoff(store, refs)
+    foreign_view = _view(store, refs).model_copy(update={"case_id": "case-attacker"})
+
+    with pytest.raises(HandoffRejected, match="different case"):
+        accept_handoff(
+            store, case_id=CASE, handoff_id=handoff.event_id, actor="investigator-E",
+            current=foreign_view, now=NOW,
+        )
+
+    assert list_shift_events(store, CASE) == [handoff]
+
+
 @pytest.mark.parametrize("kwargs, match", [
     ({"to_actor": "investigator-A"}, "someone else"),
     ({"to_actor": "stranger"}, "not a configured operator"),
@@ -207,6 +221,20 @@ def test_handoff_refusals(case, kwargs, match):
     store, refs = case
     with pytest.raises(HandoffRejected, match=match):
         _handoff(store, refs, **kwargs)
+    assert list_shift_events(store, CASE) == []
+
+
+def test_recording_a_handoff_rejects_a_view_for_another_case(case):
+    store, refs = case
+    foreign_view = _view(store, refs).model_copy(update={"case_id": "case-attacker"})
+
+    with pytest.raises(HandoffRejected, match="different case"):
+        record_handoff(
+            store, case_id=CASE, from_actor="investigator-A", to_actor="investigator-E",
+            known_identities=IDENTITIES, seen_state_digest=foreign_view.state_digest,
+            current=foreign_view, transfer_requirement_ids=(REQ,), note="cross-case view", now=NOW,
+        )
+
     assert list_shift_events(store, CASE) == []
 
 

@@ -260,6 +260,8 @@ def record_handoff(
 ) -> ShiftEvent:
     """`current` is the handoff view computed for this request; the
     outgoing person must have been looking at exactly that state."""
+    if current.case_id != case_id:
+        raise HandoffRejected("the handoff view belongs to a different case")
     if to_actor == from_actor:
         raise HandoffRejected("a handoff goes to someone else")
     if to_actor not in known_identities:
@@ -309,6 +311,9 @@ def accept_handoff(
     person's, ACKNOWLEDGED by them (REPORTED_DONE, BLOCKED and UNKNOWN
     keep their status — they describe the work, not who holds it). Anything that moved is listed as
     not transferred, with the reason, rather than handed over blind."""
+
+    if current.case_id != case_id:
+        raise HandoffRejected("the handoff view belongs to a different case")
 
     def transition(connection: sqlite3.Connection) -> ShiftEvent:
         events = _events(connection, case_id)

@@ -9,6 +9,7 @@ Scope: `core/team.py`, `core/handoff.py`, the Level 4 API section and `TeamPanel
 | F1 | High | After a dispute reopened a requirement, a non-party could verify the *same old claim* the reopen had just overturned, and the requirement became resolved again with nothing new. Records from before the reopen also kept forming fresh conflicts with new statements. | `current_epoch`: records before the latest reopen are history. They no longer form conflicts and cannot be verified or disputed; a new claim is required. |
 | F2 | Medium | Accepting a handoff turned `BLOCKED` and `UNKNOWN` requirements into `ACKNOWLEDGED`, erasing the uncertainty being handed over. | Acceptance keeps `REPORTED_DONE`, `BLOCKED` and `UNKNOWN` as they are; only ownership moves. |
 | F3 | Low | Resolving a conflict with `reopen_requirement` cleared `unresolvable`, silently undoing an owner's explicit "this evidence is not obtainable". | Reopen leaves `unresolvable` and its reason untouched. |
+| F4 | Medium | The core handoff functions accepted a `ShiftHandoff` view whose `case_id` differed from the case being mutated. The database fence protected the requirement rows, but the append-only audit event could carry a foreign view digest. | Both handoff record and acceptance reject a view belonging to another case before any write. |
 
 ## Found while building (before review), also fixed
 
