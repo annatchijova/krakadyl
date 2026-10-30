@@ -143,7 +143,10 @@ cannot reconstruct an unrecorded external semantic dependency from that prose.
 Every provider or human source invalidation must therefore enter the typed,
 atomic invalidation transition, or the safe claim is abstention rather than
 automatic propagation. Migration of legacy provenance and first-class
-dependency propagation remain open architectural work.
+dependency propagation remain open architectural work. A separate planning
+limit remains: hypothesis-recovery suggestions do not currently receive
+observation/file context, so they must be treated as `WARN` until the normal
+evidence gate revalidates them.
 
 ## Claim audit
 

@@ -91,3 +91,26 @@ Muse, Laya, and SAM can produce useful or wrong proposals/signals/annotations.
 Their outputs cannot grant authority, resolve evidence, or execute actions.
 Live probes demonstrate observed behavior for a bounded corpus only; they do not
 establish robustness against model drift or every adversarial input.
+
+## KL-004 — Hypothesis recovery recommendations lack observation context
+
+**Status:** Open planning-layer limitation; not an execution authorization
+bypass.
+
+`propose_hypothesis_recovery()` receives requirements and hypotheses, and uses
+the requirement's historical state to decide whether an independently verified
+alternative can be suggested. It does not receive the observation collection or
+artifact paths needed to walk a structured verification graph and recheck
+current source invalidation. The execution path remains protected because a
+recovered action must pass `check_evidence()` and the normal prepare/execute
+gates.
+
+**Impact:** a source requirement whose external semantic status changed outside
+the typed observation transition could still influence a recovery suggestion.
+The suggestion is not permission, evidence resolution, or publication, but its
+display should be treated as `WARN` until current observation context is
+available.
+
+**Required closure:** pass the current observation and custody context into
+hypothesis-recovery planning, or mark the suggestion explicitly as requiring
+revalidation before it is shown as a valid alternative.
