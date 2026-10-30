@@ -349,6 +349,51 @@ def test_runtime_rejects_observation_dependency_cycles(graph_case):
     assert any("observation dependency graph contains a cycle" in failure for failure in failures)
 
 
+def test_runtime_rejects_duplicate_basis_observations(graph_case):
+    observations, files, requirement, _ = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    duplicated_basis = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={
+                "basis": (
+                    VerificationBasis(
+                        observation_id=primary_one.id,
+                        observation_digest=primary_one.digest,
+                    ),
+                    VerificationBasis(
+                        observation_id=primary_one.id,
+                        observation_digest=primary_one.digest,
+                    ),
+                ),
+            }),
+            requirement.verification_records[1],
+        ),
+    })
+
+    failures = validate_verification_dependencies(duplicated_basis, observations, files)
+
+    assert any("verification basis observations must be unique" in failure for failure in failures)
+
+
+def test_runtime_rejects_duplicate_parent_verification_ids(graph_case):
+    observations, files, requirement, _ = graph_case
+    duplicated_parents = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0],
+            requirement.verification_records[1].model_copy(update={
+                "parent_verification_ids": (
+                    requirement.verification_records[0].verification_id,
+                    requirement.verification_records[0].verification_id,
+                ),
+            }),
+        ),
+    })
+
+    failures = validate_verification_dependencies(duplicated_parents, observations, files)
+
+    assert any("parent verification IDs must be unique" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={

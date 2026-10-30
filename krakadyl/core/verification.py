@@ -83,6 +83,11 @@ def validate_verification_dependencies(
             failures.append(
                 f"verification record has no primary basis: '{record.verification_id}'"
             )
+        basis_ids = [basis.observation_id for basis in record.basis]
+        if len(set(basis_ids)) != len(basis_ids):
+            failures.append("verification basis observations must be unique")
+        if len(set(record.parent_verification_ids)) != len(record.parent_verification_ids):
+            failures.append("parent verification IDs must be unique")
 
     observation_dependencies: dict[str, set[str]] = {}
     for record in requirement.verification_records:
