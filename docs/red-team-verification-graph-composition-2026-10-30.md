@@ -411,6 +411,20 @@ checking the evidence basis.
 **Status:** fixed by `733e1ac`; regression
 `test_runtime_rejects_incomplete_custody_provenance` covers both fields.
 
+### RT-VERIFY-27 — Runtime accepted self-reported structured verification
+
+**Observation:** `TaskResponsibility` construction requires independent
+verification unless the method is explicitly automated, but runtime graph
+validation trusted an already-materialized `VERIFIED_DONE` responsibility.
+
+**Induction:** the reportant and verifier could be the same identity with a
+human-style method and still support the structured graph. Runtime now repeats
+the independence rule before evaluating verification dependencies.
+
+**Status:** fixed by `07dc7e9`; regression
+`test_runtime_rejects_self_reported_structured_verification` covers the
+self-report path.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -434,8 +448,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced thirty-six passing tests after the
-custody-provenance fix. The full locked suite produced **413 passed**. The live Meta
+The focused verification graph suite produced thirty-seven passing tests after the
+runtime independence fix. The full locked suite produced **414 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -467,7 +481,7 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Thirty-six graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Thirty-seven graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
@@ -488,6 +502,7 @@ check and must be normalized at acquisition.
 | Runtime could accept an anonymous observation actor | Observation | Failing regression `test_runtime_rejects_anonymous_observation_actor` | Confirmed and fixed by `5d94f00` |
 | Runtime could accept ambiguous custody timestamps | Observation | Failing regression `test_runtime_rejects_naive_observation_timestamps` | Confirmed and fixed by `b489777` |
 | Runtime could accept incomplete custody provenance | Observation | Failing regression `test_runtime_rejects_incomplete_custody_provenance` | Confirmed and fixed by `733e1ac` |
+| Runtime could accept self-reported structured verification | Observation | Failing regression `test_runtime_rejects_self_reported_structured_verification` | Confirmed and fixed by `07dc7e9` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
