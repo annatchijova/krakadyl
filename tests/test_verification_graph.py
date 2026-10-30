@@ -5,7 +5,8 @@ from datetime import timedelta
 import pytest
 
 from krakadyl.core.executor import execute_prepared_action, prepare_evidence_package, sha256_file
-from krakadyl.core.verification import validate_verification_dependencies
+from krakadyl.core.verification import invalidate_observation, validate_verification_dependencies
+from krakadyl.store import KrakadylStore
 from krakadyl.core.models import (
     AuthorityVerdict,
     EvidenceRequirement,
@@ -150,6 +151,36 @@ def test_invalidated_primary_source_blocks_execution_without_requirement_update(
     assert not (tmp_path / "package" / "manifest.json").exists()
 
 
+def test_logically_invalidated_primary_source_blocks_even_when_bytes_match(tmp_path, graph_case):
+    observations, files, requirement, _ = graph_case
+    mandate = _mandate()
+    decision, prepared = prepare_evidence_package(
+        proposed_action=_action(), mandate=mandate,
+        observations=observations, requirements=[requirement], observation_files=files,
+        allowed_device="device-A", destination="reviewer-authorized", now=NOW,
+    )
+    assert prepared is not None
+
+    invalidated = [
+        Observation(**{
+            **observation.model_dump(),
+            "invalidated": True,
+            "invalidation_reason": "primary source was later shown to be contaminated",
+        })
+        if observation.id == "obs-primary-1" else observation
+        for observation in observations
+    ]
+    receipt = execute_prepared_action(
+        prepared=prepared, decision=decision, proposed_action=_action(),
+        observations=invalidated, requirements=[requirement], observation_files=files,
+        current_mandate=mandate, consumed_nonces=set(), out_dir=tmp_path / "package",
+        now=NOW + timedelta(minutes=2),
+    )
+
+    assert receipt.executed is False
+    assert "invalidated" in receipt.observed_effect
+
+
 def test_recursive_shared_primary_source_is_not_independent(graph_case):
     observations, files, requirement, target = graph_case
     primary_one = next(item for item in observations if item.id == "obs-primary-1")
@@ -193,3 +224,22 @@ def test_recursive_shared_primary_source_is_not_independent(graph_case):
     failures = validate_verification_dependencies(recursive, observations, files)
 
     assert any("share primary source" in failure for failure in failures)
+
+
+def test_observation_invalidation_is_atomic_and_visible_in_activity(tmp_path):
+    observation, path = _observation(tmp_path, "obs-primary", "primary", b"primary bytes")
+    store = KrakadylStore(tmp_path / "case.db")
+    store.put("case-001", "observation", observation, NOW.isoformat())
+
+    updated = invalidate_observation(
+        store, case_id="case-001", observation_id=observation.id,
+        reason="source provenance was disproved", now=NOW,
+    )
+
+    assert updated.invalidated is True
+    assert updated.invalidation_reason == "source provenance was disproved"
+    persisted = store.get("case-001", "observation", observation.id, Observation)
+    assert persisted.invalidated is True
+    assert any(event["kind"] == "observation_invalidated" for event in store.list_events("case-001"))
+    assert path.read_bytes() == b"primary bytes"
+    store.close()

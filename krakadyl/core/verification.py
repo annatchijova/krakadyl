@@ -9,9 +9,17 @@ claim graph-level independence; callers can surface that limitation explicitly.
 from __future__ import annotations
 
 import hashlib
+import json
+import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from krakadyl.core.models import EvidenceRequirement, Observation
+from krakadyl.store import KrakadylStore
+
+
+class VerificationInvalidationRejected(ValueError):
+    pass
 
 
 def _file_matches(observation: Observation, path: Path) -> bool:
@@ -61,6 +69,12 @@ def validate_verification_dependencies(
             if observation is None:
                 failures.append(f"verification source '{basis.observation_id}' is absent")
                 continue
+            if observation.invalidated:
+                failures.append(
+                    f"verification source '{basis.observation_id}' is invalidated: "
+                    f"{observation.invalidation_reason}"
+                )
+                continue
             if observation.digest != basis.observation_digest:
                 failures.append(f"verification source '{basis.observation_id}' digest changed")
                 continue
@@ -87,3 +101,57 @@ def validate_verification_dependencies(
                     + ", ".join(sorted(shared))
                 )
     return tuple(dict.fromkeys(failures))
+
+
+def invalidate_observation(
+    store: KrakadylStore,
+    *,
+    case_id: str,
+    observation_id: str,
+    reason: str,
+    now: datetime,
+) -> Observation:
+    """Atomically mark a source invalid and append the causal event.
+
+    Requirements are intentionally not rewritten here. Structured verification
+    consumers discover the invalid source at the next policy check, so an
+    invalidation cannot be hidden by leaving derived requirement JSON untouched.
+    """
+    if not reason.strip():
+        raise VerificationInvalidationRejected("an invalidation needs a stated reason")
+    if now.utcoffset() is None:
+        raise VerificationInvalidationRejected("invalidation timestamp must include a timezone")
+    now_iso = now.astimezone(timezone.utc).isoformat()
+
+    def transition(connection: sqlite3.Connection) -> Observation:
+        row = connection.execute(
+            "SELECT json FROM objects WHERE case_id=? AND kind='observation' AND obj_id=?",
+            (case_id, observation_id),
+        ).fetchone()
+        if row is None:
+            raise VerificationInvalidationRejected("observation does not exist in this case")
+        observation = Observation.model_validate_json(row[0])
+        if observation.invalidated:
+            raise VerificationInvalidationRejected("observation is already invalidated")
+        invalidated = Observation(**{
+            **observation.model_dump(),
+            "invalidated": True,
+            "invalidation_reason": reason.strip(),
+        })
+        connection.execute(
+            "UPDATE objects SET json=?, updated_at=? WHERE case_id=? AND kind='observation' AND obj_id=?",
+            (invalidated.model_dump_json(), now_iso, case_id, observation_id),
+        )
+        connection.execute(
+            "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
+            (
+                case_id,
+                now_iso,
+                "observation_invalidated",
+                f"Observation {observation_id} was invalidated: {reason.strip()}",
+                json.dumps({"observation_id": observation_id, "reason": reason.strip()}, sort_keys=True),
+            ),
+        )
+        return invalidated
+
+    return store.atomic_write(transition)

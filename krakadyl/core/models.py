@@ -228,6 +228,16 @@ class Observation(BaseModel):
     actor: str
     visual_region: Optional[str] = None
     evidence_custody: EvidenceCustody
+    invalidated: bool = False
+    invalidation_reason: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _invalidation_has_a_reason(self) -> "Observation":
+        if self.invalidated and not self.invalidation_reason:
+            raise ValueError("an invalidated observation needs a reason")
+        if not self.invalidated and self.invalidation_reason is not None:
+            raise ValueError("an invalidation reason requires invalidated=True")
+        return self
 
 
 class VerificationBasis(BaseModel):

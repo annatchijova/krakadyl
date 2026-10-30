@@ -17,9 +17,10 @@ requirement blocks publication.
 verification graph for every case as typed state. Structured
 `VerificationRecord`/`VerificationBasis` values now validate direct and
 recursive sources, reject shared primary ancestry, and recheck current source
-bytes. Legacy requirements still use `verified_against` as provenance text, and
-the structured graph does not yet model first-class logical invalidation events.
-Therefore the system cannot independently prove that:
+bytes. Structured observations can now be invalidated through an atomic,
+audited transition. Legacy requirements still use `verified_against` as
+provenance text, and not every external semantic invalidation is forced through
+that transition. Therefore the system cannot independently prove that:
 
 - every legacy primary source used by a verification is still valid when
   execution happens if the source changed without a corresponding requirement
@@ -28,17 +29,16 @@ Therefore the system cannot independently prove that:
   source node through all dependent verifications and requirements.
 
 **Impact:** a source can become semantically invalid while the derived
-`EvidenceRequirement` bytes remain unchanged and no source record emits a
-typed invalidation. The current revision fence and byte checks cannot detect a
-change that no represented state records. This is not a claim that the receipt
-seal is broken; it is a boundary of the evidence model before sealing.
+`EvidenceRequirement` bytes remain unchanged if the invalidation happens
+outside the typed observation transition. The current revision fence and byte
+checks cannot detect a change that no represented state records. This is not a
+claim that the receipt seal is broken; it is a boundary of the evidence model
+before sealing.
 
-**Required closure:** extend the typed, append-only graph with source validity
-and invalidation events. At preparation and execution, walk the full transitive
-closure and require current validity for every node. Independence must be
-computed from disjoint source ancestry, not inferred from different human
-names. A source invalidation must atomically mark dependent verifications and
-requirements stale or make execution abstain until reevaluation.
+**Required closure:** route every source invalidation, including provider and
+human adjudication paths, through the typed atomic transition. Atomically mark
+dependent verifications and requirements stale or make execution abstain until
+reevaluation. Migrate legacy requirements away from prose-only provenance.
 
 **Adversarial acceptance cases:**
 
@@ -50,7 +50,7 @@ requirements stale or make execution abstain until reevaluation.
    and recursive sources.**
 3. Prepare with valid sources, invalidate one primary source without editing the
    derived requirement, then execute; publication is refused. **Implemented for
-   structured sources when invalidation changes observable source bytes.**
+   structured sources, including typed logical invalidation.**
 4. Change only a derived requirement; the existing revision fence still refuses
    execution. **Implemented.**
 
