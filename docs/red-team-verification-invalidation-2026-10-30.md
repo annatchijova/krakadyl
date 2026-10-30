@@ -58,12 +58,15 @@ Prepared actions without this snapshot are rejected and must be recreated.
 
 ## Residual boundary
 
-The current domain model records `verified_against` as provenance text and does
-not yet model a multi-verifier dependency graph or a first-class primary-source
-object. Therefore this fix detects invalidation when the case transition
-updates the `EvidenceRequirement` revision. A future source invalidation path
-must update that requirement atomically; otherwise no downstream component can
-know that an external source became invalid.
+The current domain model now supports a typed multi-verifier dependency graph
+for requirements that carry `VerificationRecord` values, including recursive
+source checks, shared-ancestry rejection, self-reference rejection, and
+observation-dependency cycle rejection. Legacy requirements still record
+`verified_against` only as provenance text and do not expose their complete
+dependency closure. Therefore a future source invalidation path must update the
+typed observation transition atomically, and legacy provenance must be migrated;
+otherwise no downstream component can know that an external source became
+invalid.
 
 Skills used: `invariant-hunting`, `red-team-auditing`, `variant-analysis`,
 `atomic-state-mutation`, `falsifiable-testing`, and `audit-before-patch`.

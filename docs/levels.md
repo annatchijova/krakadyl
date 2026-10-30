@@ -110,9 +110,10 @@ the authority layer.
 
 Known limitations are tracked explicitly in
 [`docs/known-limitations.md`](known-limitations.md). In particular, the current
-execution fence revalidates requirement revisions but does not yet provide a
-first-class transitive verification graph or prove effective independence of
-shared primary sources.
+execution fence revalidates requirement revisions. Structured requirements now
+carry a transitive verification graph that rejects shared ancestry,
+self-reference, and observation-dependency cycles; legacy requirements still
+use prose provenance and do not provide that guarantee until migrated.
 
 ## Where invariant 5 actually comes from
 
