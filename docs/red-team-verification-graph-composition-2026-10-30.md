@@ -127,18 +127,23 @@ root verifier, not merely a parent verifier in the same graph.
 
 **Observation:** basis observations were checked for presence, digest, and
 invalidation, but a parent record's `target_observation_id` was not required to
-exist in the current observation set or to still match its custody bytes.
+exist in the current observation set, to still match its custody bytes, or to
+keep its logical `Observation.digest` aligned with the custody digest.
 
 **Induction:** a graph containing a parent target that was not present in the
-case, or whose bytes changed after verification, produced no dependency failure
-before the fix. The validator now rejects missing, invalidated, or integrity-
-failed targets for every verification record, not only the root requirement
-target.
+case, whose bytes changed after verification, or whose logical digest diverged
+from custody produced no dependency failure before the fix. The validator now
+rejects missing, invalidated, or integrity-failed targets for every verification
+record, not only the root requirement target; packaging applies the same digest
+agreement rule.
 
 **Status:** missing-target validation was fixed by `9156ec2`; target-integrity
-revalidation was fixed by `0a65457`. Regressions
+revalidation was fixed by `0a65457`; digest agreement in both verification and
+packaging was fixed by `a89f709`. Regressions
 `test_verification_record_target_must_exist` and
-`test_verification_record_target_integrity_is_rechecked` cover both cases.
+`test_verification_record_target_integrity_is_rechecked` cover target presence
+and byte integrity; `test_verification_target_digest_must_match_custody_digest`
+covers metadata divergence.
 
 ## Negative controls and refuted explanations
 
@@ -163,8 +168,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced twelve passing tests after the
-target-integrity fix. The full locked suite produced **389 passed**. The live Meta
+The focused verification graph suite produced thirteen passing tests after the
+digest-agreement fix. The full locked suite produced **390 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -190,7 +195,7 @@ lack typed dependency closure and remain `WARN`.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Eight graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Thirteen graph tests and full locked suite | Confirmed in tested scope |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
