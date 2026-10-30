@@ -55,6 +55,18 @@ def validate_verification_dependencies(
     if not requirement.verification_records:
         return tuple(failures)
 
+    duplicate_verification_ids = sorted(
+        verification_id
+        for verification_id, count in Counter(
+            record.verification_id for record in requirement.verification_records
+        ).items()
+        if count > 1
+    )
+    failures.extend(
+        f"duplicate verification id '{verification_id}' makes verification graph ambiguous"
+        for verification_id in duplicate_verification_ids
+    )
+
     by_id = {observation.id: observation for observation in observations}
     records_by_id = {record.verification_id: record for record in requirement.verification_records}
     checked_sources: set[tuple[str, str]] = set()

@@ -197,6 +197,34 @@ def test_duplicate_observation_ids_are_not_last_write_wins(graph_case):
     assert any("duplicate observation id 'obs-target'" in failure for failure in failures)
 
 
+def test_duplicate_verification_ids_are_not_last_write_wins(graph_case):
+    observations, files, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    primary_two = next(item for item in observations if item.id == "obs-primary-2")
+    ambiguous = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={
+                "verification_id": "duplicate-verification",
+                "target_observation_id": primary_one.id,
+                "target_observation_digest": primary_one.digest,
+                "basis": (VerificationBasis(
+                    observation_id=primary_two.id,
+                    observation_digest=primary_two.digest,
+                ),),
+            }),
+            requirement.verification_records[1].model_copy(update={
+                "verification_id": "duplicate-verification",
+                "target_observation_digest": target.digest,
+                "parent_verification_ids": ("duplicate-verification",),
+            }),
+        ),
+    })
+
+    failures = validate_verification_dependencies(ambiguous, observations, files)
+
+    assert any("duplicate verification id 'duplicate-verification'" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
