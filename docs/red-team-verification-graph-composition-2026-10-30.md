@@ -344,6 +344,22 @@ observation supplied to dependency evaluation.
 `test_runtime_rejects_inconsistent_observation_invalidation_state` covers the
 state mismatch.
 
+### RT-VERIFY-22 — Runtime accepted an anonymous primary source
+
+**Observation:** `Observation.source` was an unconstrained string, and source
+identity is the runtime key used to distinguish independent roots. An empty
+source could therefore be treated as a legitimate primary identity.
+
+**Induction:** a primary observation with `source=""` passed the old graph
+validator. Runtime now rejects anonymous sources before computing source
+identity. The related `blocked_by_authority` hypothesis was refuted: the live
+contract uses that flag to gate new acquisition routes, while export authority
+comes from the mandate and current evidence state.
+
+**Status:** anonymous-source validation was fixed by `df8900d`; regression
+`test_runtime_rejects_anonymous_observation_source` covers the malformed source.
+The `blocked_by_authority` hypothesis remains a documented non-finding.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -367,8 +383,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced thirty-one passing tests after the
-invalidation-state fix. The full locked suite produced **408 passed**. The live Meta
+The focused verification graph suite produced thirty-two passing tests after the
+source-identity validation fix. The full locked suite produced **409 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -400,7 +416,7 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Thirty-one graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Thirty-two graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
@@ -415,6 +431,8 @@ check and must be normalized at acquisition.
 | Runtime could accept an empty verification identifier | Observation | Failing regression `test_runtime_rejects_empty_verification_id` | Confirmed and fixed by `5097eb7` |
 | Runtime could accept incomplete verification provenance | Observation | Failing regressions `test_runtime_rejects_naive_verification_timestamp` and `test_runtime_rejects_empty_verification_method` | Confirmed and fixed by `e686038` |
 | Runtime could accept an impossible invalidation state | Observation | Failing regression `test_runtime_rejects_inconsistent_observation_invalidation_state` | Confirmed and fixed by `d6e20f0` |
+| Runtime could accept an anonymous primary source | Observation | Failing regression `test_runtime_rejects_anonymous_observation_source` | Confirmed and fixed by `df8900d` |
+| `blocked_by_authority` bypassed export authority | Code/context review | Acquisition route contract gates new capture; executor gates export by mandate and evidence | Refuted in current scope |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
