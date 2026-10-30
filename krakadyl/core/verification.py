@@ -111,6 +111,9 @@ def validate_verification_dependencies(
         sources: set[str] = set()
         source_identities: set[str] = set()
         for basis in record.basis:
+            if basis.observation_id == record.target_observation_id:
+                failures.append("target observation cannot be a verification source")
+                continue
             sources.add(basis.observation_id)
             marker = (basis.observation_id, basis.observation_digest)
             if marker in checked_sources:

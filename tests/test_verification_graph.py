@@ -283,6 +283,25 @@ def test_requirement_verifier_must_be_one_of_the_runtime_roots(graph_case):
     assert any("verified_by must match a root structured verifier" in failure for failure in failures)
 
 
+def test_runtime_rejects_target_as_its_own_verification_source(graph_case):
+    observations, files, requirement, target = graph_case
+    self_verified = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={
+                "basis": (VerificationBasis(
+                    observation_id=target.id,
+                    observation_digest=target.digest,
+                ),),
+            }),
+            requirement.verification_records[1],
+        ),
+    })
+
+    failures = validate_verification_dependencies(self_verified, observations, files)
+
+    assert any("target observation cannot be a verification source" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
