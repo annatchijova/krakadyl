@@ -139,11 +139,14 @@ agreement rule.
 
 **Status:** missing-target validation was fixed by `9156ec2`; target-integrity
 revalidation was fixed by `0a65457`; digest agreement in both verification and
-packaging was fixed by `a89f709`. Regressions
+packaging was fixed by `a89f709`. Historical target binding was fixed by
+`173c75c`; the record now carries the target digest observed at verification
+time. Regressions
 `test_verification_record_target_must_exist` and
 `test_verification_record_target_integrity_is_rechecked` cover target presence
-and byte integrity; `test_verification_target_digest_must_match_custody_digest`
-covers metadata divergence.
+and byte integrity; `test_verification_target_digest_drift_is_rejected`
+covers metadata divergence; `test_verification_target_digest_is_bound_at_verification_time`
+covers a coherent replacement of both bytes and custody metadata.
 
 ## Negative controls and refuted explanations
 
@@ -168,8 +171,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced thirteen passing tests after the
-digest-agreement fix. The full locked suite produced **390 passed**. The live Meta
+The focused verification graph suite produced fourteen passing tests after the
+target-snapshot fix. The full locked suite produced **391 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -187,7 +190,10 @@ dependency propagation remain open architectural work. Structured
 hypothesis-recovery alternatives now require observation/file context and are
 revalidated before a suggestion is returned, and hypothesis-review flags use
 the same current context. Legacy alternatives and context-free callers still
-lack typed dependency closure and remain `WARN`.
+lack typed dependency closure and remain `WARN`. Structured verification records
+created before target-digest binding may deserialize with a missing snapshot,
+but validation rejects them until they are rebuilt with the historical target
+digest; this is deliberate honest degradation rather than an inferred value.
 
 ## Claim audit
 
@@ -195,7 +201,8 @@ lack typed dependency closure and remain `WARN`.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Thirteen graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Fourteen graph tests and full locked suite | Confirmed in tested scope |
+| A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
