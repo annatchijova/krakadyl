@@ -141,6 +141,39 @@ def test_verification_cannot_use_target_as_its_own_primary_source(graph_case):
         )
 
 
+def test_verification_observation_dependencies_cannot_cycle(graph_case):
+    observations, _, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    cyclic = requirement.model_copy(update={
+        "verification_records": (
+            VerificationRecord(
+                verification_id="check-primary-one",
+                verifier_identity="investigator-B",
+                target_observation_id=primary_one.id,
+                basis=(VerificationBasis(
+                    observation_id=target.id, observation_digest=target.digest,
+                ),),
+                method="check primary one against target",
+                recorded_at=NOW,
+            ),
+            VerificationRecord(
+                verification_id="root-check",
+                verifier_identity="investigator-C",
+                target_observation_id=target.id,
+                basis=(VerificationBasis(
+                    observation_id=primary_one.id, observation_digest=primary_one.digest,
+                ),),
+                parent_verification_ids=("check-primary-one",),
+                method="check target through primary one",
+                recorded_at=NOW,
+            ),
+        ),
+    })
+
+    with pytest.raises(ValueError, match="observation dependency graph contains a cycle"):
+        EvidenceRequirement(**cyclic.model_dump())
+
+
 @pytest.fixture
 def graph_case(tmp_path):
     target, target_path = _observation(tmp_path, "obs-target", "device-A", b"target bytes")

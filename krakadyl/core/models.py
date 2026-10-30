@@ -419,6 +419,27 @@ class EvidenceRequirement(BaseModel):
         for record in self.verification_records:
             if any(basis.observation_id == record.target_observation_id for basis in record.basis):
                 raise ValueError("target observation cannot be a verification source")
+        observation_dependencies: dict[str, set[str]] = {}
+        for record in self.verification_records:
+            observation_dependencies.setdefault(record.target_observation_id, set()).update(
+                basis.observation_id for basis in record.basis
+            )
+        visiting_observations: set[str] = set()
+        visited_observations: set[str] = set()
+
+        def visit_observation(observation_id: str) -> None:
+            if observation_id in visiting_observations:
+                raise ValueError("observation dependency graph contains a cycle")
+            if observation_id in visited_observations:
+                return
+            visiting_observations.add(observation_id)
+            for dependency_id in observation_dependencies.get(observation_id, set()):
+                visit_observation(dependency_id)
+            visiting_observations.remove(observation_id)
+            visited_observations.add(observation_id)
+
+        for observation_id in observation_dependencies:
+            visit_observation(observation_id)
         visiting: set[str] = set()
         visited: set[str] = set()
 
