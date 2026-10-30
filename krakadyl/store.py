@@ -392,7 +392,7 @@ class KrakadylStore:
             try:
                 latest = self._conn.execute(
                     "SELECT json FROM objects WHERE case_id=? AND kind='receipt' "
-                    "ORDER BY updated_at, rowid DESC LIMIT 1",
+                    "ORDER BY updated_at DESC, rowid DESC LIMIT 1",
                     (case_id,),
                 ).fetchone()
                 current_head = json.loads(latest[0])["hash"] if latest else None

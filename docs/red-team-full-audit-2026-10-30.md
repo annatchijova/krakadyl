@@ -437,7 +437,11 @@ filesystem I/O.
 
 **Induction after remediation:** the sequential and forced two-thread tests
 passed; exactly one concurrent receipt remained rooted at the old head and the
-other linked to the first committed successor. `KL-005` is closed.
+other linked to the first committed successor. A three-receipt regression then
+found and corrected an ordering defect in the new head query: ascending
+timestamps selected the oldest receipt after the second append. The query now
+orders timestamps and rowids descending, and the three-receipt chain passes.
+`KL-005` is closed.
 
 ## Remediation status
 

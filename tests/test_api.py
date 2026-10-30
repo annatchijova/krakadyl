@@ -198,6 +198,15 @@ def test_api_execution_receipts_continue_the_case_chain(client):
     assert second["executed"] is True
     assert second["prev_hash"] == first["hash"]
 
+    third_prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
+    third = client.post(
+        "/api/cases/case-001/actions/execute",
+        json={"principal": "investigator-A", "prepared_action_id": third_prep["prepared"]["id"]},
+    ).json()["receipt"]
+
+    assert third["executed"] is True
+    assert third["prev_hash"] == second["hash"]
+
 
 def test_concurrent_distinct_executions_do_not_fork_the_receipt_chain(client, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
