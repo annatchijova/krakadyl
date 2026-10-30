@@ -329,6 +329,21 @@ decision.
 `test_runtime_rejects_naive_verification_timestamp` and
 `test_runtime_rejects_empty_verification_method` cover the malformed records.
 
+### RT-VERIFY-21 — Runtime accepted an impossible invalidation state
+
+**Observation:** `Observation` construction requires `invalidated` and
+`invalidation_reason` to agree, but runtime validation only branched on the
+boolean flag. A non-invalidated observation carrying a reason could therefore
+re-enter the valid path.
+
+**Induction:** the inconsistent observation passed target integrity and graph
+checks before the fix. Runtime now validates the invalidation pair for every
+observation supplied to dependency evaluation.
+
+**Status:** fixed by `d6e20f0`; regression
+`test_runtime_rejects_inconsistent_observation_invalidation_state` covers the
+state mismatch.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -352,8 +367,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced thirty passing tests after the
-provenance-field fix. The full locked suite produced **407 passed**. The live Meta
+The focused verification graph suite produced thirty-one passing tests after the
+invalidation-state fix. The full locked suite produced **408 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -385,7 +400,7 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Thirty graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Thirty-one graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
@@ -399,6 +414,7 @@ check and must be normalized at acquisition.
 | Runtime could accept an anonymous verifier | Observation | Failing regression `test_runtime_rejects_empty_verifier_identity` | Confirmed and fixed by `536dbd8` |
 | Runtime could accept an empty verification identifier | Observation | Failing regression `test_runtime_rejects_empty_verification_id` | Confirmed and fixed by `5097eb7` |
 | Runtime could accept incomplete verification provenance | Observation | Failing regressions `test_runtime_rejects_naive_verification_timestamp` and `test_runtime_rejects_empty_verification_method` | Confirmed and fixed by `e686038` |
+| Runtime could accept an impossible invalidation state | Observation | Failing regression `test_runtime_rejects_inconsistent_observation_invalidation_state` | Confirmed and fixed by `d6e20f0` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
