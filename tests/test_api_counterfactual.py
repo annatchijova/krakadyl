@@ -15,6 +15,7 @@ GRANT_B = {"question": {"allowed_device": "device-B", "destination": "reviewer-a
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
     monkeypatch.setenv("KRAKADYL_OPERATOR_TOKENS", f"investigator-C={hash_token('token-c')}")
     import krakadyl.api.app as app_module
 

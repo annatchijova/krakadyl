@@ -11,6 +11,7 @@ from krakadyl.core.counterfactual import (
     CounterfactualRejected,
     Delta,
     DeltaKind,
+    MAX_COUNTERFACTUALS_PER_CASE,
     Question,
     base_state_digest,
     evaluate_counterfactual,
@@ -148,4 +149,14 @@ def test_stored_apart_from_case_state_and_append_only(two_device_case, tmp_path)
     assert store.read_locked(lambda c: c.execute("SELECT COUNT(*) FROM objects").fetchone()[0]) == 0
     with pytest.raises(sqlite3.IntegrityError, match="append-only"):
         store.atomic_write(lambda c: c.execute("UPDATE counterfactuals SET created_by='someone'"))
+    store.close()
+
+
+def test_counterfactuals_are_bounded_per_case(two_device_case, tmp_path):
+    store = KrakadylStore(tmp_path / "cf-limit.db")
+    cf = _eval(_inputs(two_device_case), EXPORT_B, Delta(kind=DeltaKind.GRANT_RESOURCE, value="case-001/device-B"))
+    for index in range(MAX_COUNTERFACTUALS_PER_CASE):
+        save_counterfactual(store, cf.model_copy(update={"counterfactual_id": f"cf-{index:08d}"}))
+    with pytest.raises(CounterfactualRejected, match="reached the limit"):
+        save_counterfactual(store, cf.model_copy(update={"counterfactual_id": "cf-over-limit"}))
     store.close()

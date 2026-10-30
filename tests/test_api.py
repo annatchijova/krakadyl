@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
     monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
     import krakadyl.api.app as app_module
 
@@ -259,6 +260,17 @@ def test_dev_routes_are_absent_when_disabled(monkeypatch, tmp_path):
         # file — they import the same cached module object.
         monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
         importlib.reload(app_module)
+
+
+def test_dev_routes_are_disabled_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.delenv("KRAKADYL_ENABLE_DEV_ROUTES", raising=False)
+    import krakadyl.api.app as app_module
+
+    importlib.reload(app_module)
+    assert TestClient(app_module.app).post(
+        "/api/dev/cases/case-001/tamper", json={"observation_id": "obs-a1"}
+    ).status_code == 404
 
 
 def test_analyze_note_returns_typed_signals_never_touching_case_state(client, monkeypatch):

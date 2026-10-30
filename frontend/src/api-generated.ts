@@ -427,74 +427,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dev/cases/{case_id}/tamper": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dev Tamper */
-        post: operations["dev_tamper_api_dev_cases__case_id__tamper_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dev/cases/{case_id}/revoke-mandate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dev Revoke Mandate */
-        post: operations["dev_revoke_mandate_api_dev_cases__case_id__revoke_mandate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dev/cases/{case_id}/unresolve-hypothesis-requirement": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dev Unresolve Requirement */
-        post: operations["dev_unresolve_requirement_api_dev_cases__case_id__unresolve_hypothesis_requirement_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dev/cases/{case_id}/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dev Reset */
-        post: operations["dev_reset_api_dev_cases__case_id__reset_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1813,14 +1745,6 @@ export interface components {
             /** Valid Until */
             valid_until?: string | null;
         };
-        /** RevokeMandateRequest */
-        RevokeMandateRequest: {
-            /**
-             * Reason
-             * @default case reassigned to another unit
-             */
-            reason: string;
-        };
         /** RouteView */
         RouteView: {
             requirement: components["schemas"]["EvidenceRequirement"];
@@ -1855,6 +1779,8 @@ export interface components {
             handoff_id?: string | null;
             /** State Digest */
             state_digest: string;
+            /** State Fingerprint */
+            state_fingerprint?: string | null;
             /**
              * Note
              * @default
@@ -1947,11 +1873,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-        };
-        /** TamperRequest */
-        TamperRequest: {
-            /** Observation Id */
-            observation_id: string;
         };
         /**
          * TaskResponsibility
@@ -2944,148 +2865,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CounterfactualView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dev_tamper_api_dev_cases__case_id__tamper_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TamperRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dev_revoke_mandate_api_dev_cases__case_id__revoke_mandate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RevokeMandateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dev_unresolve_requirement_api_dev_cases__case_id__unresolve_hypothesis_requirement_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dev_reset_api_dev_cases__case_id__reset_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */

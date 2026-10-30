@@ -57,6 +57,7 @@ from krakadyl.core.receipt import canonical_bytes
 from krakadyl.store import KrakadylStore
 
 MAX_DELTAS = 8
+MAX_COUNTERFACTUALS_PER_CASE = 100
 
 
 class DeltaKind(str, Enum):
@@ -348,6 +349,13 @@ def evaluate_counterfactual(
 
 def save_counterfactual(store: KrakadylStore, counterfactual: Counterfactual) -> None:
     def write(connection: sqlite3.Connection) -> None:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM counterfactuals WHERE case_id=?", (counterfactual.case_id,)
+        ).fetchone()[0]
+        if count >= MAX_COUNTERFACTUALS_PER_CASE:
+            raise CounterfactualRejected(
+                f"case has reached the limit of {MAX_COUNTERFACTUALS_PER_CASE} counterfactuals"
+            )
         now_iso = counterfactual.created_at.astimezone(timezone.utc).isoformat()
         connection.execute(
             "INSERT INTO counterfactuals (counterfactual_id, case_id, created_by, counterfactual_json, created_at) "

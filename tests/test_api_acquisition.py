@@ -35,6 +35,7 @@ class _FakeSam:
 
 def _load(tmp_path, monkeypatch, tokens=True):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
     monkeypatch.delenv("KRAKADYL_ENABLE_SAM", raising=False)
     if tokens:
         monkeypatch.setenv(

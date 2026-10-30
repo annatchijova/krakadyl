@@ -176,6 +176,10 @@ class ShiftEvent(BaseModel):
     to_actor: Optional[str] = None
     handoff_id: Optional[str] = None
     state_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    # Unlike state_digest (the rendered handoff view), this fingerprint is
+    # computed from the persisted case rows while the transition holds the
+    # database write lock. It is the concurrency fence used at acceptance.
+    state_fingerprint: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     note: str = Field(default="", max_length=4000)
     transfer: tuple[tuple[str, str], ...] = ()  # (requirement_id, revision at handoff)
     transferred: tuple[str, ...] = ()
@@ -210,6 +214,35 @@ def _insert(connection: sqlite3.Connection, event: ShiftEvent, summary: str) -> 
         (event.case_id, now_iso, f"shift_{event.kind}", summary,
          json.dumps({"event_id": event.event_id, "handoff_id": event.handoff_id}, sort_keys=True)),
     )
+
+
+_FINGERPRINT_IGNORED_TABLES = {"events", "acquisition_events", "shift_events", "counterfactuals"}
+
+
+def _state_fingerprint(connection: sqlite3.Connection, case_id: str) -> str:
+    """Fingerprint case state without including audit rows created by handoff itself.
+
+    The query runs inside the same transaction as record/accept. Dynamic table
+    names come only from SQLite's schema catalogue; values remain bound
+    parameters. This makes the fingerprint a database-level concurrency fence,
+    not a caller-supplied snapshot.
+    """
+    tables = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ).fetchall()
+    state = []
+    for (table,) in tables:
+        if table in _FINGERPRINT_IGNORED_TABLES:
+            continue
+        columns = [row[1] for row in connection.execute(f'PRAGMA table_info("{table.replace(chr(34), chr(34) * 2)}")')]
+        if "case_id" not in columns:
+            continue
+        quoted = '"' + table.replace('"', '""') + '"'
+        rows = connection.execute(
+            f"SELECT * FROM {quoted} WHERE case_id=? ORDER BY rowid", (case_id,)
+        ).fetchall()
+        state.append({"table": table, "columns": columns, "rows": [list(row) for row in rows]})
+    return hashlib.sha256(canonical_bytes(state)).hexdigest()
 
 
 def record_handoff(
@@ -252,6 +285,7 @@ def record_handoff(
         event = ShiftEvent(
             case_id=case_id, event_id=f"handoff-{secrets.token_hex(8)}", kind="handoff",
             actor=from_actor, to_actor=to_actor, state_digest=current.state_digest,
+            state_fingerprint=_state_fingerprint(connection, case_id),
             note=note, transfer=tuple(transfer), recorded_at=now,
         )
         _insert(connection, event, f"{from_actor} handed the case to {to_actor}"
@@ -285,6 +319,9 @@ def accept_handoff(
             raise HandoffRejected(f"this handoff is addressed to {handoff.to_actor}")
         if any(e.kind == "accepted" and e.handoff_id == handoff_id for e in events):
             raise HandoffRejected("this handoff was already accepted")
+        if handoff.state_fingerprint is None:
+            raise HandoffRejected("this handoff predates transaction-bound state fencing; create a new handoff")
+        live_state_fingerprint = _state_fingerprint(connection, case_id)
         transferred, not_transferred = [], []
         now_iso = now.astimezone(timezone.utc).isoformat()
         for requirement_id, revision in handoff.transfer:
@@ -321,8 +358,9 @@ def accept_handoff(
         event = ShiftEvent(
             case_id=case_id, event_id=f"accepted-{secrets.token_hex(8)}", kind="accepted", actor=actor,
             handoff_id=handoff_id, state_digest=current.state_digest,
+            state_fingerprint=live_state_fingerprint,
             transferred=tuple(transferred), not_transferred=tuple(not_transferred),
-            state_changed_since_handoff=current.state_digest != handoff.state_digest, recorded_at=now,
+            state_changed_since_handoff=live_state_fingerprint != handoff.state_fingerprint, recorded_at=now,
         )
         _insert(connection, event, f"{actor} accepted the handoff from {handoff.actor}"
                 + (f"; {len(not_transferred)} requirement(s) not transferred because they changed" if not_transferred else ""))

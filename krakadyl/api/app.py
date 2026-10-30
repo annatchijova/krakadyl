@@ -1415,15 +1415,15 @@ def post_counterfactual(
         counterfactual = evaluate_counterfactual(
             _case_inputs(case_id), body.question, tuple(body.deltas), created_by=identity, now=now(),
         )
+        save_counterfactual(store, counterfactual)
     except CounterfactualRejected as exc:
         raise HTTPException(409, str(exc)) from exc
-    save_counterfactual(store, counterfactual)
     return CounterfactualView(counterfactual=counterfactual, stale=False)
 
 
 # --- dev-only endpoints: simulate the staleness Level 2 exists to
 # catch, so the mechanism can be demonstrated from the UI. Gated behind
-# KRAKADYL_ENABLE_DEV_ROUTES (default on, for local/demo convenience) —
+# KRAKADYL_ENABLE_DEV_ROUTES (default off; opt in explicitly for local/demo) —
 # found by red-team review (docs/red-team-api-and-frontend.md): the
 # comment here used to just ASSERT "a real deployment gates or removes
 # this router" without the code actually providing a gate to use.
@@ -1521,6 +1521,6 @@ def dev_reset(case_id: str, authorization: Optional[str] = Header(default=None))
     return {"ok": True}
 
 
-DEV_ROUTES_ENABLED = os.environ.get("KRAKADYL_ENABLE_DEV_ROUTES", "1") != "0"
+DEV_ROUTES_ENABLED = os.environ.get("KRAKADYL_ENABLE_DEV_ROUTES", "0") == "1"
 if DEV_ROUTES_ENABLED:
     app.include_router(dev_router)

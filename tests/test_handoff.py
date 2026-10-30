@@ -175,6 +175,28 @@ def test_a_requirement_that_moved_after_the_handoff_is_not_handed_over_blind(cas
     assert store.get(CASE, "requirement", REQ, EvidenceRequirement).responsibility.owner == "investigator-A"
 
 
+def test_acceptance_detects_unrelated_state_change_after_handoff(case):
+    store, refs = case
+    unrelated = "req-unrelated"
+    _add_requirement(store, unrelated)
+    handoff_view = _view(store, refs)
+    handoff = _handoff(store, refs)
+
+    changed = EvidenceRequirement(
+        **{
+            **store.get(CASE, "requirement", unrelated, EvidenceRequirement).model_dump(),
+            "responsibility": TaskResponsibility(owner="investigator-A", status=TaskStatus.BLOCKED).model_dump(),
+        }
+    )
+    store.put(CASE, "requirement", changed, NOW.isoformat())
+
+    accepted = accept_handoff(
+        store, case_id=CASE, handoff_id=handoff.event_id, actor="investigator-E",
+        current=handoff_view, now=NOW,
+    )
+    assert accepted.state_changed_since_handoff is True
+
+
 @pytest.mark.parametrize("kwargs, match", [
     ({"to_actor": "investigator-A"}, "someone else"),
     ({"to_actor": "stranger"}, "not a configured operator"),
