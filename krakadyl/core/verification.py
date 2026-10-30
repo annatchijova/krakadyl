@@ -79,6 +79,8 @@ def validate_verification_dependencies(
             + ", ".join(duplicate_verifier_identities)
         )
     for record in requirement.verification_records:
+        if not record.verification_id.strip():
+            failures.append("verification ID must be non-empty")
         if not record.verifier_identity.strip():
             failures.append("verification identity must be non-empty")
         if not record.basis:

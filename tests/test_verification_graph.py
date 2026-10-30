@@ -409,6 +409,20 @@ def test_runtime_rejects_empty_verifier_identity(graph_case):
     assert any("verification identity must be non-empty" in failure for failure in failures)
 
 
+def test_runtime_rejects_empty_verification_id(graph_case):
+    observations, files, requirement, _ = graph_case
+    malformed = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={"verification_id": ""}),
+            requirement.verification_records[1],
+        ),
+    })
+
+    failures = validate_verification_dependencies(malformed, observations, files)
+
+    assert any("verification ID must be non-empty" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
