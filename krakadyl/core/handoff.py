@@ -272,8 +272,8 @@ def accept_handoff(
 ) -> ShiftEvent:
     """Accepting is taking responsibility: each transferred requirement
     whose state did not move since the handoff becomes the incoming
-    person's, ACKNOWLEDGED by them (a REPORTED_DONE claim keeps its
-    status — the claim is still open). Anything that moved is listed as
+    person's, ACKNOWLEDGED by them (REPORTED_DONE, BLOCKED and UNKNOWN
+    keep their status — they describe the work, not who holds it). Anything that moved is listed as
     not transferred, with the reason, rather than handed over blind."""
 
     def transition(connection: sqlite3.Connection) -> ShiftEvent:
@@ -299,11 +299,16 @@ def accept_handoff(
             if requirement_revision_digest(requirement) != revision:
                 not_transferred.append((requirement_id, "changed after the handoff; review it with the previous owner"))
                 continue
-            keep_claim = requirement.responsibility.status == TaskStatus.REPORTED_DONE
+            # Statuses that carry information about the work itself stay
+            # as they are (red team L4-F2): handing over a blocked or
+            # unknown item must not make it look freshly acknowledged.
+            keep_status = requirement.responsibility.status in (
+                TaskStatus.REPORTED_DONE, TaskStatus.BLOCKED, TaskStatus.UNKNOWN
+            )
             responsibility = TaskResponsibility(**{
                 **requirement.responsibility.model_dump(),
                 "owner": actor,
-                "status": requirement.responsibility.status if keep_claim else TaskStatus.ACKNOWLEDGED,
+                "status": requirement.responsibility.status if keep_status else TaskStatus.ACKNOWLEDGED,
                 "accepted_by": actor,
                 "accepted_at": now,
             })

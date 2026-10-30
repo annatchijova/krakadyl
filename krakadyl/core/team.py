@@ -16,7 +16,7 @@ What a record may change is narrow and stated here, once:
 | BLOCKED | anyone | owner: -> BLOCKED; others: recorded, no state change |
 | VERIFIED | not the claimant | -> resolved, VERIFIED_DONE — only with no open conflict |
 | DISPUTED | anyone | none; opens a conflict (no `refers_to` = disputes the requirement's current recorded state, e.g. a verification made before team records existed) |
-| RESOLUTION | not a party to the conflict | closes it; `reopen_requirement` -> UNKNOWN, unresolved |
+| RESOLUTION | not a party to the conflict | closes it; `reopen_requirement` -> UNKNOWN, unresolved, and starts a new epoch (see `current_epoch`) |
 
 Attaching evidence to a claim does not verify it (invariant 4: nobody
 verifies their own work). Attached references are integrity-checked when
@@ -160,12 +160,29 @@ def _latest_by_actor(records: list[TeamRecord], kinds: set[ClaimKind]) -> dict[s
     return latest
 
 
+def current_epoch(records: list[TeamRecord]) -> list[TeamRecord]:
+    """Records after the requirement's latest reopen (red team L4-F1).
+
+    A `reopen_requirement` resolution discards the state those earlier
+    records were about. They stay on record and visible, but they no
+    longer form conflicts and can no longer be verified or disputed —
+    otherwise the very claim that was just overturned could be verified
+    straight back into place."""
+    last_reopen = max(
+        (i for i, r in enumerate(records)
+         if r.kind == ClaimKind.RESOLUTION and r.decision == "reopen_requirement"),
+        default=-1,
+    )
+    return records[last_reopen + 1:]
+
+
 def find_conflicts(
     requirement_id: str, records: list[TeamRecord], check_ref: RefChecker
 ) -> tuple[list[Conflict], list[Conflict]]:
     """(open, resolved) conflicts for one requirement, recomputed from
-    the records in their recorded order. Pure apart from `check_ref`."""
-    records = [r for r in records if r.requirement_id == requirement_id]
+    the current epoch's records in their recorded order. Pure apart
+    from `check_ref`."""
+    records = current_epoch([r for r in records if r.requirement_id == requirement_id])
     by_id = {r.record_id: r for r in records}
     found: dict[str, Conflict] = {}
 
@@ -260,7 +277,8 @@ def _transition(
     """Pure: the requirement after `record`, or TeamRejected. See the module table."""
     r = requirement
     status = r.responsibility.status
-    by_id = {x.record_id: x for x in existing}
+    by_id = {x.record_id: x for x in current_epoch(existing)}
+    superseded = {x.record_id for x in existing} - set(by_id)
     closed = r.resolved or r.unresolvable
 
     if record.kind == ClaimKind.ACKNOWLEDGED:
@@ -291,6 +309,8 @@ def _transition(
     if record.kind == ClaimKind.VERIFIED:
         if closed:
             raise TeamRejected("requirement is already resolved or closed as unresolvable")
+        if record.refers_to[0] in superseded:
+            raise TeamRejected("that claim was made before the requirement was reopened; a new claim is needed")
         claim = by_id.get(record.refers_to[0])
         if claim is None or claim.kind != ClaimKind.REPORTED_DONE:
             raise TeamRejected("a verification must name a completion claim on this requirement")
@@ -312,6 +332,8 @@ def _transition(
         )})
 
     if record.kind == ClaimKind.DISPUTED:
+        if superseded.intersection(record.refers_to):
+            raise TeamRejected("those records were made before the requirement was reopened and are no longer current")
         targets = [by_id.get(i) for i in record.refers_to]
         if any(t is None or t.kind not in (ClaimKind.REPORTED_DONE, ClaimKind.VERIFIED) for t in targets):
             raise TeamRejected("a dispute must name completion or verification records on this requirement")
@@ -337,8 +359,10 @@ def _transition(
             if conflict.kind == ConflictKind.EVIDENCE_MISMATCH:
                 raise TeamRejected("evidence that no longer matches cannot be kept as is; reopen the requirement")
             return r
+        # `unresolvable` is left as it is (red team L4-F3): an owner's
+        # explicit "not obtainable" is not this resolution's to undo.
         return EvidenceRequirement(**{
-            **r.model_dump(), "resolved": False, "unresolvable": False, "unresolvable_reason": None,
+            **r.model_dump(), "resolved": False,
             "responsibility": _responsibility(
                 r, status=TaskStatus.UNKNOWN, verified_by=None, verified_at=None,
                 verification_method=None, verified_against=None),
