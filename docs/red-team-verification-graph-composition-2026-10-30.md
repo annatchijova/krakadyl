@@ -181,6 +181,22 @@ resolution, including callers handling legacy requirements.
 `test_duplicate_observation_ids_are_not_last_write_wins` covers the order-
 dependence case.
 
+### RT-VERIFY-11 — Duplicate verification IDs could erase graph structure
+
+**Observation:** model construction rejects duplicate `verification_id` values,
+but the runtime graph resolver still materialized records as a dictionary. An
+unvalidated model copy could therefore replace one record and alter the root
+calculation.
+
+**Induction:** two records with one shared ID caused the old resolver to use the
+last record and produce no dependency failure, even though the graph was
+ambiguous. The runtime validator now rejects duplicate verification IDs before
+building `records_by_id`.
+
+**Status:** fixed by `0c62e16`; regression
+`test_duplicate_verification_ids_are_not_last_write_wins` covers the bypass of
+the construction-time guard.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -204,8 +220,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced seventeen passing tests after the
-namespace fix. The full locked suite produced **394 passed**. The live Meta
+The focused verification graph suite produced eighteen passing tests after the
+verification-namespace fix. The full locked suite produced **395 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -237,10 +253,11 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Seventeen graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Eighteen graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
+| Duplicate verification IDs could alter root calculation | Observation | Failing regression `test_duplicate_verification_ids_are_not_last_write_wins` | Confirmed and fixed by `0c62e16` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
