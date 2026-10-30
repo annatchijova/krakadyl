@@ -324,6 +324,16 @@ class EvidenceRequirement(BaseModel):
     blocked_by_authority: bool = False
     blocked_reason: Optional[str] = None
     responsibility: TaskResponsibility
+    # Level 3: the question a new capture would have to answer, and the
+    # categorical answers that would discriminate between hypotheses.
+    # Without both, no acquisition can be proposed for this requirement
+    # — "go get more evidence" with no stated question is exactly the
+    # non-discriminating capture docs/level3-acquisition-contracts.md
+    # forbids. Part of the requirement itself (not a side record) so the
+    # acquisition need-state digest covers it: rewording the question
+    # after a human approved a capture makes that approval stale.
+    discriminating_question: Optional[str] = None
+    answer_classes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _resolved_and_unresolvable_are_exclusive(self) -> "EvidenceRequirement":
@@ -331,6 +341,19 @@ class EvidenceRequirement(BaseModel):
             raise ValueError(
                 "a requirement cannot be both 'resolved' and 'unresolvable' — "
                 "these are mutually exclusive outcomes"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _question_and_answer_classes_come_together(self) -> "EvidenceRequirement":
+        if self.discriminating_question is None and not self.answer_classes:
+            return self
+        if not self.discriminating_question or not self.discriminating_question.strip():
+            raise ValueError("answer classes require a non-empty discriminating question")
+        if len(self.answer_classes) < 2 or len(set(self.answer_classes)) != len(self.answer_classes):
+            raise ValueError(
+                "a discriminating question needs at least two distinct answer classes — "
+                "a question with one possible answer discriminates nothing"
             )
         return self
 

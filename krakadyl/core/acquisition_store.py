@@ -32,7 +32,9 @@ from krakadyl.core.acquisition import (
     UnknownDisposition,
     UnknownResolution,
     canonical_record_digest,
+    need_state_digest,
     processor_request_for,
+    requirement_revision_digest,
     verify_processor_request,
 )
 from krakadyl.core.models import EvidenceRequirement, Hypothesis, Mandate
@@ -912,17 +914,8 @@ class SQLiteAcquisitionGate:
         ids = tuple(item.id for item in hypotheses)
         if ids != need.hypothesis_ids:
             raise ValueError("proposal does not name every current linked hypothesis in canonical order")
-        revision = hashlib.sha256(canonical_bytes({
-            "digest_type": "acquisition_requirement_revision",
-            "digest_version": 1,
-            "requirement": requirement.model_dump(mode="json"),
-        })).hexdigest()
-        digest = hashlib.sha256(canonical_bytes({
-            "digest_type": "acquisition_need_state",
-            "digest_version": 1,
-            "requirement": requirement.model_dump(mode="json"),
-            "hypotheses": [item.model_dump(mode="json") for item in hypotheses],
-        })).hexdigest()
+        revision = requirement_revision_digest(requirement)
+        digest = need_state_digest(requirement, list(hypotheses))
         if need.requirement_revision != revision or need.need_state_digest != digest:
             raise ValueError("proposal need snapshot is stale")
 
