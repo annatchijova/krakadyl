@@ -45,6 +45,10 @@ export type ClaimKind = Schemas["ClaimKind"];
 export type HandoffView = Schemas["HandoffView"];
 export type HandoffItem = Schemas["HandoffItem"];
 export type EvidenceRefInput = Schemas["EvidenceRef"];
+export type CounterfactualView = Schemas["CounterfactualView"];
+export type DeltaInput = Schemas["Delta"];
+export type DeltaKind = Schemas["DeltaKind"];
+export type CounterfactualOutcome = Schemas["Outcome"];
 
 type GeneratedActivity =
   paths["/api/cases/{case_id}/activity"]["get"]["responses"][200]["content"]["application/json"];
@@ -235,5 +239,21 @@ export const teamApi = {
     request<HandoffView>(`/api/cases/${caseId}/handoffs/${handoffId}/accept`, {
       method: "POST",
       headers: bearer(token),
+    }),
+};
+
+// Level 5: hypotheticals only. Nothing here can change the case or
+// produce anything the execute endpoint accepts.
+export const counterfactualApi = {
+  list: (caseId: string) => request<CounterfactualView[]>(`/api/cases/${caseId}/counterfactuals`),
+  evaluate: (
+    caseId: string,
+    token: string,
+    body: { question: { allowed_device: string; destination: string }; deltas: DeltaInput[] },
+  ) =>
+    request<CounterfactualView>(`/api/cases/${caseId}/counterfactuals`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify(body),
     }),
 };

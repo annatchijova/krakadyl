@@ -16,6 +16,7 @@ import { DevPanel } from "./components/DevPanel";
 import { LayaNotePanel } from "./components/LayaNotePanel";
 import { AcquisitionPanel } from "./components/AcquisitionPanel";
 import { TeamPanel } from "./components/TeamPanel";
+import { WhatIfPanel } from "./components/WhatIfPanel";
 import { Logo } from "./components/Logo";
 
 const CASE_ID = "case-001";
@@ -137,6 +138,9 @@ function App() {
                 evidence={overview.evidence}
                 onChanged={refresh}
               />
+            </div>
+            <div className="section-gap">
+              <WhatIfPanel caseId={CASE_ID} caseVersion={activity.length} token={operatorToken} />
             </div>
             <div className="section-gap">
               <LayaNotePanel busy={busy} onAnalyze={(noteText) => api.analyzeNote(CASE_ID, noteText)} />
