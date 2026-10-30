@@ -286,6 +286,8 @@ def main() -> int:
             parser.error(f"--max-usd-micros must be at least {REQUIRED_USD_MICROS} ({CALLS} images); nothing was called")
         if not args.meta_retention_reviewed:
             parser.error("confirm --meta-retention-reviewed after checking Meta's current retention terms; nothing was called")
+        if not sys.stdin.isatty():
+            parser.error("--live requires an interactive terminal for the human evaluations; nothing was called")
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_dir = OUT_ROOT / (stamp + ("-dry-run" if args.dry_run else "-live"))

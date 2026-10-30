@@ -1,6 +1,6 @@
 # Level 3 — acquisition wired into the case
 
-Status (2026-10-30): implemented on `feat/level3-case-acquisition`, offline-verified, driven end to end in a real browser against a capture-only deployment. **The level-closing live SAM run has not happened** — see "What is still open" below. Level 3 is therefore not claimed complete.
+Status (2026-10-30): implemented on `feat/level3-case-acquisition`, offline-verified, driven end to end in a real browser against a capture-only deployment, and closed with two real SAM calls on synthetic captures. Level 3 is complete under the acceptance contract; the live result demonstrates custody, evaluation, and honest non-discrimination, not model accuracy or provider billing reconciliation.
 
 Before this change the acquisition contract (`core/acquisition.py`), the SQLite gate (`core/acquisition_store.py`), the Meta SAM processor and the sidecar parser all existed, but nothing connected them to a case: `executor.py` passed `resolvable_by_authorized_source=False`, no endpoint could propose or authorize a capture, and no code could record an `EvidenceEvaluation`.
 
@@ -83,9 +83,14 @@ Defaults: 4 SAM images per requirement, 20 per case/mandate, 40 per deployment (
 
 Done after the first four commits; eight findings reproduced and fixed (evaluation bound to the approved question, reconciliation limited to the authorizer, integrity re-verified at evaluation, completed captures evaluable after a failed SAM phase, authenticated evidence reads, authenticated dev reset, owner-only abstention, earlier claimant preserved). See [red-team-level3-case-wiring.md](red-team-level3-case-wiring.md), which also lists the accepted residual risks.
 
-## What is still open — and blocks calling Level 3 complete
+## Level-closing live run
 
-1. **The live closing run.** Ready to execute: `demo/run_level3_live_closing.py` (rehearse first with `--dry-run`). It sends only two script-generated PNGs, spends exactly two SAM image calls (USD 0.005 at list price) with the gate's deployment budget set to the same ceiling, checks automatically that neither capture nor annotation promoted anything, asks a human for each evaluation, and writes `out/level3-closing/<timestamp>/report.json`. It refuses to start without `META_API_KEY`, `--max-usd-micros 5000` or more, and `--meta-retention-reviewed`. Original requirement: `level3-acquisition-contracts.md` requires a real SAM call on a real capture that returns a technically valid but non-discriminating result, plus a separate adversarial run with a convincing incorrect annotation. Both need: the user's approval of the spend ceiling (≈USD 0.01 for four images), a decision on what material is sent to Meta (synthetic only), and a current check of Meta's retention terms. Not run here.
+`demo/run_level3_live_closing.py` was run from a networked interactive environment on 2026-10-30 with two generated PNGs and a 5,000-micro ceiling. The report is `out/level3-closing/20261030T211357Z-live/report.json`.
+
+- Run A returned a valid empty annotation. Investigator-C recorded `INSUFFICIENT_OR_INVALID`; the clock requirement stayed open.
+- Run B returned one parsed region around the synthetic clock. Investigator-C recorded `NO_DISCRIMINATING_CHANGE`; the image contained no trusted reference time, so the requirement stayed open.
+- Both runs verified that capture and annotation alone did not change the requirement or hypotheses. No SAM output was promoted automatically.
+- Provider request IDs and conservative list-price usage are recorded. The report explicitly does not claim account billing reconciliation.
 2. Evaluator contract for a named inference mechanism (D1).
 3. Contradiction semantics (D2).
 4. Identity beyond shared tokens (D5).

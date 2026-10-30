@@ -758,10 +758,11 @@ acquisition lifecycle is wired into the case, the API and the workspace
 authorization with proven operator identity, operator-mediated capture,
 opt-in SAM, and `EvidenceEvaluation` with an independence rule that
 reuses `REPORTED_DONE`/`VERIFIED_DONE`. See
-[level3-case-wiring.md](level3-case-wiring.md). **Not complete**: the
-level-closing live SAM run (a real, non-discriminating result and a
-separate convincing-incorrect-annotation run) has not been executed; it
-needs an approved spend ceiling and data-scope decision first.
+[level3-case-wiring.md](level3-case-wiring.md). **Complete under the
+acceptance contract**: the live closing run recorded an empty result and a
+convincing clock localization from two synthetic captures; independent
+evaluation kept the requirement open in both cases and no output was
+promoted automatically.
 
 ### Level 4 — Shared custody, team investigations
 
@@ -783,7 +784,7 @@ resolution only by a non-party, and a handoff bound to the exact view
 it was made from that moves ownership but never authority. See
 [level4-shared-custody.md](level4-shared-custody.md) and
 [red-team-level4-shared-custody.md](red-team-level4-shared-custody.md).
-Not merged while Level 3's live closing run is pending.
+Merged after Level 3's live closing run completed.
 
 ### Level 5 — Comparable routes
 

@@ -174,13 +174,15 @@ printed hashes as `KRAKADYL_OPERATOR_TOKENS`, then follow `frontend/README.md`.
 The GitHub Actions workflow runs the same locked Python and frontend checks
 without Meta credentials.
 
-**Level 3 (acquisition), wired but not yet closed:** an open requirement
-that states a discriminating question can now get a new capture —
+**Level 3 (acquisition), closed under its acceptance contract:** an open requirement
+that states a discriminating question can get a new capture —
 proposed, authorized by a human holding a real operator token,
 submitted, optionally segmented by SAM 3.1, and then evaluated by an
 identified person. A self-evaluation is recorded as a claim; only an
-independent evaluator resolves the requirement. The live SAM closing run
-is still pending. See [docs/level3-case-wiring.md](docs/level3-case-wiring.md).
+independent evaluator resolves the requirement. The live closing run used two
+synthetic captures: one empty SAM result and one convincing clock localization;
+both were independently judged non-discriminating and left the requirement open.
+See [docs/level3-case-wiring.md](docs/level3-case-wiring.md).
 
 ## Not just forensics
 
