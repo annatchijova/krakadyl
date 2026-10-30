@@ -34,6 +34,7 @@ from krakadyl.core.models import EvidenceRequirement, Hypothesis, Observation, T
 from krakadyl.core.receipt import canonical_bytes
 from krakadyl.core.team import Conflict, RefChecker, TeamRecord, find_conflicts
 from krakadyl.store import KrakadylStore
+from krakadyl.core.verification import validate_verification_dependencies
 
 
 class HandoffItem(BaseModel):
@@ -101,12 +102,26 @@ def build_shift_handoff(
     }
     for r in sorted(requirements, key=lambda x: x.id):
         status = r.responsibility.status
+        verification_current = True
+        if r.observation_id and observations is not None and observation_files is not None:
+            observation = next((o for o in observations if o.id == r.observation_id), None)
+            verification_current = (
+                observation is not None
+                and not observation.invalidated
+                and not validate_verification_dependencies(r, observations, observation_files)
+            )
+        elif r.verification_records:
+            verification_current = False
         if r.unresolvable:
             sections["closed"].append(item(r, f"closed as unresolvable: {r.unresolvable_reason}"))
-        elif r.resolved and status == TaskStatus.VERIFIED_DONE:
+        elif r.resolved and status == TaskStatus.VERIFIED_DONE and verification_current:
             sections["verified"].append(item(
                 r, f"verified by {r.responsibility.verified_by} ({r.responsibility.verification_method})",
                 {"verified", "reported_done"}))
+        elif r.resolved and status == TaskStatus.VERIFIED_DONE:
+            sections["uncertain"].append(item(
+                r, "historically verified, but current verification dependencies require review",
+                {"verified", "disputed"}))
         elif r.id in urgent:
             sections["urgent"].append(item(r, urgent[r.id].reason, {"reported_done"}, urgent[r.id].minutes_left))
         elif status == TaskStatus.REPORTED_DONE:

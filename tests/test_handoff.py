@@ -22,6 +22,8 @@ from krakadyl.core.models import (
     Hypothesis,
     TaskResponsibility,
     TaskStatus,
+    VerificationBasis,
+    VerificationRecord,
 )
 from krakadyl.core.team import BLAME_TERMS, ClaimKind, list_team_records
 from test_executor import _mandate, _proposed_action, _verified_requirement, two_device_case  # noqa: F401
@@ -117,6 +119,49 @@ def test_handoff_puts_conflicts_and_expiring_claims_first(case):
     assert [i.requirement_id for i in view.not_acknowledged] == ["req-unacked"]
     assert [a.workflow_id for a in view.acquisitions_in_flight] == ["wf-1"]
     assert view.hypotheses_needing_review[0][0] == "hyp-9"
+
+
+def test_handoff_does_not_call_structured_verification_current_without_context(case):
+    _, refs = case
+    requirement = EvidenceRequirement(
+        id="req-structured",
+        predicate="target was independently corroborated",
+        acceptable_source_class="forensic source",
+        observation_id="obs-target",
+        resolved=True,
+        responsibility=TaskResponsibility(
+            owner="investigator-A",
+            status=TaskStatus.VERIFIED_DONE,
+            reported_done_by="investigator-A",
+            verified_by="investigator-C",
+            verification_method="structured-peer-review",
+        ),
+        verification_records=(
+            VerificationRecord(
+                verification_id="verification-1",
+                verifier_identity="investigator-C",
+                target_observation_id="obs-target",
+                basis=(VerificationBasis(
+                    observation_id="obs-primary",
+                    observation_digest="a" * 64,
+                ),),
+                method="peer review",
+                recorded_at=NOW,
+            ),
+        ),
+    )
+    view = build_shift_handoff(
+        case_id=CASE,
+        requirements=[requirement],
+        hypotheses=[],
+        records=[],
+        check_ref=refs,
+        acquisitions=[],
+        now=NOW,
+    )
+
+    assert view.verified == []
+    assert [item.requirement_id for item in view.uncertain_status] == ["req-structured"]
 
 
 def test_handoff_language_describes_the_case_not_people(case):
