@@ -71,9 +71,19 @@ export type ExecuteResponse = Omit<GeneratedExecuteResponse, "manifest"> & {
     | null;
 };
 
+let operatorToken = "";
+
+function setOperatorToken(token: string) {
+  operatorToken = token;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(operatorToken ? { Authorization: `Bearer ${operatorToken}` } : {}),
+      ...(init?.headers ?? {}),
+    },
     ...init,
   });
   if (!resp.ok) {
@@ -83,17 +93,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
-// Hardcoded because there is no login/session system yet — this is a
-// single-investigator local demo. Found by red-team review: the API
-// didn't check identity against Mandate.principal AT ALL; it now does,
-// at every action endpoint. This constant is the caller-ASSERTED
-// identity, not a cryptographic one — a real deployment replaces this
-// with whatever the actual login session resolves to, not a literal.
-const ACTING_PRINCIPAL = "investigator-A";
-
-// Level 3 acquisition endpoints do NOT use ACTING_PRINCIPAL: identity is
-// the operator bearer token the request proves. The token lives only in
-// React state for the tab's lifetime — never in localStorage.
+// The operator bearer token is the only identity proof. It lives only in
+// React state for the tab's lifetime — never in localStorage. Level 1/2
+// request bodies no longer carry a caller-asserted principal.
 function bearer(token: string): Record<string, string> {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 }
@@ -153,32 +155,33 @@ export const acquisitionApi = {
 };
 
 export const api = {
+  setOperatorToken,
   getCase: (caseId: string) => request<CaseOverview>(`/api/cases/${caseId}`),
   getActivity: (caseId: string) => request<ActivityEvent[]>(`/api/cases/${caseId}/activity`),
   prepare: (caseId: string) =>
     request<PrepareResponse>(`/api/cases/${caseId}/actions/prepare`, {
       method: "POST",
-      body: JSON.stringify({ principal: ACTING_PRINCIPAL }),
+      body: JSON.stringify({}),
     }),
   proposeWithMuse: (caseId: string) =>
     request<MuseProposeResponse>(`/api/cases/${caseId}/actions/propose-with-muse`, {
       method: "POST",
-      body: JSON.stringify({ principal: ACTING_PRINCIPAL }),
+      body: JSON.stringify({}),
     }),
   analyzeNote: (caseId: string, noteText: string) =>
     request<LayaSignals>(`/api/cases/${caseId}/analyze-note`, {
       method: "POST",
-      body: JSON.stringify({ principal: ACTING_PRINCIPAL, note_text: noteText }),
+      body: JSON.stringify({ note_text: noteText }),
     }),
   execute: (caseId: string, preparedActionId: string) =>
     request<ExecuteResponse>(`/api/cases/${caseId}/actions/execute`, {
       method: "POST",
-      body: JSON.stringify({ principal: ACTING_PRINCIPAL, prepared_action_id: preparedActionId }),
+      body: JSON.stringify({ prepared_action_id: preparedActionId }),
     }),
   recover: (caseId: string) =>
     request<RecoverResponse>(`/api/cases/${caseId}/actions/recover`, {
       method: "POST",
-      body: JSON.stringify({ principal: ACTING_PRINCIPAL }),
+      body: JSON.stringify({}),
     }),
   devTamper: (caseId: string, observationId: string) =>
     request<{ ok: boolean }>(`/api/dev/cases/${caseId}/tamper`, {

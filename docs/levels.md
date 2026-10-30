@@ -611,10 +611,11 @@ both confirmed by induction rather than architectural guesswork:
   decision at the API boundary, despite the project's own stated
   invariant that permissions are bound to identity among other
   dimensions. Confirmed by grepping every consuming read and finding
-  none. Fixed: every action endpoint now requires a `principal` field
-  and rejects a mismatch with 403 — caller-asserted, not
-  cryptographically authenticated (there is still no login/session
-  system; that gap is named, not hidden, in the report).
+  none. Fixed first by rejecting a mismatched request-body `principal`,
+  then closed at the API boundary by requiring a configured bearer
+  operator token for reads and actions. The body field is now optional
+  compatibility data; the bearer identity is authoritative and the
+  mandate still scopes it to its configured principal.
 - **The dev router's safety claim ("a real deployment gates or removes
   it") was a comment, not a mechanism** — no env flag existed to act on
   it. Fixed with `KRAKADYL_ENABLE_DEV_ROUTES`.

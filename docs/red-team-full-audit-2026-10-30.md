@@ -92,24 +92,21 @@ Tests that exercise simulations set `KRAKADYL_ENABLE_DEV_ROUTES=1` explicitly.
 The remaining deployment requirement is to keep that flag unset outside a
 controlled local/demo environment.
 
-## Residual risks requiring an authentication design
+## Residual risks after the bearer-authentication round
 
-These were verified but not silently “fixed” with an incompatible guess:
+The previous audit recorded anonymous reads and caller-asserted Level 1/2
+identity. The 2026-10-30 authentication round closed those two gaps with
+bearer authentication and mandate-principal binding. The remaining risks are:
 
-1. Level 1/2 action identity is caller-asserted `principal`. The mandate check
-   rejects the wrong string, but there is no login/session binding that proves
-   the caller owns that identity. This is a **CODE FACT** documented in
-   `krakadyl/api/app.py:228` and remains a deployment boundary.
-2. Several case and Level 3–5 metadata GET routes are unauthenticated. They are
-   acceptable only for the documented local single-investigator demo; a real
-   deployment needs bearer/session authorization and a frontend token flow for
-   reads as well as writes.
-3. The single SQLite connection and process-local Muse rate limiter need a
+1. The bearer credentials are shared secrets configured in the process. They
+   have no expiry, rotation, MFA, or independent identity-provider lifecycle;
+   this is a deployment boundary, not a claim of production authentication.
+2. The single SQLite connection and process-local Muse rate limiter need a
    multi-worker/concurrency load test before being claimed safe for deployment.
 
-These are architectural changes, not safe one-line patches: implementing them
-requires deciding the identity provider, read scopes, token lifecycle, and
-frontend session behavior.
+The first item requires deciding the identity provider, read scopes, token
+lifecycle, and frontend session behavior. The current API deliberately fails
+closed when no operator verifier is configured.
 
 ## Refuted vectors
 

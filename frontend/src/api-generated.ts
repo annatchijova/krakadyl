@@ -707,7 +707,7 @@ export interface components {
         /** AnalyzeNoteRequest */
         AnalyzeNoteRequest: {
             /** Principal */
-            principal: string;
+            principal?: string | null;
             /** Note Text */
             note_text: string;
         };
@@ -1170,7 +1170,7 @@ export interface components {
         /** ExecuteRequest */
         ExecuteRequest: {
             /** Principal */
-            principal: string;
+            principal?: string | null;
             /** Prepared Action Id */
             prepared_action_id: string;
         };
@@ -1343,7 +1343,7 @@ export interface components {
         /** MuseProposeRequest */
         MuseProposeRequest: {
             /** Principal */
-            principal: string;
+            principal?: string | null;
         };
         /** MuseProposeResponse */
         MuseProposeResponse: {
@@ -1459,7 +1459,7 @@ export interface components {
         /** PrepareRequest */
         PrepareRequest: {
             /** Principal */
-            principal: string;
+            principal?: string | null;
             /**
              * Allowed Device
              * @default device-A
@@ -1632,7 +1632,7 @@ export interface components {
         /** RecoverRequest */
         RecoverRequest: {
             /** Principal */
-            principal: string;
+            principal?: string | null;
             /**
              * Allowed Device
              * @default device-A
@@ -2052,7 +2052,9 @@ export interface operations {
     get_case_api_cases__case_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2083,7 +2085,9 @@ export interface operations {
     get_activity_api_cases__case_id__activity_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2116,7 +2120,9 @@ export interface operations {
     get_prepared_api_cases__case_id__prepared__prepared_action_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
                 prepared_action_id: string;
@@ -2148,7 +2154,9 @@ export interface operations {
     prepare_api_cases__case_id__actions_prepare_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2183,7 +2191,9 @@ export interface operations {
     propose_with_muse_api_cases__case_id__actions_propose_with_muse_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2218,7 +2228,9 @@ export interface operations {
     analyze_note_api_cases__case_id__analyze_note_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2253,7 +2265,9 @@ export interface operations {
     execute_api_cases__case_id__actions_execute_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2288,7 +2302,9 @@ export interface operations {
     recover_api_cases__case_id__actions_recover_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2323,7 +2339,9 @@ export interface operations {
     get_acquisition_api_cases__case_id__acquisition_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2642,7 +2660,9 @@ export interface operations {
     get_team_api_cases__case_id__team_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2711,7 +2731,9 @@ export interface operations {
     get_handoff_api_cases__case_id__handoff_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -2813,7 +2835,9 @@ export interface operations {
     get_counterfactuals_api_cases__case_id__counterfactuals_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 case_id: string;
             };

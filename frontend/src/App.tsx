@@ -33,6 +33,17 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   // Operator token for Level 3 actions — React state only, never persisted.
   const [operatorToken, setOperatorToken] = useState("");
+  const [pendingOperatorToken, setPendingOperatorToken] = useState("");
+
+  function authenticate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const token = pendingOperatorToken.trim();
+    if (!token) return;
+    setOperatorToken(token);
+    api.setOperatorToken(token);
+    setOverview(null);
+    setError(null);
+  }
 
   const refresh = useCallback(async () => {
     const [o, a] = await Promise.all([api.getCase(CASE_ID), api.getActivity(CASE_ID)]);
@@ -41,8 +52,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!operatorToken) return;
     refresh().catch((e) => setError(String(e)));
-  }, [refresh]);
+  }, [operatorToken, refresh]);
 
   async function guarded(fn: () => Promise<void>) {
     setBusy(true);
@@ -116,7 +128,30 @@ function App() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      {overview ? (
+      {!operatorToken ? (
+        <main style={{ maxWidth: 560, margin: "3rem auto", padding: "0 1.4rem" }}>
+          <section className="panel">
+            <h2>Operator authentication</h2>
+            <p className="reason-text">
+              Enter the bearer token configured for this deployment. It stays in this tab's memory and is never persisted.
+            </p>
+            <form onSubmit={authenticate}>
+              <input
+                type="password"
+                autoFocus
+                autoComplete="off"
+                placeholder="Operator token"
+                value={pendingOperatorToken}
+                onChange={(e) => setPendingOperatorToken(e.target.value)}
+                style={{ width: "100%", boxSizing: "border-box", padding: "0.55rem" }}
+              />
+              <button className="button-primary" type="submit" style={{ marginTop: "0.6rem" }}>
+                Authenticate
+              </button>
+            </form>
+          </section>
+        </main>
+      ) : overview ? (
         <div className="workspace">
           <CaseSidebar overview={overview} />
           <div>
@@ -127,7 +162,6 @@ function App() {
                 caseVersion={activity.length}
                 onChanged={refresh}
                 token={operatorToken}
-                onTokenChange={setOperatorToken}
               />
             </div>
             <div className="section-gap">

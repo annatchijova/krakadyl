@@ -8,6 +8,7 @@ HTTP API, SQLite persistence, the Muse wiring, and the React frontend.)
 **Method:** Abductive Engineering (A–D–I) + Red-Team Auditing + Variant Analysis + Invariant Hunting
 **Scope:** `krakadyl/api/app.py`, `krakadyl/store.py`, `krakadyl/adapters/muse.py`'s API-layer wiring, `frontend/src/**`. Out of scope: `krakadyl/core/*` (already through multiple self-red-team passes, documented in `docs/levels.md`).
 **Base:** `main` @ commit `23bafec` (the state right after Muse was wired into the workspace)
+**Historical note:** the caller-asserted identity and anonymous-read findings below describe the audited 2026-10-27 snapshot. They were superseded by the bearer-authentication round on 2026-10-30; the findings remain here to preserve the audit trail.
 **Reproducible evidence:** every CONFIRMED finding below has an exact command; the fixes and their regression tests are in the same commit as this document.
 
 ## Threat model
@@ -55,7 +56,7 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
   ALLOWED, for anyone who can reach the endpoint
   ```
 - **Threat-model precondition:** the attacker can reach the API at all (today: localhost + the Vite dev origin; the code itself does not enforce that boundary, a reverse proxy or firewall would have to).
-- **Fix:** `_assert_principal(mandate, asserted_principal)` now runs in `prepare`, `execute`, `recover`, and `propose_with_muse` (before the billed Muse call, not after — see F5's note), rejecting with 403 when the request's `principal` field doesn't match `mandate.principal`. This is **caller-asserted identity, not cryptographic authentication** — there is still no login/session system, so a caller can still lie about who they are. That remaining gap is real and explicitly not what this fix claims to close; see Recommendations.
+- **Historical fix in that snapshot:** `_assert_principal(mandate, asserted_principal)` rejected a mismatched body field. The 2026-10-30 authentication round superseded this with `_authenticated_principal`: a configured bearer token is the authority, and the legacy body field is only an optional consistency check.
 - **Regression test:** `tests/test_api.py::test_wrong_principal_is_rejected_on_every_action_endpoint`.
 
 ### F2 — The dev router's safety claim was a comment, not a mechanism
@@ -123,8 +124,8 @@ CODE FACT · PLAUSIBLE HYPOTHESIS · CONFIRMED BY INDUCTION · FALSIFIED
 | Nonce replay across cases (nonces are a global table, not case-scoped) | Not a bug — by design | Nonces are `secrets.token_hex(8)`, globally unique regardless of case; global scoping is intentional and doesn't weaken anything, since the value itself is the only thing that must be unique. |
 | CORS misconfiguration | Not exploitable as configured | `allow_origins` lists two explicit localhost origins, not `"*"` — this is a tight, if minimal-auth, allowlist for a dev build. |
 
-## Recommendations (not built in this round — recorded for later)
+## Recommendations from the 2026-10-27 snapshot
 
-- Replace caller-asserted `principal` with real authentication once there's more than one investigator (Level 4 territory) — a session/login layer that the frontend can't just read out of its own bundle.
+- Replace the local shared bearer-secret configuration with an expiring session or signed-token lifecycle before network exposure or multi-team use. The current bearer check closes anonymous access but is not an identity provider.
 - A basic rate limit (even a crude per-process counter) on `propose-with-muse`, independent of identity, as defense in depth against the cost-exposure in F5.
 - Revisit `KrakadylStore`'s single shared connection (F6) when Level 4's concurrent-investigator work starts — likely a connection-per-request pattern or an actual write-serializing lock, not assumed away.

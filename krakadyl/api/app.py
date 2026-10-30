@@ -10,9 +10,8 @@ to fix here, never a reason to add a second, UI-side notion of
 Dev-only endpoints (`/api/dev/...`) are clearly separated from the
 investigative ones: they exist to demonstrate Level 2's staleness/
 recovery mechanism (tampering a file, revoking a mandate) the way an
-investigator would never deliberately do to their own case — a real
-deployment would gate or remove this router entirely, not expose it
-next to the real actions.
+investigator would never deliberately do to their own case. The router
+is opt-in and bearer-protected; a real deployment should leave it disabled.
 """
 
 from __future__ import annotations
@@ -225,30 +224,6 @@ def _current_mandate(case_id: str) -> Mandate:
     return mandate
 
 
-def _assert_principal(mandate: Mandate, asserted_principal: str) -> None:
-    """Found by red-team review: `Mandate.principal` existed as a field
-    but was read NOWHERE in the codebase — identity was never part of
-    the authorization decision at the one layer (this HTTP API) where a
-    caller could actually be someone other than who they claim, despite
-    the architecture's own stated invariant that permissions are bound
-    to identity, resource, operation, destination, and validity.
-
-    This is CALLER-ASSERTED identity, not cryptographically verified —
-    there is no login/session system yet, so a caller can still lie
-    about who they are. That remaining gap is real and is documented in
-    docs/red-team-api-and-frontend.md, not hidden behind this check.
-    What this closes is narrower but real: the mandate's principal is
-    now actually consulted, instead of being a decorative field no code
-    path ever reads.
-    """
-    if asserted_principal != mandate.principal:
-        raise HTTPException(
-            403,
-            f"this mandate is scoped to principal '{mandate.principal}'; "
-            f"request asserted '{asserted_principal or '(none)'}'",
-        )
-
-
 def _observation_files(case_id: str, observations: list[Observation]) -> dict[str, Path]:
     return {o.id: observation_file_path(DATA_DIR, case_id, o.id) for o in observations}
 
@@ -354,7 +329,10 @@ class CaseOverview(BaseModel):
 
 
 class PrepareRequest(BaseModel):
-    principal: str
+    # Optional for wire compatibility with pre-auth clients. The server uses
+    # the bearer identity; if supplied, this field is checked only for a
+    # mismatch and never grants authority.
+    principal: Optional[str] = None
     allowed_device: str = "device-A"
     destination: str = "reviewer-authorized"
 
@@ -365,7 +343,7 @@ class PrepareResponse(BaseModel):
 
 
 class MuseProposeRequest(BaseModel):
-    principal: str
+    principal: Optional[str] = None
 
 
 class MuseProposeResponse(BaseModel):
@@ -378,7 +356,7 @@ class MuseProposeResponse(BaseModel):
 
 
 class AnalyzeNoteRequest(BaseModel):
-    principal: str
+    principal: Optional[str] = None
     note_text: str
 
 
@@ -389,7 +367,7 @@ class AnalyzeNoteResponse(BaseModel):
 
 
 class ExecuteRequest(BaseModel):
-    principal: str
+    principal: Optional[str] = None
     prepared_action_id: str
 
 
@@ -399,7 +377,7 @@ class ExecuteResponse(BaseModel):
 
 
 class RecoverRequest(BaseModel):
-    principal: str
+    principal: Optional[str] = None
     allowed_device: str = "device-A"
     destination: str = "reviewer-authorized"
 
@@ -424,7 +402,8 @@ class RevokeMandateRequest(BaseModel):
 
 
 @app.get("/api/cases/{case_id}", response_model=CaseOverview)
-def get_case(case_id: str) -> CaseOverview:
+def get_case(case_id: str, authorization: Optional[str] = Header(default=None)) -> CaseOverview:
+    _operator(authorization)
     _case_or_404(case_id)
     mission = store.get(case_id, "mission", case_id, Mission)
     mandate = _current_mandate(case_id)
@@ -477,13 +456,17 @@ def get_case(case_id: str) -> CaseOverview:
 
 
 @app.get("/api/cases/{case_id}/activity")
-def get_activity(case_id: str) -> list[dict]:
+def get_activity(case_id: str, authorization: Optional[str] = Header(default=None)) -> list[dict]:
+    _operator(authorization)
     _case_or_404(case_id)
     return store.list_events(case_id)
 
 
 @app.get("/api/cases/{case_id}/prepared/{prepared_action_id}", response_model=PrepareResponse)
-def get_prepared(case_id: str, prepared_action_id: str) -> PrepareResponse:
+def get_prepared(
+    case_id: str, prepared_action_id: str, authorization: Optional[str] = Header(default=None),
+) -> PrepareResponse:
+    _operator(authorization)
     _case_or_404(case_id)
     prepared = store.get(case_id, "prepared_action", prepared_action_id, PreparedAction)
     if prepared is None:
@@ -496,10 +479,12 @@ def get_prepared(case_id: str, prepared_action_id: str) -> PrepareResponse:
 
 
 @app.post("/api/cases/{case_id}/actions/prepare", response_model=PrepareResponse)
-def prepare(case_id: str, body: PrepareRequest) -> PrepareResponse:
+def prepare(
+    case_id: str, body: PrepareRequest, authorization: Optional[str] = Header(default=None),
+) -> PrepareResponse:
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
-    _assert_principal(mandate, body.principal)
+    _authenticated_principal(mandate, body.principal, authorization)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
@@ -530,7 +515,9 @@ def prepare(case_id: str, body: PrepareRequest) -> PrepareResponse:
 
 
 @app.post("/api/cases/{case_id}/actions/propose-with-muse", response_model=MuseProposeResponse)
-def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResponse:
+def propose_with_muse(
+    case_id: str, body: MuseProposeRequest, authorization: Optional[str] = Header(default=None),
+) -> MuseProposeResponse:
     """A real, billed call to Muse Spark (Standard mode) — a separate,
     explicitly-chosen endpoint, never triggered by `prepare` or any
     other flow. Muse proposes from the CURRENT live case state (see
@@ -549,7 +536,7 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
     """
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
-    _assert_principal(mandate, body.principal)
+    _authenticated_principal(mandate, body.principal, authorization)
     _muse_rate_limiter.acquire()
 
     mission_summary, mandate_summary, case_summary = _case_summaries(case_id)
@@ -563,7 +550,7 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
         raise HTTPException(502, f"Muse call failed or returned an invalid response: {exc}")
 
     mandate = _current_mandate(case_id)
-    _assert_principal(mandate, body.principal)
+    _authenticated_principal(mandate, body.principal, authorization)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
@@ -611,7 +598,9 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
 
 
 @app.post("/api/cases/{case_id}/analyze-note", response_model=AnalyzeNoteResponse)
-def analyze_note(case_id: str, body: AnalyzeNoteRequest) -> AnalyzeNoteResponse:
+def analyze_note(
+    case_id: str, body: AnalyzeNoteRequest, authorization: Optional[str] = Header(default=None),
+) -> AnalyzeNoteResponse:
     """Laya as a typed semantic sensor — docs/levels.md invariant 2:
     informs what a human should check, never grants authority. This
     endpoint does not touch any EvidenceRequirement, TaskResponsibility,
@@ -622,7 +611,7 @@ def analyze_note(case_id: str, body: AnalyzeNoteRequest) -> AnalyzeNoteResponse:
     """
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
-    _assert_principal(mandate, body.principal)
+    _authenticated_principal(mandate, body.principal, authorization)
 
     try:
         signals = analyze_handoff_note(body.note_text)
@@ -654,7 +643,10 @@ def analyze_note(case_id: str, body: AnalyzeNoteRequest) -> AnalyzeNoteResponse:
 
 
 @app.post("/api/cases/{case_id}/actions/execute", response_model=ExecuteResponse)
-def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
+def execute(
+    case_id: str, body: ExecuteRequest, authorization: Optional[str] = Header(default=None),
+) -> ExecuteResponse:
+    _operator(authorization)
     _case_or_404(case_id)
     prepared = store.get(case_id, "prepared_action", body.prepared_action_id, PreparedAction)
     if prepared is None:
@@ -675,7 +667,7 @@ def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
     requirements = [r for r in _load_requirements(case_id) if r.observation_id not in excluded_ids]
     files = _observation_files(case_id, observations)
     mandate = _current_mandate(case_id)
-    _assert_principal(mandate, body.principal)
+    _authenticated_principal(mandate, body.principal, authorization)
     nonce_claimed = store.claim_nonce(case_id, prepared.nonce, prepared.id, now().isoformat())
     consumed = set() if nonce_claimed else {prepared.nonce}
     out_dir = DATA_DIR / case_id / "packages" / prepared.id
@@ -711,10 +703,12 @@ def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
 
 
 @app.post("/api/cases/{case_id}/actions/recover", response_model=RecoverResponse)
-def recover(case_id: str, body: RecoverRequest) -> RecoverResponse:
+def recover(
+    case_id: str, body: RecoverRequest, authorization: Optional[str] = Header(default=None),
+) -> RecoverResponse:
     _case_or_404(case_id)
     mandate = _current_mandate(case_id)
-    _assert_principal(mandate, body.principal)
+    _authenticated_principal(mandate, body.principal, authorization)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
@@ -791,6 +785,29 @@ def _operator(authorization: Optional[str]) -> tuple[str, str]:
         return runtime.credentials.identify(token.strip()), token.strip()
     except CredentialRejected as exc:
         raise HTTPException(401, str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
+
+
+def _authenticated_principal(
+    mandate: Mandate, asserted_principal: str, authorization: Optional[str],
+) -> str:
+    """Bind the legacy request field to the authenticated operator identity.
+
+    The body field remains temporarily for wire compatibility, but it is only
+    a consistency check. Authorization is decided from the bearer token and
+    the mandate, never from caller-supplied identity text.
+    """
+    identity, _ = _operator(authorization)
+    if identity != mandate.principal:
+        raise HTTPException(
+            403,
+            f"this mandate is scoped to principal '{mandate.principal}'; authenticated operator is '{identity}'",
+        )
+    if asserted_principal is not None and asserted_principal != identity:
+        raise HTTPException(
+            403,
+            "principal field does not match the authenticated operator",
+        )
+    return identity
 
 
 def _requirement_or_404(case_id: str, requirement_id: str) -> EvidenceRequirement:
@@ -875,7 +892,10 @@ class AnnotationView(BaseModel):
 
 
 @app.get("/api/cases/{case_id}/acquisition", response_model=AcquisitionOverview)
-def get_acquisition(case_id: str) -> AcquisitionOverview:
+def get_acquisition(
+    case_id: str, authorization: Optional[str] = Header(default=None),
+) -> AcquisitionOverview:
+    _operator(authorization)
     _case_or_404(case_id)
     requirements = _load_requirements(case_id)
     hypotheses = _load_hypotheses(case_id)
@@ -1285,7 +1305,8 @@ def _current_handoff(case_id: str) -> ShiftHandoff:
 
 
 @app.get("/api/cases/{case_id}/team", response_model=TeamOverview)
-def get_team(case_id: str) -> TeamOverview:
+def get_team(case_id: str, authorization: Optional[str] = Header(default=None)) -> TeamOverview:
+    _operator(authorization)
     _case_or_404(case_id)
     return _team_overview(case_id)
 
@@ -1322,7 +1343,8 @@ def _handoff_view(case_id: str) -> HandoffView:
 
 
 @app.get("/api/cases/{case_id}/handoff", response_model=HandoffView)
-def get_handoff(case_id: str) -> HandoffView:
+def get_handoff(case_id: str, authorization: Optional[str] = Header(default=None)) -> HandoffView:
+    _operator(authorization)
     _case_or_404(case_id)
     return _handoff_view(case_id)
 
@@ -1400,7 +1422,10 @@ def _counterfactual_views(case_id: str) -> list[CounterfactualView]:
 
 
 @app.get("/api/cases/{case_id}/counterfactuals", response_model=list[CounterfactualView])
-def get_counterfactuals(case_id: str) -> list[CounterfactualView]:
+def get_counterfactuals(
+    case_id: str, authorization: Optional[str] = Header(default=None),
+) -> list[CounterfactualView]:
+    _operator(authorization)
     _case_or_404(case_id)
     return _counterfactual_views(case_id)
 
@@ -1434,7 +1459,10 @@ dev_router = APIRouter()
 
 
 @dev_router.post("/api/dev/cases/{case_id}/tamper")
-def dev_tamper(case_id: str, body: TamperRequest) -> dict:
+def dev_tamper(
+    case_id: str, body: TamperRequest, authorization: Optional[str] = Header(default=None),
+) -> dict:
+    _operator(authorization)
     _case_or_404(case_id)
     # Validated against the case's own known observation ids, not just
     # "a file happens to exist at this path" — found by red-team review:
@@ -1459,7 +1487,10 @@ def dev_tamper(case_id: str, body: TamperRequest) -> dict:
 
 
 @dev_router.post("/api/dev/cases/{case_id}/revoke-mandate")
-def dev_revoke_mandate(case_id: str, body: RevokeMandateRequest) -> dict:
+def dev_revoke_mandate(
+    case_id: str, body: RevokeMandateRequest, authorization: Optional[str] = Header(default=None),
+) -> dict:
+    _operator(authorization)
     _case_or_404(case_id)
     current = _current_mandate(case_id)
     # model_copy(update=...) does NOT re-run validators — reconstructing
@@ -1485,7 +1516,10 @@ def dev_revoke_mandate(case_id: str, body: RevokeMandateRequest) -> dict:
 
 
 @dev_router.post("/api/dev/cases/{case_id}/unresolve-hypothesis-requirement")
-def dev_unresolve_requirement(case_id: str) -> dict:
+def dev_unresolve_requirement(
+    case_id: str, authorization: Optional[str] = Header(default=None),
+) -> dict:
+    _operator(authorization)
     _case_or_404(case_id)
     req = store.get(case_id, "requirement", "req-timestamp-check", EvidenceRequirement)
     if req is None:
@@ -1511,11 +1545,9 @@ def dev_unresolve_requirement(case_id: str) -> dict:
 
 @dev_router.post("/api/dev/cases/{case_id}/reset")
 def dev_reset(case_id: str, authorization: Optional[str] = Header(default=None)) -> dict:
-    # Red team F5: reset also deletes acquisition records (their audit
-    # trail), so once acquisition is enabled it needs a proven operator,
-    # unlike the other dev simulations, which only touch demo files.
-    if acquisition is not None:
-        _operator(authorization)
+    # Reset deletes acquisition records and therefore always requires a
+    # proven operator whenever the dev router is explicitly enabled.
+    _operator(authorization)
     store.reset_case(case_id)
     ensure_seeded(store, DATA_DIR)
     return {"ok": True}

@@ -95,7 +95,10 @@ def test_captured_bytes_and_annotation_require_an_operator_token(api):
     client, _ = api
     workflow_id = _capture(client).json()["workflow"]["workflow_id"]
     for kind in ("observation", "annotation"):
-        assert client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/{kind}").status_code == 401
+        assert client.get(
+            f"/api/cases/case-001/acquisitions/{workflow_id}/{kind}",
+            headers={"Authorization": ""},
+        ).status_code == 401
         assert client.get(f"/api/cases/case-001/acquisitions/{workflow_id}/{kind}", headers=C).status_code == 200
 
 
@@ -103,14 +106,16 @@ def test_captured_bytes_and_annotation_require_an_operator_token(api):
 def test_dev_reset_needs_an_operator_token_when_acquisition_is_enabled(api):
     client, _ = api
     _capture(client, sam_prompt=None)
-    assert client.post("/api/dev/cases/case-001/reset").status_code == 401
+    assert client.post(
+        "/api/dev/cases/case-001/reset", headers={"Authorization": ""}
+    ).status_code == 401
     assert len(client.get("/api/cases/case-001/acquisition").json()["history"]) == 1
     assert client.post("/api/dev/cases/case-001/reset", headers=A).status_code == 200
 
 
 def test_dev_reset_stays_anonymous_when_acquisition_is_disabled(tmp_path, monkeypatch):
     client = TestClient(_load(tmp_path, monkeypatch, tokens=False).app)
-    assert client.post("/api/dev/cases/case-001/reset").status_code == 200
+    assert client.post("/api/dev/cases/case-001/reset").status_code == 503
 
 
 # F7 — closing evidence as unobtainable is the requirement owner's call.

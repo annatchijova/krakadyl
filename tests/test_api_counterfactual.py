@@ -16,11 +16,16 @@ GRANT_B = {"question": {"allowed_device": "device-B", "destination": "reviewer-a
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
     monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
-    monkeypatch.setenv("KRAKADYL_OPERATOR_TOKENS", f"investigator-C={hash_token('token-c')}")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')};investigator-C={hash_token('token-c')}",
+    )
     import krakadyl.api.app as app_module
 
     importlib.reload(app_module)
-    return TestClient(app_module.app)
+    client = TestClient(app_module.app)
+    client.headers.update(H)
+    return client
 
 
 def test_counterfactual_is_attributed_measured_and_listed(client):
@@ -41,8 +46,11 @@ def test_a_hypothetical_never_changes_what_the_case_allows(client):
     }).json()["counterfactual"]
     assert cf["hypothetical_outcome"]["verdict"] == "allowed"
 
-    real = client.post("/api/cases/case-001/actions/prepare", json={
-        "principal": "investigator-A", "destination": "court-registry"}).json()
+    real = client.post(
+        "/api/cases/case-001/actions/prepare",
+        headers={"Authorization": "Bearer token-a"},
+        json={"principal": "investigator-A", "destination": "court-registry"},
+    ).json()
     assert real["decision"]["verdict"] == "forbidden"
     after = client.get("/api/cases/case-001").json()
     assert after["mandate"] == before["mandate"]
@@ -57,7 +65,11 @@ def test_a_counterfactual_goes_stale_when_the_case_moves(client):
 
 
 def test_needs_a_proven_operator_and_well_formed_assumptions(client):
-    assert client.post("/api/cases/case-001/counterfactuals", json=GRANT_B).status_code == 401
+    assert client.post(
+        "/api/cases/case-001/counterfactuals",
+        headers={"Authorization": ""},
+        json=GRANT_B,
+    ).status_code == 401
     bad = {**GRANT_B, "deltas": [{"kind": "requirement_verified", "requirement_id": "nope"}]}
     assert client.post("/api/cases/case-001/counterfactuals", json=bad, headers=H).status_code == 409
     free_text = {**GRANT_B, "deltas": [{"kind": "assume_file_intact", "value": "obs-a1"}]}

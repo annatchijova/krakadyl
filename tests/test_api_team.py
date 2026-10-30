@@ -21,7 +21,9 @@ def client(tmp_path, monkeypatch):
     import krakadyl.api.app as app_module
 
     importlib.reload(app_module)
-    return TestClient(app_module.app)
+    client = TestClient(app_module.app)
+    client.headers.update(H["investigator-A"])
+    return client
 
 
 def _req(client, req_id):
@@ -91,9 +93,11 @@ def test_identity_comes_from_the_token_not_the_body(client):
         headers=H["investigator-B"],
     )
     assert resp.status_code == 409  # B is not the owner, whatever the body says
-    assert client.post("/api/cases/case-001/requirements/req-device-a-clock/team-records",
-                       json={"kind": "acknowledged", "statement": "x", "expected_requirement_revision": "0" * 64}
-                       ).status_code == 401
+    assert client.post(
+        "/api/cases/case-001/requirements/req-device-a-clock/team-records",
+        headers={"Authorization": ""},
+        json={"kind": "acknowledged", "statement": "x", "expected_requirement_revision": "0" * 64},
+    ).status_code == 401
 
 
 def test_shift_handoff_round_trip(client):

@@ -42,7 +42,9 @@ Evaluation and abstention take `expected_requirement_revision` and re-read the r
 
 ### D5. Identity is a proven bearer token, not an asserted name
 
-`KRAKADYL_OPERATOR_TOKENS` holds `identity=sha256(token)` pairs only (`tools/operator_token.py` generates them). The Level 1/2 endpoints still use the caller-asserted `principal` documented in `red-team-api-and-frontend.md`; none of the Level 3 endpoints do. *Limits, stated plainly:* shared secrets, no expiry, no rotation, no MFA, no per-request replay protection beyond TLS. This is authentication sufficient for a local single-team deployment, not an identity provider. *Revisit:* before any multi-team or network-exposed deployment.
+`KRAKADYL_OPERATOR_TOKENS` holds `identity=sha256(token)` pairs only (`tools/operator_token.py` generates them). Every case read and Level 1/2–5 action now requires `Authorization: Bearer <token>`. The legacy `principal` body field is optional and, when supplied, is checked only for consistency with the authenticated identity; it is never the source of authority. The Level 1/2 mandate still scopes the authenticated operator to its configured principal.
+
+*Limits, stated plainly:* shared secrets, no expiry, no rotation, no MFA, no per-request replay protection beyond TLS, and process-local credential configuration. This is suitable for a local single-team deployment, not an identity provider. Before multi-team or network-exposed deployment, replace it with a session or signed-token lifecycle and an independent operator directory.
 
 ### D6. The source is the investigator
 

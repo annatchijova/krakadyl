@@ -18,11 +18,16 @@ QUESTION = {"allowed_device": "device-A", "destination": "reviewer-authorized"}
 @pytest.fixture
 def api(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
-    monkeypatch.setenv("KRAKADYL_OPERATOR_TOKENS", f"investigator-C={hash_token('token-c')}")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')};investigator-C={hash_token('token-c')}",
+    )
     import krakadyl.api.app as app_module
 
     importlib.reload(app_module)
-    return app_module, TestClient(app_module.app)
+    client = TestClient(app_module.app)
+    client.headers.update({"Authorization": "Bearer token-a"})
+    return app_module, client
 
 
 # F1 — time alone can change the real verdict (a mandate expires); a

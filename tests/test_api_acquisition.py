@@ -60,7 +60,9 @@ def api(tmp_path, monkeypatch):
         artifacts=FilesystemArtifactRepository(tmp_path / "api" / "acquired"),
         sam_processor=MetaSamProcessor(api_key="test-key", transport=sam),
     )
-    return TestClient(app_module.app), sam
+    client = TestClient(app_module.app)
+    client.headers.update(A)
+    return client, sam
 
 
 def _route(client):
@@ -99,9 +101,7 @@ def _evaluate(client, workflow_id, headers, outcome="supports_requirement", revi
 
 def test_disabled_deployment_says_so_and_refuses_every_action(tmp_path, monkeypatch):
     client = TestClient(_load(tmp_path, monkeypatch, tokens=False).app)
-    overview = client.get("/api/cases/case-001/acquisition").json()
-    assert overview["enabled"] is False
-    assert overview["routes"][0]["refusal"] == "acquisition is disabled in this deployment"
+    assert client.get("/api/cases/case-001/acquisition").status_code == 503
     resp = client.post(
         f"/api/cases/case-001/requirements/{REQ}/acquisition-proposals",
         json={"capture_instructions": "x"}, headers=A,
@@ -120,6 +120,8 @@ def test_seeded_clock_requirement_has_a_route(api):
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic token-for-a"}])
 def test_actions_require_a_proven_operator_token(api, headers):
     client, _ = api
+    if not headers:
+        headers = {"Authorization": ""}
     resp = client.post(
         f"/api/cases/case-001/requirements/{REQ}/acquisition-proposals",
         json={"capture_instructions": "x"}, headers=headers,

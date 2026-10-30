@@ -398,11 +398,9 @@ export function AcquisitionPanel({
   caseVersion,
   onChanged,
   token,
-  onTokenChange,
 }: {
   caseId: string;
   token: string;
-  onTokenChange: (token: string) => void;
   // Changes whenever the case's activity log does (including a dev
   // reset), so this panel re-reads instead of showing stale grants.
   caseVersion: number;
@@ -448,16 +446,7 @@ export function AcquisitionPanel({
           Disabled in this deployment — set <span className="mono">KRAKADYL_OPERATOR_TOKENS</span> (see{" "}
           <span className="mono">tools/operator_token.py</span>).
         </p>
-      ) : (
-        <input
-          type="password"
-          style={fieldStyle}
-          value={token}
-          onChange={(e) => onTokenChange(e.target.value)}
-          placeholder="Operator token (kept in this tab only)"
-          autoComplete="off"
-        />
-      )}
+      ) : null}
       {localError && <p className="reason-text" style={{ color: "#ff9d96" }}>{localError}</p>}
       {overview.routes.map((route) => (
         <RequirementCard

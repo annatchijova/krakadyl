@@ -10,16 +10,24 @@ import importlib
 import pytest
 from fastapi.testclient import TestClient
 
+from krakadyl.acquisition_runtime import hash_token
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
     monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')};investigator-C={hash_token('token-c')}",
+    )
     monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
     import krakadyl.api.app as app_module
 
     importlib.reload(app_module)
-    return TestClient(app_module.app)
+    client = TestClient(app_module.app)
+    client.headers.update({"Authorization": "Bearer token-a"})
+    return client
 
 
 def test_case_overview_shows_the_seeded_two_device_case(client):
@@ -36,6 +44,53 @@ def test_case_overview_shows_the_seeded_two_device_case(client):
 
 def test_unknown_case_is_404(client):
     assert client.get("/api/cases/nope").status_code == 404
+
+
+def test_case_reads_require_a_bearer_operator(client):
+    import krakadyl.api.app as app_module
+
+    anonymous = TestClient(app_module.app)
+    response = anonymous.get("/api/cases/case-001")
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+@pytest.mark.parametrize("path", [
+    "/api/cases/case-001/activity",
+    "/api/cases/case-001/acquisition",
+    "/api/cases/case-001/team",
+    "/api/cases/case-001/handoff",
+    "/api/cases/case-001/counterfactuals",
+])
+def test_case_metadata_surface_requires_a_bearer_operator(client, path):
+    import krakadyl.api.app as app_module
+
+    response = TestClient(app_module.app).get(path)
+    assert response.status_code == 401
+
+
+def test_bearer_identity_is_sufficient_without_a_principal_body(client):
+    response = client.post("/api/cases/case-001/actions/prepare", json={})
+    assert response.status_code == 200
+
+
+def test_action_identity_is_bound_to_the_bearer_operator(client):
+    response = client.post(
+        "/api/cases/case-001/actions/prepare",
+        json={"principal": "investigator-C"},
+    )
+    assert response.status_code == 403
+    assert "authenticated operator" in response.json()["detail"]
+
+
+def test_non_principal_operator_cannot_use_the_mandate(client):
+    response = client.post(
+        "/api/cases/case-001/actions/prepare",
+        headers={"Authorization": "Bearer token-c"},
+        json={"principal": "investigator-C"},
+    )
+    assert response.status_code == 403
+    assert "mandate is scoped" in response.json()["detail"]
 
 
 def test_prepare_then_execute_happy_path(client):
@@ -155,12 +210,14 @@ def test_execution_failure_after_nonce_claim_burns_prepared_action(client, monke
         app_module.execute(
             "case-001",
             app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prepared_id),
+            authorization="Bearer token-a",
         )
 
     monkeypatch.undo()
     retry = app_module.execute(
         "case-001",
         app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prepared_id),
+        authorization="Bearer token-a",
     )
     assert retry.receipt.executed is False
     assert "claimed by a prior execution attempt" in retry.receipt.observed_effect
@@ -184,6 +241,7 @@ def test_nonce_claim_storage_error_never_reaches_executor(client, monkeypatch):
         app_module.execute(
             "case-001",
             app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prep["prepared"]["id"]),
+                authorization="Bearer token-a",
         )
     assert called == []
 
@@ -215,6 +273,7 @@ def test_concurrent_execution_claims_nonce_once_and_preserves_success_receipt(cl
     request = lambda: app_module.execute(
         "case-001",
         app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prepared_id),
+        authorization="Bearer token-a",
     )
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda _: request(), range(2)))
@@ -338,10 +397,8 @@ def test_analyze_note_requires_the_right_principal(client):
 
 
 def test_wrong_principal_is_rejected_on_every_action_endpoint(client):
-    """Found by red-team review: Mandate.principal existed but nothing
-    ever read it. Now it's actually enforced at the API boundary — a
-    caller asserting the wrong (or no) principal is refused, on every
-    action endpoint, not just one.
+    """The bearer token is authoritative; a legacy body principal is only
+    accepted when it matches the authenticated operator.
     """
     assert (
         client.post(
@@ -349,7 +406,7 @@ def test_wrong_principal_is_rejected_on_every_action_endpoint(client):
         ).status_code
         == 403
     )
-    assert client.post("/api/cases/case-001/actions/prepare", json={}).status_code == 422
+    assert client.post("/api/cases/case-001/actions/prepare", json={}).status_code == 200
 
     assert (
         client.post(
@@ -378,6 +435,10 @@ def test_wrong_principal_is_rejected_on_every_action_endpoint(client):
 
 def test_propose_with_muse_rate_limit_rejects_n_plus_one_before_summary_or_adapter(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')}",
+    )
     monkeypatch.setenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", "2")
     import krakadyl.api.app as app_module
     from krakadyl.adapters.muse import ProposedActionCandidate
@@ -405,6 +466,7 @@ def test_propose_with_muse_rate_limit_rejects_n_plus_one_before_summary_or_adapt
     monkeypatch.setattr(app_module, "_case_summaries", counted_case_summaries)
     monkeypatch.setattr(app_module, "propose_action", fake_propose_action)
     limited_client = TestClient(app_module.app)
+    limited_client.headers.update({"Authorization": "Bearer token-a"})
 
     for _ in range(2):
         response = limited_client.post(
@@ -483,6 +545,10 @@ def test_muse_rate_limiter_uses_its_lock_for_admission():
 
 def test_failed_muse_call_still_consumes_rate_limit_capacity(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')}",
+    )
     monkeypatch.setenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", "1")
     import krakadyl.api.app as app_module
     from krakadyl.adapters.muse import MuseAdapterError
@@ -497,6 +563,7 @@ def test_failed_muse_call_still_consumes_rate_limit_capacity(tmp_path, monkeypat
 
     monkeypatch.setattr(app_module, "propose_action", failing_propose_action)
     limited_client = TestClient(app_module.app)
+    limited_client.headers.update({"Authorization": "Bearer token-a"})
 
     first = limited_client.post(
         "/api/cases/case-001/actions/propose-with-muse",
@@ -514,6 +581,10 @@ def test_failed_muse_call_still_consumes_rate_limit_capacity(tmp_path, monkeypat
 
 def test_zero_muse_rate_limit_is_a_kill_switch_before_summary_or_adapter(tmp_path, monkeypatch):
     monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')}",
+    )
     monkeypatch.setenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", "0")
     import krakadyl.api.app as app_module
 
@@ -525,6 +596,7 @@ def test_zero_muse_rate_limit_is_a_kill_switch_before_summary_or_adapter(tmp_pat
     monkeypatch.setattr(app_module, "_case_summaries", must_not_run)
     monkeypatch.setattr(app_module, "propose_action", must_not_run)
     limited_client = TestClient(app_module.app)
+    limited_client.headers.update({"Authorization": "Bearer token-a"})
 
     response = limited_client.post(
         "/api/cases/case-001/actions/propose-with-muse",
@@ -645,11 +717,16 @@ def test_propose_with_muse_surfaces_an_adapter_failure_as_502(client, monkeypatc
 def test_state_survives_reloading_the_app_against_the_same_data_dir(tmp_path, monkeypatch):
     data_dir = str(tmp_path / "api")
     monkeypatch.setenv("KRAKADYL_DATA_DIR", data_dir)
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')}",
+    )
 
     import krakadyl.api.app as app_module
 
     importlib.reload(app_module)
     client1 = TestClient(app_module.app)
+    client1.headers.update({"Authorization": "Bearer token-a"})
     prep = client1.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
     assert prep["prepared"] is not None
 
@@ -657,6 +734,7 @@ def test_state_survives_reloading_the_app_against_the_same_data_dir(tmp_path, mo
     # same KRAKADYL_DATA_DIR.
     importlib.reload(app_module)
     client2 = TestClient(app_module.app)
+    client2.headers.update({"Authorization": "Bearer token-a"})
     fetched = client2.get(
         f"/api/cases/case-001/prepared/{prep['prepared']['id']}"
     ).json()
