@@ -108,6 +108,12 @@ If a level doesn't carry all six, it isn't a level of this product —
 it's a prototype of something else, same rule that already applied to
 the authority layer.
 
+Known limitations are tracked explicitly in
+[`docs/known-limitations.md`](known-limitations.md). In particular, the current
+execution fence revalidates requirement revisions but does not yet provide a
+first-class transitive verification graph or prove effective independence of
+shared primary sources.
+
 ## Where invariant 5 actually comes from
 
 Not a generic UX principle — it is Anna's own
