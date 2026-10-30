@@ -135,6 +135,38 @@ def test_non_principal_operator_cannot_issue_capture_authorization(api):
     assert overview["authorizations"] == []
 
 
+def test_authorization_is_not_persisted_after_capture_mandate_revocation(api):
+    client, _ = api
+    import krakadyl.api.app as app_module
+    from krakadyl.core.models import Mandate
+
+    proposal = client.post(
+        f"/api/cases/case-001/requirements/{REQ}/acquisition-proposals",
+        json={"capture_instructions": "Photograph the clock."},
+        headers=A,
+    )
+    assert proposal.status_code == 200, proposal.text
+
+    current = app_module._capture_mandate("case-001")
+    revoked = Mandate(
+        **{
+            **current.model_dump(),
+            "revoked": True,
+            "revoked_reason": "capture authority withdrawn before approval",
+            "revision": str(int(current.revision) + 1),
+        }
+    )
+    app_module.store.put("case-001", "mandate", revoked, app_module.now().isoformat())
+
+    grant = client.post(
+        f"/api/cases/case-001/acquisition-proposals/{proposal.json()['id']}/authorize",
+        headers=A,
+    )
+    assert grant.status_code == 409
+    assert "mandate" in grant.json()["detail"].lower()
+    assert client.get("/api/cases/case-001/acquisition", headers=A).json()["authorizations"] == []
+
+
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic token-for-a"}])
 def test_actions_require_a_proven_operator_token(api, headers):
     client, _ = api

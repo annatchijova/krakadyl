@@ -54,7 +54,13 @@ from krakadyl.core.acquisition import (
     canonical_record_digest,
     requirement_revision_digest,
 )
-from krakadyl.core.acquisition_routes import AcquisitionRoute, RouteRefusal, resolvable_requirement_ids
+from krakadyl.core.acquisition_routes import (
+    CAPTURE_OPERATION,
+    LOCAL_DESTINATION,
+    AcquisitionRoute,
+    RouteRefusal,
+    resolvable_requirement_ids,
+)
 from krakadyl.core.evaluation import (
     AcquisitionRecordView,
     EvaluationRejected,
@@ -65,6 +71,7 @@ from krakadyl.core.evaluation import (
 from krakadyl.core.continuity import evidence_state_from_requirement, next_move
 from krakadyl.core.executor import (
     DEFAULT_PREPARED_ACTION_TTL,
+    check_mandate,
     execute_prepared_action,
     prepare_evidence_package,
     propose_recovery_route,
@@ -110,6 +117,7 @@ from krakadyl.core.verification import (
 )
 from krakadyl.core.models import (
     Decision,
+    AuthorityState,
     EvidenceRequirement,
     EvidenceState,
     Hypothesis,
@@ -1052,7 +1060,30 @@ def authorize_acquisition(
     stored = store.get(case_id, "acquisition_proposal", proposal_id, StoredAcquisitionProposal)
     if stored is None:
         raise HTTPException(404, "no such acquisition proposal")
-    grant = _require_acquisition().authorize(stored.proposal, token, now())
+    # Do not persist an approval for a proposal whose capture authority has
+    # changed since proposal creation. The dispatch gate repeats this check,
+    # but allowing a stale grant to enter durable state creates an unusable
+    # authorization record and obscures the actual transition.
+    capture_mandate = _capture_mandate(case_id)
+    if capture_mandate is None:
+        raise HTTPException(503, "case has no capture mandate")
+    _authenticated_principal(capture_mandate, identity, authorization)
+    authorization_time = now()
+    if (
+        stored.proposal.mandate_id != capture_mandate.id
+        or stored.proposal.mandate_revision != capture_mandate.revision
+    ):
+        raise HTTPException(409, "capture mandate changed since the proposal was created")
+    mandate_check = check_mandate(
+        capture_mandate,
+        resource=f"{stored.proposal.case_id}/{stored.proposal.source_id}",
+        operation=CAPTURE_OPERATION,
+        destination=LOCAL_DESTINATION,
+        now=authorization_time,
+    )
+    if mandate_check.authority_state != AuthorityState.GRANTED or mandate_check.outside_scope:
+        raise HTTPException(409, "capture mandate does not authorize this proposal: " + "; ".join(mandate_check.reasons))
+    grant = _require_acquisition().authorize(stored.proposal, token, authorization_time)
     record = StoredAcquisitionAuthorization(id=grant.authorization_id, proposal_id=proposal_id, authorization=grant)
     event_time = now().isoformat()
     store.put_and_log_event(

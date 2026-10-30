@@ -335,6 +335,46 @@ cannot recall a dispatch already authorized by the API. Stronger recall would
 require a transactional effect boundary or a downstream capability that checks
 a fencing revision at the irreversible sink.
 
+### RT-AUTH-05 — stale acquisition proposals could receive durable grants
+
+**Severity:** Medium authorization-state integrity  **Epistemic level:**
+**CONFIRMED BY INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** an acquisition authorization may be issued only when the
+proposal's mandate identity, revision, validity window, and capture scope still
+match the current mandate. A grant for a stale proposal must not be persisted.
+
+**Firstness:** `authorize_acquisition` checked that the bearer identity matched
+the current capture principal, then called the runtime grant issuer using the
+stored proposal. The issuer bound the old proposal revision into the grant but
+did not load the current mandate; the durable grant was written before the
+dispatch gate could reject it.
+
+**Abduction:** revoking or revising the capture mandate after proposal creation
+would leave a durable authorization that could never create a valid workflow.
+
+**Deduction:** create a valid proposal, replace the capture mandate with a
+higher-revision revoked mandate, then authorize the old proposal. The unfixed
+endpoint should return success and store an authorization; the corrected
+endpoint should return `409` and leave the authorization collection empty.
+
+**Induction:** the regression test observed the unfixed `200` response and a
+persisted authorization. After the patch it returned `409`, naming the mandate
+state, and persisted no grant. The non-principal, full lifecycle, and
+non-principal capture tests remained green.
+
+**Remediation:** the API now reloads the capture mandate after resolving the
+proposal, rebinds the authenticated identity, checks proposal mandate ID and
+revision, and runs the same capture scope/validity check before issuing the
+grant. The atomic dispatch gate remains the final fence for a concurrent change
+between grant issuance and capture; it still checks the current mandate before
+any source or processor call.
+
+**Residual boundary:** the API-level precheck is not itself the durable
+linearization point. The system's safety claim depends on the gate's atomic
+compare-and-consume operation at capture dispatch, while the precheck prevents
+known-stale grants from polluting durable state.
+
 ## Remediation status
 
 The findings in this integrated round were repaired after the induction probes:
@@ -353,6 +393,9 @@ The findings in this integrated round were repaired after the induction probes:
   Pydantic boundary, with a 4,001-character regression test.
 - **RT-AUTH-04:** execution reloads and reauthenticates the mandate after the
   nonce claim, before passing the snapshot to the executor.
+- **RT-AUTH-05:** acquisition authorization rejects mandate-revision, validity,
+  and scope changes before persisting a grant; capture retains its atomic final
+  gate.
 
 The store rollback tests, acquisition/core tests, compile check, frontend build,
 and lint pass. The local sandbox still has an AnyIO worker-thread limitation,
