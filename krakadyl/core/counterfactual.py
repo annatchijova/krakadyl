@@ -297,6 +297,17 @@ def base_state_digest(inputs: CaseInputs, question: Question) -> str:
     })).hexdigest()
 
 
+def is_stale(inputs: CaseInputs, counterfactual: Counterfactual, *, now: datetime) -> bool:
+    """True once the counterfactual no longer describes the case.
+
+    The input digest catches changed records and bytes, but not time:
+    a mandate can expire with every input unchanged (red team L5-F1).
+    So the real outcome is also recomputed at `now` and compared."""
+    if base_state_digest(inputs, counterfactual.question) != counterfactual.base_state_digest:
+        return True
+    return _outcome(inputs, counterfactual.question, now) != counterfactual.real
+
+
 def evaluate_counterfactual(
     inputs: CaseInputs,
     question: Question,
@@ -346,11 +357,13 @@ def save_counterfactual(store: KrakadylStore, counterfactual: Counterfactual) ->
         )
         connection.execute(
             "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
+            # Worded so a skim of the shared log cannot read it as a real
+            # verdict change (red team L5-F2).
             (counterfactual.case_id, now_iso, "counterfactual_evaluated",
-             f"{counterfactual.created_by} evaluated a hypothetical "
-             f"({', '.join(d.label() for d in counterfactual.deltas)}): "
-             f"{counterfactual.real.verdict.value} would become {counterfactual.hypothetical_outcome.verdict.value} "
-             "— not applied to the case",
+             f"[HYPOTHETICAL] {counterfactual.created_by} compared the real case "
+             f"({counterfactual.real.verdict.value}) with assumptions "
+             f"{', '.join(d.label() for d in counterfactual.deltas)} "
+             f"(hypothetical: {counterfactual.hypothetical_outcome.verdict.value}); the case itself is unchanged",
              json.dumps({"counterfactual_id": counterfactual.counterfactual_id}, sort_keys=True)),
         )
 

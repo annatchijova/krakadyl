@@ -77,8 +77,8 @@ from krakadyl.core.counterfactual import (
     CounterfactualRejected,
     Delta,
     Question,
-    base_state_digest,
     evaluate_counterfactual,
+    is_stale,
     list_counterfactuals,
     save_counterfactual,
 )
@@ -1392,11 +1392,9 @@ class CounterfactualView(BaseModel):
 
 def _counterfactual_views(case_id: str) -> list[CounterfactualView]:
     inputs = _case_inputs(case_id)
+    current = now()
     return [
-        CounterfactualView(
-            counterfactual=cf,
-            stale=base_state_digest(inputs, cf.question) != cf.base_state_digest,
-        )
+        CounterfactualView(counterfactual=cf, stale=is_stale(inputs, cf, now=current))
         for cf in list_counterfactuals(store, case_id)
     ]
 

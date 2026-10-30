@@ -790,6 +790,14 @@ Not merged while Level 3's live closing run is pending.
 limit?" as a measured counterfactual, kept visibly separate from the
 real case state — never silently merged back into it.
 
+**Status as of 2026-10-30**: implemented and red-teamed on
+`feat/level5-comparable-routes` (stacked on Level 4) — a closed set of
+typed assumptions run through the unmodified pipeline on copies, each
+measured as necessary / sufficient alone, stored outside case state,
+never executable, and flagged stale when inputs or time change the real
+outcome. See [level5-comparable-routes.md](level5-comparable-routes.md)
+and [red-team-level5-comparable-routes.md](red-team-level5-comparable-routes.md).
+
 ### Level 6 — Investigations that span real time
 
 Work that spans days or weeks of actual investigation time, not
