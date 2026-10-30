@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,15 +38,25 @@ def validate_verification_dependencies(
 
     An empty tuple means that all structured dependencies are present and their
     current bytes match the digests recorded by the observations. Requirements
-    without structured records return no failures for backward compatibility;
-    that is a documented legacy limitation, not proof of graph-level validity.
+    without structured records do not receive graph-level provenance checks,
+    but duplicate observation IDs are still rejected because the namespace
+    would otherwise be ambiguous to every consumer.
     """
+    failures: list[str] = []
+    duplicate_observation_ids = sorted(
+        observation_id
+        for observation_id, count in Counter(observation.id for observation in observations).items()
+        if count > 1
+    )
+    failures.extend(
+        f"duplicate observation id '{observation_id}' makes verification namespace ambiguous"
+        for observation_id in duplicate_observation_ids
+    )
     if not requirement.verification_records:
-        return ()
+        return tuple(failures)
 
     by_id = {observation.id: observation for observation in observations}
     records_by_id = {record.verification_id: record for record in requirement.verification_records}
-    failures: list[str] = []
     checked_sources: set[tuple[str, str]] = set()
     active: set[str] = set()
 

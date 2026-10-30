@@ -181,6 +181,22 @@ def test_same_digest_from_distinct_primary_sources_can_remain_independent(graph_
     assert failures == ()
 
 
+def test_duplicate_observation_ids_are_not_last_write_wins(graph_case):
+    observations, files, requirement, target = graph_case
+    invalidated_target = target.model_copy(update={
+        "invalidated": True,
+        "invalidation_reason": "duplicate namespace entry is invalid",
+    })
+
+    failures = validate_verification_dependencies(
+        requirement,
+        [invalidated_target, *observations],
+        files,
+    )
+
+    assert any("duplicate observation id 'obs-target'" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
