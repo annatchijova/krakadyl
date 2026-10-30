@@ -243,3 +243,34 @@ def test_observation_invalidation_is_atomic_and_visible_in_activity(tmp_path):
     assert any(event["kind"] == "observation_invalidated" for event in store.list_events("case-001"))
     assert path.read_bytes() == b"primary bytes"
     store.close()
+
+
+def test_store_invalidation_blocks_a_prepared_action_after_reload(tmp_path, graph_case):
+    observations, files, requirement, _ = graph_case
+    store = KrakadylStore(tmp_path / "case.db")
+    for observation in observations:
+        store.put("case-001", "observation", observation, NOW.isoformat())
+    mandate = _mandate()
+    decision, prepared = prepare_evidence_package(
+        proposed_action=_action(), mandate=mandate,
+        observations=observations, requirements=[requirement], observation_files=files,
+        allowed_device="device-A", destination="reviewer-authorized", now=NOW,
+    )
+    assert prepared is not None
+
+    invalidate_observation(
+        store, case_id="case-001", observation_id="obs-primary-1",
+        reason="provider provenance was invalidated", now=NOW,
+    )
+    reloaded = store.list("case-001", "observation", Observation)
+    receipt = execute_prepared_action(
+        prepared=prepared, decision=decision, proposed_action=_action(),
+        observations=reloaded, requirements=[requirement], observation_files=files,
+        current_mandate=mandate, consumed_nonces=set(), out_dir=tmp_path / "package",
+        now=NOW + timedelta(minutes=1),
+    )
+
+    assert receipt.executed is False
+    assert "invalidated" in receipt.observed_effect
+    assert not (tmp_path / "package" / "manifest.json").exists()
+    store.close()
