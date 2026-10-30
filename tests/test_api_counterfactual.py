@@ -55,7 +55,7 @@ def test_a_hypothetical_never_changes_what_the_case_allows(client):
     after = client.get("/api/cases/case-001").json()
     assert after["mandate"] == before["mandate"]
     assert client.post("/api/cases/case-001/actions/execute", json={
-        "principal": "investigator-A", "prepared_action_id": cf["counterfactual_id"]}).status_code == 404
+        "principal": "investigator-A", "prepared_action_id": cf["counterfactual_id"]}).status_code == 403
 
 
 def test_a_counterfactual_goes_stale_when_the_case_moves(client):

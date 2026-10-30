@@ -189,9 +189,18 @@ def test_content_type_must_match_the_bytes(api):
 
 def test_non_principal_cannot_capture_even_with_a_valid_token(api):
     client, sam = api
-    resp = _capture(client, headers=C)
-    assert resp.status_code == 409
-    assert "scoped to 'investigator-A'" in resp.json()["detail"]
+    proposal = client.post(
+        f"/api/cases/case-001/requirements/{REQ}/acquisition-proposals",
+        json={"capture_instructions": "Photograph device-A's lock screen."},
+        headers=A,
+    )
+    assert proposal.status_code == 200
+    resp = client.post(
+        f"/api/cases/case-001/acquisition-proposals/{proposal.json()['id']}/authorize",
+        headers=C,
+    )
+    assert resp.status_code == 403
+    assert "capture authorization is scoped" in resp.json()["detail"]
     assert client.get("/api/cases/case-001/acquisition").json()["history"] == []
     assert sam.calls == 0
 
