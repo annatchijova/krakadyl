@@ -112,6 +112,35 @@ def test_shared_primary_source_cannot_be_called_independent(graph_case):
         )
 
 
+def test_verification_cannot_use_target_as_its_own_primary_source(graph_case):
+    observations, _, _, target = graph_case
+    with pytest.raises(ValueError, match="target observation cannot be a verification source"):
+        EvidenceRequirement(
+            id="req-target",
+            predicate="target observation is independently corroborated",
+            acceptable_source_class="forensic source reader",
+            observation_id=target.id,
+            resolved=True,
+            responsibility=TaskResponsibility(
+                owner="investigator-A", status=TaskStatus.VERIFIED_DONE,
+                reported_done_by="investigator-A", verified_by="investigator-C",
+                verification_method="structured-peer-review",
+            ),
+            verification_records=(
+                VerificationRecord(
+                    verification_id="self-check",
+                    verifier_identity="investigator-C",
+                    target_observation_id=target.id,
+                    basis=(VerificationBasis(
+                        observation_id=target.id, observation_digest=target.digest,
+                    ),),
+                    method="re-read the target as its own source",
+                    recorded_at=NOW,
+                ),
+            ),
+        )
+
+
 @pytest.fixture
 def graph_case(tmp_path):
     target, target_path = _observation(tmp_path, "obs-target", "device-A", b"target bytes")

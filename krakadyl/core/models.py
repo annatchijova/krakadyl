@@ -416,6 +416,9 @@ class EvidenceRequirement(BaseModel):
         roots = [record for record in self.verification_records if record.verification_id not in referenced_ids]
         if not roots or any(record.target_observation_id != self.observation_id for record in roots):
             raise ValueError("verification graph root targets a different observation")
+        for record in self.verification_records:
+            if any(basis.observation_id == record.target_observation_id for basis in record.basis):
+                raise ValueError("target observation cannot be a verification source")
         visiting: set[str] = set()
         visited: set[str] = set()
 
