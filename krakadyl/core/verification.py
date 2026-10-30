@@ -84,6 +84,32 @@ def validate_verification_dependencies(
                 f"verification record has no primary basis: '{record.verification_id}'"
             )
 
+    observation_dependencies: dict[str, set[str]] = {}
+    for record in requirement.verification_records:
+        dependencies = observation_dependencies.setdefault(record.target_observation_id, set())
+        dependencies.update(
+            basis.observation_id
+            for basis in record.basis
+            if basis.observation_id != record.target_observation_id
+        )
+    visiting_observations: set[str] = set()
+    visited_observations: set[str] = set()
+
+    def visit_observation(observation_id: str) -> None:
+        if observation_id in visiting_observations:
+            failures.append("observation dependency graph contains a cycle")
+            return
+        if observation_id in visited_observations:
+            return
+        visiting_observations.add(observation_id)
+        for dependency_id in observation_dependencies.get(observation_id, set()):
+            visit_observation(dependency_id)
+        visiting_observations.remove(observation_id)
+        visited_observations.add(observation_id)
+
+    for observation_id in observation_dependencies:
+        visit_observation(observation_id)
+
     by_id = {observation.id: observation for observation in observations}
     records_by_id = {record.verification_id: record for record in requirement.verification_records}
     checked_sources: set[tuple[str, str]] = set()

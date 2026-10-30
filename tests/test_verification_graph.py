@@ -316,6 +316,39 @@ def test_runtime_rejects_verification_records_without_primary_basis(graph_case):
     assert any("verification record has no primary basis" in failure for failure in failures)
 
 
+def test_runtime_rejects_observation_dependency_cycles(graph_case):
+    observations, files, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    cyclic = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={
+                "verification_id": "check-primary-one",
+                "verifier_identity": "investigator-B",
+                "target_observation_id": primary_one.id,
+                "target_observation_digest": primary_one.digest,
+                "basis": (VerificationBasis(
+                    observation_id=target.id,
+                    observation_digest=target.digest,
+                ),),
+            }),
+            requirement.verification_records[1].model_copy(update={
+                "verification_id": "root-check",
+                "verifier_identity": "investigator-C",
+                "target_observation_digest": target.digest,
+                "basis": (VerificationBasis(
+                    observation_id=primary_one.id,
+                    observation_digest=primary_one.digest,
+                ),),
+                "parent_verification_ids": ("check-primary-one",),
+            }),
+        ),
+    })
+
+    failures = validate_verification_dependencies(cyclic, observations, files)
+
+    assert any("observation dependency graph contains a cycle" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
