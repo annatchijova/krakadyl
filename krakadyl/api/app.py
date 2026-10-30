@@ -106,6 +106,7 @@ from krakadyl.core.team import (
 from krakadyl.core.verification import (
     VerificationInvalidationRejected,
     invalidate_observation,
+    validate_verification_dependencies,
 )
 from krakadyl.core.models import (
     Decision,
@@ -424,6 +425,12 @@ def get_case(case_id: str, authorization: Optional[str] = Header(default=None)) 
     evidence_items = []
     for o in observations:
         req = requirements_by_obs.get(o.id)
+        verification_current = (
+            req is not None
+            and not o.invalidated
+            and evidence_state_from_requirement(req) == EvidenceState.SUFFICIENT
+            and not validate_verification_dependencies(req, observations, files)
+        )
         evidence_items.append(
             EvidenceItem(
                 observation=o,
@@ -431,7 +438,7 @@ def get_case(case_id: str, authorization: Optional[str] = Header(default=None)) 
                 integrity_ok=verify_observation_integrity(o, files.get(o.id, Path("/nonexistent"))),
                 requirement_id=req.id if req else None,
                 requirement_status=req.responsibility.status.value if req else None,
-                independently_verified=(req is not None and evidence_state_from_requirement(req) == EvidenceState.SUFFICIENT),
+                independently_verified=verification_current,
                 team_conflict=req is not None and req.id in conflicted,
             )
         )

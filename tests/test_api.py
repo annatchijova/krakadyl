@@ -58,6 +58,10 @@ def test_observation_invalidation_requires_authentication_and_records_actor(clie
     assert response.json()["invalidated"] is True
     assert response.json()["invalidation_reason"] == "primary source provenance was disproved"
 
+    overview = client.get("/api/cases/case-001").json()
+    invalidated_item = next(item for item in overview["evidence"] if item["observation"]["id"] == "obs-a1")
+    assert invalidated_item["independently_verified"] is False
+
     events = client.get("/api/cases/case-001/activity").json()
     invalidation = next(event for event in events if event["kind"] == "observation_invalidated")
     assert invalidation["detail"]["actor_identity"] == "investigator-A"
