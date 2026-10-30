@@ -83,6 +83,10 @@ def validate_verification_dependencies(
             failures.append("verification ID must be non-empty")
         if not record.verifier_identity.strip():
             failures.append("verification identity must be non-empty")
+        if record.recorded_at is None or record.recorded_at.utcoffset() is None:
+            failures.append("verification timestamp must include a timezone")
+        if not record.method.strip():
+            failures.append("verification method must be non-empty")
         if not record.basis:
             failures.append(
                 f"verification record has no primary basis: '{record.verification_id}'"
