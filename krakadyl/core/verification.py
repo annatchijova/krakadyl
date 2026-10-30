@@ -53,6 +53,8 @@ def validate_verification_dependencies(
         for observation_id in duplicate_observation_ids
     )
     for observation in observations:
+        if not observation.source.strip():
+            failures.append(f"observation source must be non-empty: '{observation.id}'")
         if observation.invalidated and not observation.invalidation_reason:
             failures.append(f"observation '{observation.id}' invalidated without a reason")
         elif not observation.invalidated and observation.invalidation_reason is not None:

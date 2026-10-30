@@ -467,6 +467,19 @@ def test_runtime_rejects_inconsistent_observation_invalidation_state(graph_case)
     assert any("invalidation reason requires invalidated=True" in failure for failure in failures)
 
 
+def test_runtime_rejects_anonymous_observation_source(graph_case):
+    observations, files, requirement, _ = graph_case
+    anonymous_source = [
+        observation.model_copy(update={"source": ""})
+        if observation.id == "obs-primary-1" else observation
+        for observation in observations
+    ]
+
+    failures = validate_verification_dependencies(requirement, anonymous_source, files)
+
+    assert any("observation source must be non-empty" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
