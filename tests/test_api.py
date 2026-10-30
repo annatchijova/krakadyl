@@ -181,6 +181,24 @@ def test_prepare_then_execute_happy_path(client):
     assert exe["manifest"]["excluded_devices"] == ["device-B"]
 
 
+def test_api_execution_receipts_continue_the_case_chain(client):
+    first_prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
+    first = client.post(
+        "/api/cases/case-001/actions/execute",
+        json={"principal": "investigator-A", "prepared_action_id": first_prep["prepared"]["id"]},
+    ).json()["receipt"]
+    assert first["executed"] is True
+
+    second_prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
+    second = client.post(
+        "/api/cases/case-001/actions/execute",
+        json={"principal": "investigator-A", "prepared_action_id": second_prep["prepared"]["id"]},
+    ).json()["receipt"]
+
+    assert second["executed"] is True
+    assert second["prev_hash"] == first["hash"]
+
+
 def test_prepare_rolls_back_result_when_activity_event_cannot_be_written(client):
     import sqlite3
     import krakadyl.api.app as app_module

@@ -751,6 +751,8 @@ def execute(
     mandate = _current_mandate(case_id)
     _authenticated_principal(mandate, body.principal, authorization)
     out_dir = DATA_DIR / case_id / "packages" / prepared.id
+    previous_receipts = store.list(case_id, "receipt", Receipt)
+    previous_hash = previous_receipts[-1].hash if previous_receipts else None
 
     receipt = execute_prepared_action(
         prepared=prepared,
@@ -763,6 +765,7 @@ def execute(
         consumed_nonces=consumed,
         out_dir=out_dir,
         now=now(),
+        prev_receipt_hash=previous_hash,
         conflicted_requirement_ids=_conflicted_ids(case_id, _load_requirements(case_id)),
     )
     store.put_execution_receipt(case_id, receipt, now().isoformat())

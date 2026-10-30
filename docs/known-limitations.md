@@ -115,3 +115,24 @@ or publication, but it should be displayed as `WARN`.
 
 **Required closure:** migrate legacy provenance to typed dependency records and
 make all callers provide current observation and custody context.
+
+## KL-005 — Concurrent API executions need a durable receipt append protocol
+
+**Status:** Open concurrency limitation.
+
+The API now links sequential execution receipts by passing the latest persisted
+receipt hash into the deterministic executor. Two distinct executions that
+start concurrently can still read the same chain head before either receipt is
+stored, producing two valid but divergent successor hashes. The action nonce
+prevents replay of one prepared action; it does not serialize different
+prepared actions or establish a receipt-chain lease.
+
+This is not currently a decision-authority bypass: each action still passes the
+mandate/evidence gates, and each receipt seals its own payload. It is an audit
+integrity limitation for multi-worker or multi-process execution.
+
+**Required closure:** reserve a chain position durably before or while
+persisting the receipt, with compare-and-swap/lease recovery semantics that do
+not hold a database or process lock across package assembly or other I/O. The
+receipt hash must be recomputed from the reserved predecessor and the verifier
+must reject abandoned or duplicated positions.
