@@ -22,6 +22,7 @@ import json
 import secrets
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from krakadyl.core.acquisition import requirement_revision_digest
 from krakadyl.core.continuity import NextMove, find_urgent_discrepancies, next_move
 from krakadyl.core.invalidation import find_hypotheses_needing_review
-from krakadyl.core.models import EvidenceRequirement, Hypothesis, TaskResponsibility, TaskStatus
+from krakadyl.core.models import EvidenceRequirement, Hypothesis, Observation, TaskResponsibility, TaskStatus
 from krakadyl.core.receipt import canonical_bytes
 from krakadyl.core.team import Conflict, RefChecker, TeamRecord, find_conflicts
 from krakadyl.store import KrakadylStore
@@ -83,6 +84,8 @@ def build_shift_handoff(
     check_ref: RefChecker,
     acquisitions: list[InFlightAcquisition],
     now: datetime,
+    observations: Optional[list[Observation]] = None,
+    observation_files: Optional[dict[str, Path]] = None,
 ) -> ShiftHandoff:
     conflicts: list[Conflict] = []
     for r in requirements:
@@ -129,7 +132,12 @@ def build_shift_handoff(
         "blocked": sections["blocked"],
         "uncertain_status": sections["uncertain"],
         "acquisitions_in_flight": [a for a in acquisitions if a.state in ("active", "unknown")],
-        "hypotheses_needing_review": find_hypotheses_needing_review(hypotheses, requirements),
+        "hypotheses_needing_review": find_hypotheses_needing_review(
+            hypotheses,
+            requirements,
+            observations=observations,
+            observation_files=observation_files,
+        ),
         "verified": sections["verified"],
         "closed_unresolvable": sections["closed"],
         "next_move": next_move(requirements),

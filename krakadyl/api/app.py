@@ -1353,6 +1353,7 @@ def _team_overview(case_id: str) -> TeamOverview:
 
 
 def _current_handoff(case_id: str) -> ShiftHandoff:
+    observations = _load_observations(case_id)
     return build_shift_handoff(
         case_id=case_id,
         requirements=_load_requirements(case_id),
@@ -1364,6 +1365,8 @@ def _current_handoff(case_id: str) -> ShiftHandoff:
             for h in acquisition_history(store, case_id)
         ],
         now=now(),
+        observations=observations,
+        observation_files=_observation_files(case_id, observations),
     )
 
 

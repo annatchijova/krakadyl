@@ -102,9 +102,10 @@ structured alternative it now requires the current observation collection and
 artifact paths, walks the verification graph, and abstains when context is
 missing or a dependency is invalid. The case overview's hypothesis review
 detector also receives current context and flags invalidated structured
-evidence. Legacy alternatives and callers without typed context still use
-historical requirement state because prose provenance has no typed edges. The
-execution path remains protected because a recovered action must pass
+evidence, and the API handoff view supplies the same context. Legacy
+alternatives and pure callers without typed context still use historical
+requirement state because prose provenance has no typed edges. The execution
+path remains protected because a recovered action must pass
 `check_evidence()` and the normal prepare/execute gates.
 
 **Impact:** a legacy source requirement whose external semantic status changed
