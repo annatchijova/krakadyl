@@ -199,6 +199,54 @@ def test_invalidated_verification_dependency_blocks_execution(tmp_path):
     assert not (tmp_path / "package" / "manifest.json").exists()
 
 
+def test_invalidated_target_observation_blocks_legacy_execution(tmp_path):
+    """Logical invalidation must block the governed observation itself.
+
+    This is the legacy variant: the requirement has no structured dependency
+    records, so the invalidation cannot be discovered through a basis walk.
+    The target observation state still must be honored at the execution sink.
+    """
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    observation = _observation("obs-a1", "device-A", raw / "a1.jpg", b"authentic device A photo")
+    files = {observation.id: raw / "a1.jpg"}
+    mandate = _mandate()
+    requirement = _verified_requirement(observation.id)
+
+    decision, prepared = prepare_evidence_package(
+        proposed_action=_action(),
+        mandate=mandate,
+        observations=[observation],
+        requirements=[requirement],
+        observation_files=files,
+        allowed_device="device-A",
+        destination="reviewer-authorized",
+        now=NOW,
+    )
+    assert prepared is not None
+
+    invalidated = observation.model_copy(update={
+        "invalidated": True,
+        "invalidation_reason": "the target source was later disproved",
+    })
+    receipt = execute_prepared_action(
+        prepared=prepared,
+        decision=decision,
+        proposed_action=_action(),
+        observations=[invalidated],
+        requirements=[requirement],
+        observation_files=files,
+        current_mandate=mandate,
+        consumed_nonces=set(),
+        out_dir=tmp_path / "package",
+        now=NOW + timedelta(minutes=3),
+    )
+
+    assert receipt.executed is False
+    assert "invalidated" in receipt.observed_effect.lower()
+    assert not (tmp_path / "package" / "manifest.json").exists()
+
+
 def test_prepared_action_without_dependency_snapshot_is_not_executable(tmp_path):
     raw = tmp_path / "raw"
     raw.mkdir()

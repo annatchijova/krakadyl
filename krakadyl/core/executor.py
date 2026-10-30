@@ -146,6 +146,7 @@ class EvidenceCheck:
     included: list[Observation]
     excluded_devices: list[str]
     integrity_failures: list[str]
+    invalidation_failures: list[str]
     unverified: list[str]
     unverified_ids: list[str]
     failure_reasons: dict[str, str]
@@ -188,6 +189,14 @@ def check_evidence(
     for obs_id in integrity_failures:
         failure_reasons[obs_id] = "integrity check failed: file no longer matches the digest recorded at acquisition"
 
+    invalidation_failures = [o.id for o in included if o.invalidated]
+    for obs_id in invalidation_failures:
+        observation = next(o for o in included if o.id == obs_id)
+        failure_reasons[obs_id] = (
+            "observation was logically invalidated"
+            + (f": {observation.invalidation_reason}" if observation.invalidation_reason else "")
+        )
+
     unverified: list[str] = []
     unverified_ids: list[str] = []
     for o in included:
@@ -226,6 +235,9 @@ def check_evidence(
     if integrity_failures:
         evidence_state = EvidenceState.CONFLICTING
         reasons.append(f"integrity check failed for: {', '.join(integrity_failures)}")
+    elif invalidation_failures:
+        evidence_state = EvidenceState.CONFLICTING
+        reasons.append(f"observation invalidated: {', '.join(invalidation_failures)}")
     elif verification_failures:
         evidence_state = EvidenceState.CONFLICTING
         reasons.append("verification dependency graph invalid: " + "; ".join(verification_failures))
@@ -245,6 +257,7 @@ def check_evidence(
         included=included,
         excluded_devices=excluded_devices,
         integrity_failures=integrity_failures,
+        invalidation_failures=invalidation_failures,
         unverified=unverified,
         unverified_ids=unverified_ids,
         failure_reasons=failure_reasons,
@@ -284,6 +297,7 @@ def _resolvable_by_route(
     if (
         evidence_check.evidence_state != EvidenceState.MISSING
         or evidence_check.integrity_failures
+        or evidence_check.invalidation_failures
         or evidence_check.verification_failures
     ):
         return False
