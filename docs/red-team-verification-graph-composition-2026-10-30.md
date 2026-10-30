@@ -245,6 +245,20 @@ before adding it to the source set.
 `test_runtime_rejects_target_as_its_own_verification_source` covers the runtime
 bypass.
 
+### RT-VERIFY-15 — Runtime accepted verification records without a basis
+
+**Observation:** `VerificationRecord.basis` has a construction-time minimum
+length, but runtime closure simply iterated an empty tuple and accumulated no
+sources.
+
+**Induction:** two records with empty bases passed as roots without any primary
+evidence. Runtime validation now rejects every record lacking a primary basis
+before resolving the graph.
+
+**Status:** fixed by `8f48cc4`; regression
+`test_runtime_rejects_verification_records_without_primary_basis` covers the
+unvalidated-model bypass.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -268,8 +282,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced twenty-two passing tests after the
-runtime self-reference fix. The full locked suite produced **399 passed**. The live Meta
+The focused verification graph suite produced twenty-three passing tests after the
+empty-basis fix. The full locked suite produced **400 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -301,7 +315,7 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Twenty-two graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Twenty-three graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
@@ -309,6 +323,7 @@ check and must be normalized at acquisition.
 | A valid graph could verify the wrong requirement target | Observation | Failing regression `test_verification_roots_must_match_the_requirement_target` | Confirmed and fixed by `38bcb5e` |
 | Runtime could accept non-independent verifier identities | Observation | Failing regressions `test_verification_roots_require_distinct_verifiers` and `test_requirement_verifier_must_be_one_of_the_runtime_roots` | Confirmed and fixed by `9546f35` |
 | Runtime could accept target self-reference | Observation | Failing regression `test_runtime_rejects_target_as_its_own_verification_source` | Confirmed and fixed by `6035313` |
+| Runtime could accept an empty verification basis | Observation | Failing regression `test_runtime_rejects_verification_records_without_primary_basis` | Confirmed and fixed by `8f48cc4` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
