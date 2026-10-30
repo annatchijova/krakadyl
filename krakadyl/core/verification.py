@@ -52,6 +52,11 @@ def validate_verification_dependencies(
         f"duplicate observation id '{observation_id}' makes verification namespace ambiguous"
         for observation_id in duplicate_observation_ids
     )
+    for observation in observations:
+        if observation.invalidated and not observation.invalidation_reason:
+            failures.append(f"observation '{observation.id}' invalidated without a reason")
+        elif not observation.invalidated and observation.invalidation_reason is not None:
+            failures.append("invalidation reason requires invalidated=True")
     if not requirement.verification_records:
         return tuple(failures)
 

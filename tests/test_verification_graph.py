@@ -451,6 +451,22 @@ def test_runtime_rejects_empty_verification_method(graph_case):
     assert any("verification method must be non-empty" in failure for failure in failures)
 
 
+def test_runtime_rejects_inconsistent_observation_invalidation_state(graph_case):
+    observations, files, requirement, target = graph_case
+    inconsistent_target = target.model_copy(update={
+        "invalidated": False,
+        "invalidation_reason": "stale provider record",
+    })
+    inconsistent = [
+        inconsistent_target if observation.id == target.id else observation
+        for observation in observations
+    ]
+
+    failures = validate_verification_dependencies(requirement, inconsistent, files)
+
+    assert any("invalidation reason requires invalidated=True" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
