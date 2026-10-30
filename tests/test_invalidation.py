@@ -152,6 +152,78 @@ def test_prepared_action_executes_when_nothing_changed(tmp_path):
     assert receipt.executed is True
 
 
+def test_invalidated_verification_dependency_blocks_execution(tmp_path):
+    """A VERIFIED_DONE label is not enough after its independent basis is
+    invalidated between preparation and execution."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    observations = [_observation("obs-a1", "device-A", raw / "a1.jpg", b"authentic device A photo")]
+    files = {"obs-a1": raw / "a1.jpg"}
+    mandate = _mandate()
+    verified = _verified_requirement("obs-a1")
+
+    decision, prepared = prepare_evidence_package(
+        proposed_action=_action(),
+        mandate=mandate,
+        observations=observations,
+        requirements=[verified],
+        observation_files=files,
+        allowed_device="device-A",
+        destination="reviewer-authorized",
+        now=NOW,
+    )
+    assert prepared is not None
+
+    invalidated = EvidenceRequirement(**{
+        **verified.model_dump(),
+        "responsibility": TaskResponsibility(**{
+            **verified.responsibility.model_dump(),
+            "verified_against": "primary source invalidated after both independent checks",
+        }),
+    })
+    receipt = execute_prepared_action(
+        prepared=prepared,
+        decision=decision,
+        proposed_action=_action(),
+        observations=observations,
+        requirements=[invalidated],
+        observation_files=files,
+        current_mandate=mandate,
+        consumed_nonces=set(),
+        out_dir=tmp_path / "package",
+        now=NOW + timedelta(minutes=3),
+    )
+
+    assert receipt.executed is False
+    assert "verification dependency" in receipt.observed_effect.lower()
+    assert not (tmp_path / "package" / "manifest.json").exists()
+
+
+def test_prepared_action_without_dependency_snapshot_is_not_executable(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    observations = [_observation("obs-a1", "device-A", raw / "a1.jpg", b"authentic device A photo")]
+    files = {"obs-a1": raw / "a1.jpg"}
+    mandate = _mandate()
+    requirement = _verified_requirement("obs-a1")
+    decision, prepared = prepare_evidence_package(
+        proposed_action=_action(), mandate=mandate, observations=observations,
+        requirements=[requirement], observation_files=files, allowed_device="device-A",
+        destination="reviewer-authorized", now=NOW,
+    )
+    legacy_prepared = prepared.model_copy(update={"requirement_revisions": ()})
+
+    receipt = execute_prepared_action(
+        prepared=legacy_prepared, decision=decision, proposed_action=_action(),
+        observations=observations, requirements=[requirement], observation_files=files,
+        current_mandate=mandate, consumed_nonces=set(), out_dir=tmp_path / "package",
+        now=NOW + timedelta(minutes=1),
+    )
+
+    assert receipt.executed is False
+    assert "no verification dependency snapshot" in receipt.observed_effect
+
+
 def test_mandate_revoked_between_prepare_and_execute_blocks_execution(tmp_path):
     """The exact Level 2 scenario: an action is prepared and ALLOWED,
     then the mandate is revoked before it runs. Execution must be

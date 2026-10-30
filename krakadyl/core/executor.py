@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 from krakadyl.core.continuity import evidence_state_from_requirement
+from krakadyl.core.acquisition import requirement_revision_digest
 from krakadyl.core.invalidation import compute_combined_revision
 from krakadyl.core.models import (
     AuthorityState,
@@ -356,6 +357,17 @@ def prepare_evidence_package(
 
     resource_digests = {o.id: o.evidence_custody.integrity_digest for o in evidence_check.included}
     combined_revision = compute_combined_revision(resource_digests)
+    requirements_by_observation = {
+        r.observation_id: r for r in requirements if r.observation_id
+    }
+    requirement_revisions = tuple(sorted(
+        (
+            observation.id,
+            requirements_by_observation[observation.id].id,
+            requirement_revision_digest(requirements_by_observation[observation.id]),
+        )
+        for observation in evidence_check.included
+    ))
     prepared = PreparedAction(
         id=f"prepared-{proposed_action.id}",
         proposed_action_id=proposed_action.id,
@@ -364,6 +376,7 @@ def prepare_evidence_package(
         operation=proposed_action.operation,
         destination=destination,
         resources_touched=tuple(o.id for o in evidence_check.included),
+        requirement_revisions=requirement_revisions,
         excluded_sources=tuple(evidence_check.excluded_devices),
         excluded_resource_reasons=tuple(
             ExclusionRecord(resource_id=rid, reason=reason)
@@ -458,6 +471,36 @@ def execute_prepared_action(
             now=now,
             prev_hash=prev_receipt_hash,
         )
+
+    current_requirements_by_observation = {
+        r.observation_id: r for r in requirements if r.observation_id
+    }
+    if not prepared.requirement_revisions:
+        return _not_executed_receipt(
+            proposed_action=proposed_action,
+            decision=decision,
+            reasons=["prepared action has no verification dependency snapshot; recreate it before execution"],
+            now=now,
+            prev_hash=prev_receipt_hash,
+        )
+    for observation_id, requirement_id, revision in prepared.requirement_revisions:
+        requirement = current_requirements_by_observation.get(observation_id)
+        if requirement is None or requirement.id != requirement_id:
+            return _not_executed_receipt(
+                proposed_action=proposed_action,
+                decision=decision,
+                reasons=[f"verification dependency for {observation_id} changed since this action was prepared"],
+                now=now,
+                prev_hash=prev_receipt_hash,
+            )
+        if requirement_revision_digest(requirement) != revision:
+            return _not_executed_receipt(
+                proposed_action=proposed_action,
+                decision=decision,
+                reasons=[f"verification dependency for {observation_id} changed since this action was prepared"],
+                now=now,
+                prev_hash=prev_receipt_hash,
+            )
 
     # The device string lives in prepared.resource ("mission_id/device")
     # — the single source of truth from prepare time, not re-derived

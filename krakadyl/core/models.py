@@ -441,6 +441,10 @@ class PreparedAction(BaseModel):
     operation: str
     destination: str
     resources_touched: tuple[str, ...]
+    # (observation_id, requirement_id, full requirement revision at prepare)
+    # binds the evidence decision to the exact verification basis that made
+    # it sufficient; a later VERIFIED_DONE label is not enough by itself.
+    requirement_revisions: tuple[tuple[str, str, str], ...] = ()
     excluded_sources: tuple[str, ...] = ()
     excluded_resource_reasons: tuple[ExclusionRecord, ...] = ()
     source_revision_checked: str
