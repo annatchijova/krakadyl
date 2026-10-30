@@ -37,7 +37,8 @@ model has no path to sealed values or execution authority.
 ## Follow-up
 
 - Preserve these scenarios as offline regression fixtures for the adapter's
-  proposal contract, without asserting exact prose.
+  proposal contract, without asserting exact prose. The deterministic boundary
+  cases now live in `tests/test_muse_adversarial_contract.py`.
 - Repeat the probe after model or prompt changes and compare only the structured
   candidate fields and deterministic verdict.
 - Keep real-evidence uploads disabled for exploratory model testing.
