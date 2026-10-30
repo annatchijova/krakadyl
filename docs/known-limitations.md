@@ -94,23 +94,21 @@ establish robustness against model drift or every adversarial input.
 
 ## KL-004 — Hypothesis recovery recommendations lack observation context
 
-**Status:** Open planning-layer limitation; not an execution authorization
-bypass.
+**Status:** Partially closed for structured requirements; legacy planning
+remains limited. This is not an execution authorization bypass.
 
-`propose_hypothesis_recovery()` receives requirements and hypotheses, and uses
-the requirement's historical state to decide whether an independently verified
-alternative can be suggested. It does not receive the observation collection or
-artifact paths needed to walk a structured verification graph and recheck
-current source invalidation. The execution path remains protected because a
-recovered action must pass `check_evidence()` and the normal prepare/execute
-gates.
+`propose_hypothesis_recovery()` receives requirements and hypotheses. For a
+structured alternative it now requires the current observation collection and
+artifact paths, walks the verification graph, and abstains when context is
+missing or a dependency is invalid. Legacy alternatives still use their
+historical requirement state because their prose provenance has no typed edges.
+The execution path remains protected because a recovered action must pass
+`check_evidence()` and the normal prepare/execute gates.
 
-**Impact:** a source requirement whose external semantic status changed outside
-the typed observation transition could still influence a recovery suggestion.
-The suggestion is not permission, evidence resolution, or publication, but its
-display should be treated as `WARN` until current observation context is
-available.
+**Impact:** a legacy source requirement whose external semantic status changed
+outside the typed observation transition can still influence a recovery
+suggestion. The suggestion is not permission, evidence resolution, or
+publication, but its display should be treated as `WARN`.
 
-**Required closure:** pass the current observation and custody context into
-hypothesis-recovery planning, or mark the suggestion explicitly as requiring
-revalidation before it is shown as a valid alternative.
+**Required closure:** migrate legacy provenance to typed dependency records and
+make all callers provide current observation and custody context.

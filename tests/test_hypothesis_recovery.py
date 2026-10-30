@@ -14,6 +14,8 @@ from krakadyl.core.models import (
     RecoveryWindowKind,
     TaskResponsibility,
     TaskStatus,
+    VerificationBasis,
+    VerificationRecord,
 )
 
 NOW = datetime(2026, 10, 27, 20, 0, tzinfo=timezone.utc)
@@ -219,6 +221,33 @@ def test_requires_an_explicit_usable_source_already_declared_in_the_case(source)
     assert outcome.attempted is False
     assert outcome.suggested_new_requirement is None
     assert outcome.closed_reason is not None
+
+
+def test_structured_alternative_requires_current_observation_context():
+    source = _alternative_source().model_copy(update={
+        "verification_records": (
+            VerificationRecord(
+                verification_id="source-review",
+                verifier_identity="investigator-C",
+                target_observation_id="obs-source",
+                basis=(VerificationBasis(
+                    observation_id="obs-primary",
+                    observation_digest="a" * 64,
+                ),),
+                method="peer review",
+                recorded_at=NOW,
+            ),
+        ),
+    })
+
+    outcome = propose_hypothesis_recovery(
+        _hypothesis(),
+        [_requirement("req-failed", unresolvable=True), source],
+        alternative_source_requirement_id=source.id,
+    )
+
+    assert outcome.attempted is False
+    assert "current observation context" in outcome.closed_reason
 
 
 @pytest.mark.parametrize("source_id", ["req-missing", "req-failed"])

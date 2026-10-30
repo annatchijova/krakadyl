@@ -19,6 +19,7 @@ import hashlib
 import json
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from krakadyl.core.continuity import evidence_state_from_requirement
@@ -27,9 +28,11 @@ from krakadyl.core.models import (
     EvidenceState,
     Hypothesis,
     HypothesisStatus,
+    Observation,
     TaskResponsibility,
     TaskStatus,
 )
+from krakadyl.core.verification import validate_verification_dependencies
 
 
 def compute_combined_revision(resource_digests: dict[str, str]) -> str:
@@ -123,6 +126,8 @@ def propose_hypothesis_recovery(
     requirements: list[EvidenceRequirement],
     *,
     alternative_source_requirement_id: Optional[str] = None,
+    observations: Optional[list[Observation]] = None,
+    observation_files: Optional[dict[str, Path]] = None,
 ) -> HypothesisRecoveryOutcome:
     """Propose a fresh discriminating question after one becomes impossible.
 
@@ -188,6 +193,14 @@ def propose_hypothesis_recovery(
         return close("the selected alternative source requirement is itself unresolvable")
     if source.blocked_by_authority or source.blocked_reason:
         return close("the selected alternative source requirement is blocked by authority")
+    if source.verification_records:
+        if observations is None or observation_files is None:
+            return close(
+                "structured alternative source verification requires current observation context"
+            )
+        failures = validate_verification_dependencies(source, observations, observation_files)
+        if failures:
+            return close("alternative source verification dependencies are invalid: " + "; ".join(failures))
     if evidence_state_from_requirement(source) != EvidenceState.SUFFICIENT:
         return close("the selected alternative source requirement is not independently verified")
 
