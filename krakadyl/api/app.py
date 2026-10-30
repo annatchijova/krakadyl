@@ -71,6 +71,17 @@ from krakadyl.core.executor import (
     propose_recovery_route,
     verify_observation_integrity,
 )
+from krakadyl.core.counterfactual import (
+    CaseInputs,
+    Counterfactual,
+    CounterfactualRejected,
+    Delta,
+    Question,
+    base_state_digest,
+    evaluate_counterfactual,
+    list_counterfactuals,
+    save_counterfactual,
+)
 from krakadyl.core.handoff import (
     HandoffRejected,
     InFlightAcquisition,
@@ -1348,6 +1359,68 @@ def post_accept_handoff(
     except HandoffRejected as exc:
         raise HTTPException(409, str(exc)) from exc
     return _handoff_view(case_id)
+
+
+# --- Level 5: comparable routes. Counterfactuals are computed on copies of
+# exactly the inputs the real endpoints use, stored in their own table, and
+# never read by any real decision path. ---
+
+
+def _case_inputs(case_id: str) -> CaseInputs:
+    observations = _load_observations(case_id)
+    requirements = _load_requirements(case_id)
+    return CaseInputs(
+        case_id=case_id,
+        mandate=_current_mandate(case_id),
+        observations=observations,
+        requirements=requirements,
+        observation_files=_observation_files(case_id, observations),
+        conflicted_requirement_ids=_conflicted_ids(case_id, requirements),
+        resolvable_requirement_ids=_resolvable_ids(case_id, requirements),
+    )
+
+
+class CounterfactualRequest(BaseModel):
+    question: Question
+    deltas: list[Delta] = Field(min_length=1, max_length=8)
+
+
+class CounterfactualView(BaseModel):
+    counterfactual: Counterfactual
+    stale: bool  # the case moved since this was computed; it no longer describes the case
+
+
+def _counterfactual_views(case_id: str) -> list[CounterfactualView]:
+    inputs = _case_inputs(case_id)
+    return [
+        CounterfactualView(
+            counterfactual=cf,
+            stale=base_state_digest(inputs, cf.question) != cf.base_state_digest,
+        )
+        for cf in list_counterfactuals(store, case_id)
+    ]
+
+
+@app.get("/api/cases/{case_id}/counterfactuals", response_model=list[CounterfactualView])
+def get_counterfactuals(case_id: str) -> list[CounterfactualView]:
+    _case_or_404(case_id)
+    return _counterfactual_views(case_id)
+
+
+@app.post("/api/cases/{case_id}/counterfactuals", response_model=CounterfactualView)
+def post_counterfactual(
+    case_id: str, body: CounterfactualRequest, authorization: Optional[str] = Header(default=None),
+) -> CounterfactualView:
+    _case_or_404(case_id)
+    identity, _ = _operator(authorization)
+    try:
+        counterfactual = evaluate_counterfactual(
+            _case_inputs(case_id), body.question, tuple(body.deltas), created_by=identity, now=now(),
+        )
+    except CounterfactualRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+    save_counterfactual(store, counterfactual)
+    return CounterfactualView(counterfactual=counterfactual, stale=False)
 
 
 # --- dev-only endpoints: simulate the staleness Level 2 exists to
