@@ -2,8 +2,9 @@
 
 ## Scope and epistemic discipline
 
-This audit covers the live `main` tree at commit `25f85c6` after the ordered
-Level 3, Level 4, and Level 5 merges. The threat model is an HTTP caller who
+This audit covers the live `main` tree at commit `21be5cf` after the ordered
+Level 3, Level 4, and Level 5 merges and the bearer-authentication round. The
+threat model is an HTTP caller who
 can reach the API, can submit arbitrary JSON and case identifiers, and may hold
 one configured operator bearer token. OS-level database or source modification
 is out of scope.
@@ -11,23 +12,25 @@ is out of scope.
 Claims below use these levels:
 
 - **CODE FACT** — verified in the live source.
-- **RUNTIME-CONFIRMED** — the predicted behavior occurred in a controlled run.
+- **CONFIRMED BY INDUCTION** — the predicted behavior occurred in a controlled run.
 - **PLAUSIBLE HYPOTHESIS** — the source chain is credible but the end-to-end
   interaction was not induced.
 - **FALSIFIED** — the proposed behavior did not survive the test.
 
 ## Test evidence
 
-- `python3 -m pytest -q tests --ignore=tests/test_laya_adapter.py`: **334 passed**.
-- The complete suite was not certified green because `tests/test_laya_adapter.py`
-  blocks while loading the external model; it was excluded explicitly and is a
-  known environment boundary, not counted as a pass.
+- The earlier baseline run recorded `344 passed` with
+  `tests/test_laya_adapter.py` excluded. A later rerun is not certified green:
+  the local Python/AnyIO worker-thread path hangs even in a minimal FastAPI
+  application, so the HTTP suite was not counted as passed in this round.
+- Direct induction probes for RT-AUTH-01 through RT-RESOURCE-01 ran in fresh
+  temporary databases and are recorded under each finding.
 - `python3 -m compileall -q krakadyl demo tools`: passed.
 - Frontend `npm run build`: passed.
 - Frontend `npm run lint`: passed with one existing React warning at
   `frontend/src/App.tsx:44`.
 
-## Findings and remediation
+## Findings and prior remediation
 
 ### RT-HANDOFF-01 — acceptance did not fence the full case state
 
@@ -145,6 +148,148 @@ anonymous POST /api/cases/{id}/actions/*
 The corrected chain authenticates before resolving the case. The same ordering
 was applied to the Level 3 acquisition, Level 4 team/handoff, and Level 5
 counterfactual write routes as a variant sweep.
+
+### RT-AUTH-02 — non-principal operators could probe prepared-action IDs
+
+**Severity:** Low information disclosure  **Epistemic level:**
+**CONFIRMED BY INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** an authenticated operator who is not authorized by the case
+mandate must not learn whether a pending Level 1/2 action exists.
+
+**Variant query:** the structural endpoint sweep found that `execute` performs
+`store.get(prepared_action)` before reloading the mandate and calling
+`_authenticated_principal`; the other protected write routes do not have this
+same ID-bearing lookup before their authority decision.
+
+**Induction:** on the live code at `21be5cf`, investigator A prepared an action.
+Investigator C then called `execute` with the real prepared ID and received
+`403` from the mandate check; the same token with
+`prepared-does-not-exist` received `404` before the mandate check. The
+prediction held exactly. This is distinct from RT-AUTH-01: the caller is
+authenticated, but not authorized for the case's mandate.
+
+**Coverage result:** `get_prepared` also exposes prepared-action metadata to any
+configured operator by design; the current authorization matrix explicitly
+allows authenticated operators to read case metadata. That is a documented
+scope assumption, not silently counted as a new bypass. The execution endpoint
+is different because it is a consequential action path and should establish
+mandate authority before resolving its action identifier.
+
+### RT-AUTH-03 — non-principal operators could persist an unusable acquisition grant
+
+**Severity:** Medium state-integrity / audit pollution  **Epistemic level:**
+**CONFIRMED BY INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** only the principal of the capture mandate may create the durable
+human authorization that can enter the acquisition workflow.
+
+**Variant query:** `MandateScopePolicy.authorize` enforces the principal during
+`SQLiteAcquisitionGate.create_workflow`, but the API's
+`authorize_acquisition` endpoint calls `AcquisitionRuntime.authorize` first.
+That method verifies that the bearer token is valid but does not load the live
+mandate or apply `MandateScopePolicy`.
+
+**Induction:** with the seeded capture mandate scoped to investigator A, a live
+direct API call by investigator C created a proposal and then persisted an
+`acquisition_authorization` whose `authorizer_identity` was
+`investigator-C`. A later dispatch would be rejected by the scope policy, and
+the existing runtime test confirms that rejection; nevertheless the invalid
+grant and authorization event already exist in durable state. This is an
+authorization decay across the proposal → grant → workflow transition, not a
+claim that C can successfully capture evidence.
+
+**Dedupe and fix coverage:** this is not a duplicate of RT-AUTH-01 or
+RT-AUTH-02. The earlier fixes cover anonymous lookup ordering and prepared
+action execution; neither covers grant issuance. Existing tests cover failed
+dispatch, not rejection before durable grant persistence.
+
+### RT-ATOMIC-01 — prepare persistence could commit a partial logical result
+
+**Severity:** Medium state-integrity  **Epistemic level:** **CONFIRMED BY
+INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** persisting a proposal, its decision, and its prepared action is
+one logical operation; after a failure, either all required records exist or
+none do.
+
+**Abduction:** `_persist_prepare_result` calls `store.put` independently for
+`proposed_action`, `decision`, and (when allowed) `prepared_action`. Each
+`store.put` commits its own transaction. If the process fails after the first
+write, readers can observe a dangling proposal without the decision and action
+that define its meaning.
+
+**Deduction:** inject a failure on the second `store.put` during a valid
+`prepare`; predict one persisted proposal and zero decision/prepared records.
+
+**Induction:** the live experiment produced exactly that state: the synthetic
+failure occurred between writes, `proposed_action` count was `1`, and both
+`decision` and `prepared_action` counts were `0`. The helper is shared by
+`prepare`, `propose_with_muse`, and `recover`, so the variant surface includes
+all three paths.
+
+**Causal chain:**
+
+```text
+prepare decision
+    -> commit proposed_action
+    -> process failure before decision/prepared_action
+    -> later reads see a dangling proposal
+    -> latest-action lookup cannot reconstruct the decision
+```
+
+This is independent of the known HTTP TestClient environment hang and was
+confirmed through direct store inspection in a fresh temporary database.
+
+### RT-ATOMIC-02 — acquisition proposal could exist without its audit event
+
+**Severity:** Medium provenance gap  **Epistemic level:** **CONFIRMED BY
+INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** a durable acquisition proposal must be accompanied by its
+activity event, or the system must roll back the proposal. The activity feed is
+part of the case's reconstruction surface, not optional decoration.
+
+**Variant query:** `propose_acquisition` calls `store.put` for the proposal and
+then `store.log_event` in separate commits. The same shape exists for
+authorization and some development mutations; proposal creation is the real
+acquisition path tested here.
+
+**Induction:** a fresh case accepted a valid proposal, then a synthetic failure
+was injected at `store.log_event`. The proposal count was `1` while the event
+feed contained only the original `seeded` event. The committed state therefore
+claims a proposal exists while its reconstruction log denies that transition.
+
+**Dedupe and coverage:** this is a persistence/provenance variant of
+RT-ATOMIC-01, not a duplicate occurrence: RT-ATOMIC-01 leaves a partial action
+bundle, while this variant leaves a real acquisition object without its audit
+event. The same helper/transaction boundary does not cover either path.
+
+### RT-RESOURCE-01 — Laya note input had no request-size ceiling
+
+**Severity:** Low–medium availability  **Epistemic level:** **CONFIRMED BY
+INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** every untrusted text input sent to an optional local model has a
+documented maximum before it reaches model/tokenizer work.
+
+**Abduction:** `AnalyzeNoteRequest.note_text` was a bare `str`, unlike the
+bounded capture instructions, SAM prompt, team statement, and handoff note.
+The endpoint passes it directly to `analyze_handoff_note`.
+
+**Deduction:** construct an authenticated request with an 8 MiB note and a
+recording adapter; predict that the entire string reaches the adapter rather
+than being rejected at the API boundary.
+
+**Induction:** the live direct endpoint accepted the payload and the adapter
+recorded `8,388,608` bytes. No model call was made in the experiment; the
+finding is the missing boundary, not a claim about a particular Laya runtime's
+memory multiplier.
+
+**Coverage:** `capture_instructions` is capped at 2,000 characters,
+`sam_prompt` at 256, `TeamStatementRequest.statement` at 4,000, and
+`HandoffRequest.note` at 4,000. Those sibling paths were not counted as this
+finding.
 
 ## Refuted vectors
 
