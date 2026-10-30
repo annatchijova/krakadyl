@@ -116,6 +116,17 @@ CREATE TABLE IF NOT EXISTS acquisition_resolutions (
     created_at TEXT NOT NULL,
     UNIQUE (attempt_id)
 );
+CREATE TABLE IF NOT EXISTS acquisition_evaluations (
+    evaluation_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL REFERENCES acquisition_workflows(workflow_id),
+    requirement_id TEXT NOT NULL,
+    evaluator_identity TEXT NOT NULL,
+    evaluation_json TEXT NOT NULL,
+    evaluation_digest TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (workflow_id, evaluator_identity)
+);
 CREATE TABLE IF NOT EXISTS acquisition_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     case_id TEXT NOT NULL,
@@ -148,7 +159,7 @@ class KrakadylStore:
             schema_version = self._conn.execute(
                 "SELECT version FROM acquisition_schema_meta WHERE singleton=1"
             ).fetchone()
-            if schema_version is None or schema_version[0] not in (1, 2, 3, 4):
+            if schema_version is None or schema_version[0] not in (1, 2, 3, 4, 5):
                 raise RuntimeError("unsupported SQLite acquisition schema version")
             if schema_version[0] < 3:
                 workflow_columns = {
@@ -173,9 +184,11 @@ class KrakadylStore:
             self._conn.execute(
                 "INSERT OR IGNORE INTO acquisition_gate_state (singleton, dispatch_generation) VALUES (1, 0)"
             )
-            if schema_version[0] < 4:
+            if schema_version[0] < 5:
+                # v5 only adds acquisition_evaluations, created above by
+                # CREATE TABLE IF NOT EXISTS; no existing row changes.
                 self._conn.execute(
-                    "UPDATE acquisition_schema_meta SET version=4 WHERE singleton=1"
+                    "UPDATE acquisition_schema_meta SET version=5 WHERE singleton=1"
                 )
             self._conn.commit()
         except BaseException:
@@ -282,6 +295,19 @@ class KrakadylStore:
         with self._write_lock, self._conn:
             self._conn.execute("DELETE FROM objects WHERE case_id=?", (case_id,))
             self._conn.execute("DELETE FROM events WHERE case_id=?", (case_id,))
+            # Acquisition records too, children before parents (foreign
+            # keys are enforced). Only the dev reset reaches this; a real
+            # case never deletes its acquisition audit trail.
+            workflow_ids = "SELECT workflow_id FROM acquisition_workflows WHERE case_id=?"
+            attempt_ids = f"SELECT attempt_id FROM acquisition_attempts WHERE workflow_id IN ({workflow_ids})"
+            self._conn.execute(f"DELETE FROM acquisition_evaluations WHERE workflow_id IN ({workflow_ids})", (case_id,))
+            self._conn.execute(f"DELETE FROM acquisition_resolutions WHERE attempt_id IN ({attempt_ids})", (case_id,))
+            self._conn.execute(f"DELETE FROM acquisition_requests WHERE attempt_id IN ({attempt_ids})", (case_id,))
+            self._conn.execute(f"DELETE FROM acquisition_attempts WHERE workflow_id IN ({workflow_ids})", (case_id,))
+            self._conn.execute(f"DELETE FROM acquisition_reservations WHERE workflow_id IN ({workflow_ids})", (case_id,))
+            self._conn.execute("DELETE FROM acquisition_events WHERE case_id=?", (case_id,))
+            self._conn.execute("DELETE FROM acquisition_revocations WHERE case_id=?", (case_id,))
+            self._conn.execute("DELETE FROM acquisition_workflows WHERE case_id=?", (case_id,))
 
     # --- nonces: global, not per-case — a PreparedAction's nonce is
     # already globally unique (secrets.token_hex(8)) ---
