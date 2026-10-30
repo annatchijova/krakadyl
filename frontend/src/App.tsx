@@ -15,6 +15,7 @@ import { ActivityFeed } from "./components/ActivityFeed";
 import { DevPanel } from "./components/DevPanel";
 import { LayaNotePanel } from "./components/LayaNotePanel";
 import { AcquisitionPanel } from "./components/AcquisitionPanel";
+import { TeamPanel } from "./components/TeamPanel";
 import { Logo } from "./components/Logo";
 
 const CASE_ID = "case-001";
@@ -126,6 +127,15 @@ function App() {
                 onChanged={refresh}
                 token={operatorToken}
                 onTokenChange={setOperatorToken}
+              />
+            </div>
+            <div className="section-gap">
+              <TeamPanel
+                caseId={CASE_ID}
+                caseVersion={activity.length}
+                token={operatorToken}
+                evidence={overview.evidence}
+                onChanged={refresh}
               />
             </div>
             <div className="section-gap">

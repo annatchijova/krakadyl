@@ -29,6 +29,7 @@ export function EvidencePanel({ evidence }: { evidence: EvidenceItem[] }) {
               </Badge>
             )}
             {!item.requirement_id && <Badge kind="neutral">no requirement</Badge>}
+            {item.team_conflict && <Badge kind="error">team conflict</Badge>}
           </div>
         </div>
       ))}

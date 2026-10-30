@@ -37,6 +37,14 @@ export type AcquisitionRecordView = Schemas["AcquisitionRecordView"];
 export type AnnotationView = Schemas["AnnotationView"];
 export type EvaluationOutcome = Schemas["EvaluationOutcome"];
 export type EvidenceRequirement = Schemas["EvidenceRequirement"];
+export type TeamOverview = Schemas["TeamOverview"];
+export type TeamRequirementView = Schemas["TeamRequirementView"];
+export type TeamRecord = Schemas["TeamRecord"];
+export type Conflict = Schemas["Conflict"];
+export type ClaimKind = Schemas["ClaimKind"];
+export type HandoffView = Schemas["HandoffView"];
+export type HandoffItem = Schemas["HandoffItem"];
+export type EvidenceRefInput = Schemas["EvidenceRef"];
 
 type GeneratedActivity =
   paths["/api/cases/{case_id}/activity"]["get"]["responses"][200]["content"]["application/json"];
@@ -188,5 +196,44 @@ export const api = {
     request<{ ok: boolean }>(`/api/dev/cases/${caseId}/reset`, {
       method: "POST",
       headers: token ? bearer(token) : { "Content-Type": "application/json" },
+    }),
+};
+
+export type TeamStatement = {
+  kind: ClaimKind;
+  statement: string;
+  expected_requirement_revision: string;
+  evidence_refs?: EvidenceRefInput[];
+  refers_to?: string[];
+  verification_method?: string | null;
+  resolves_conflict_id?: string | null;
+  decision?: "keep_current_state" | "reopen_requirement" | null;
+};
+
+// Level 4: every statement and handoff is attributed to the operator
+// token the request proves, never to a name in the body.
+export const teamApi = {
+  overview: (caseId: string) => request<TeamOverview>(`/api/cases/${caseId}/team`),
+  say: (caseId: string, requirementId: string, token: string, body: TeamStatement) =>
+    request<TeamOverview>(`/api/cases/${caseId}/requirements/${requirementId}/team-records`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify(body),
+    }),
+  handoff: (caseId: string) => request<HandoffView>(`/api/cases/${caseId}/handoff`),
+  handOver: (
+    caseId: string,
+    token: string,
+    body: { to_actor: string; seen_state_digest: string; transfer_requirement_ids: string[]; note: string },
+  ) =>
+    request<HandoffView>(`/api/cases/${caseId}/handoffs`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify(body),
+    }),
+  accept: (caseId: string, handoffId: string, token: string) =>
+    request<HandoffView>(`/api/cases/${caseId}/handoffs/${handoffId}/accept`, {
+      method: "POST",
+      headers: bearer(token),
     }),
 };
