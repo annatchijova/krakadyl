@@ -360,6 +360,18 @@ comes from the mandate and current evidence state.
 `test_runtime_rejects_anonymous_observation_source` covers the malformed source.
 The `blocked_by_authority` hypothesis remains a documented non-finding.
 
+### RT-VERIFY-23 — Runtime accepted an empty observation identifier
+
+**Observation:** `Observation.id` was an unconstrained string at the model
+boundary, while runtime used it as the custody and dependency namespace.
+
+**Induction:** a target and its requirement could be rewritten to use `id=""`
+and still pass the graph when the file mapping used the same empty key. Runtime
+now rejects empty observation IDs before namespace resolution.
+
+**Status:** fixed by `d692cac`; regression
+`test_runtime_rejects_empty_observation_id` covers the empty-key path.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -383,8 +395,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced thirty-two passing tests after the
-source-identity validation fix. The full locked suite produced **409 passed**. The live Meta
+The focused verification graph suite produced thirty-three passing tests after the
+observation-namespace fix. The full locked suite produced **410 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -416,7 +428,7 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Thirty-two graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Thirty-three graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
@@ -433,6 +445,7 @@ check and must be normalized at acquisition.
 | Runtime could accept an impossible invalidation state | Observation | Failing regression `test_runtime_rejects_inconsistent_observation_invalidation_state` | Confirmed and fixed by `d6e20f0` |
 | Runtime could accept an anonymous primary source | Observation | Failing regression `test_runtime_rejects_anonymous_observation_source` | Confirmed and fixed by `df8900d` |
 | `blocked_by_authority` bypassed export authority | Code/context review | Acquisition route contract gates new capture; executor gates export by mandate and evidence | Refuted in current scope |
+| Runtime could accept an empty observation identifier | Observation | Failing regression `test_runtime_rejects_empty_observation_id` | Confirmed and fixed by `d692cac` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
