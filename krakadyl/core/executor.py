@@ -241,6 +241,23 @@ def _not_executed_receipt(
     )
 
 
+def _resolvable_by_route(
+    evidence_check: EvidenceCheck,
+    requirements: list[EvidenceRequirement],
+    resolvable_requirement_ids: frozenset[str],
+) -> bool:
+    if evidence_check.evidence_state != EvidenceState.MISSING or evidence_check.integrity_failures:
+        return False
+    if not evidence_check.unverified_ids:
+        return False
+    requirement_by_observation = {r.observation_id: r for r in requirements if r.observation_id}
+    for observation_id in evidence_check.unverified_ids:
+        requirement = requirement_by_observation.get(observation_id)
+        if requirement is None or requirement.id not in resolvable_requirement_ids:
+            return False
+    return True
+
+
 def prepare_evidence_package(
     *,
     proposed_action: ProposedAction,
@@ -253,6 +270,7 @@ def prepare_evidence_package(
     now: datetime,
     ttl: timedelta = DEFAULT_PREPARED_ACTION_TTL,
     excluded_resource_reasons: Optional[dict[str, str]] = None,
+    resolvable_requirement_ids: frozenset[str] = frozenset(),
 ) -> tuple[Decision, Optional[PreparedAction]]:
     """Resolves authority and evidence state for real. Returns a
     Decision always; returns a PreparedAction only when the verdict is
@@ -266,6 +284,16 @@ def prepare_evidence_package(
     same way an out-of-mandate device is silently absent. Never derived
     from anything the model said; always from this module's own
     deterministic checks.
+
+    `resolvable_requirement_ids` is the set of requirement ids for which
+    `acquisition_routes.acquisition_route` found an authorized,
+    discriminating capture route (Level 3). Evidence counts as
+    resolvable by an authorized source only when it is MISSING solely
+    because of unverified requirements and EVERY one of those has a
+    route — an integrity failure is never "resolvable" by a new capture
+    (the original bytes changed; a new capture is a different
+    observation, not a repair). Defaults to empty, which preserves the
+    pre-Level-3 behavior exactly: no route, no GATHER_EVIDENCE.
     """
     resource = f"{proposed_action.mission_id}/{allowed_device}"
     mandate_check = check_mandate(
@@ -283,7 +311,9 @@ def prepare_evidence_package(
         evidence_state=evidence_check.evidence_state,
         authority_state=mandate_check.authority_state,
         outside_mandate_scope=mandate_check.outside_scope,
-        resolvable_by_authorized_source=False,  # no re-acquisition path modeled yet (Level 3)
+        resolvable_by_authorized_source=_resolvable_by_route(
+            evidence_check, requirements, resolvable_requirement_ids
+        ),
     )
     # Evidence-check reasons (integrity/verification detail naming the
     # specific observation) come last, not before policy_reasons — tests

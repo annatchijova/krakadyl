@@ -53,6 +53,22 @@ two-device synthetic case as `demo/run_case_001.py` and
 `demo/run_case_002_level2.py`) is seeded into `out/api/krakadyl.db` on
 first backend startup, and persists across restarts and page reloads.
 
+### Acquisition panel (Level 3)
+
+Disabled until operator credentials are configured. Generate tokens
+(each printed once; only hashes are configured):
+
+```
+python tools/operator_token.py investigator-A investigator-C
+export KRAKADYL_OPERATOR_TOKENS='...'   # the line the tool prints
+```
+
+`investigator-A` is the capture mandate's principal (the only one who
+can authorize and dispatch); use `investigator-C`'s token to record the
+independent evaluation. SAM is off unless you also set
+`KRAKADYL_ENABLE_SAM=1` and `META_API_KEY` — every SAM capture is a
+real, billed call. See `docs/level3-case-wiring.md`.
+
 ## Regenerate API types
 
 The FastAPI backend must be serving this checkout's `/openapi.json` on

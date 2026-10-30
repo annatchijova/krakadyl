@@ -289,7 +289,7 @@ def test_atomic_write_rolls_back_all_callback_mutations(tmp_path):
     assert store._conn.in_transaction is False
 
 
-def test_acquisition_schema_v1_migrates_additively_to_v4(tmp_path):
+def test_acquisition_schema_v1_migrates_additively_to_v5(tmp_path):
     database = tmp_path / "legacy-acquisition.db"
     connection = sqlite3.connect(database)
     connection.executescript(
@@ -320,12 +320,14 @@ def test_acquisition_schema_v1_migrates_additively_to_v4(tmp_path):
         conn.execute("SELECT dispatch_generation FROM acquisition_gate_state WHERE singleton=1").fetchone()[0],
         conn.execute("SELECT workflow_id, mandate_digest FROM acquisition_workflows").fetchone(),
         conn.execute("SELECT attempt_id FROM acquisition_attempts").fetchone()[0],
+        {row[1] for row in conn.execute("PRAGMA table_info(acquisition_evaluations)")},
     ))
     assert "authorization_json" in columns[0]
     assert "mandate_digest" in columns[0]
     assert "result_json" in columns[1]
-    assert columns[2] == 4
+    assert columns[2] == 5
     assert columns[3] == 0
     assert columns[4] == ("workflow-v1", None)
     assert columns[5] == "attempt-v1"
+    assert {"evaluation_id", "workflow_id", "evaluator_identity", "evaluation_json"} <= columns[6]
     store.close()

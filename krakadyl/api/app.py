@@ -28,13 +28,41 @@ from threading import Lock
 from time import monotonic
 from typing import Callable, Optional
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, Header, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from krakadyl.acquisition_runtime import (
+    AcquisitionUnavailable,
+    CredentialRejected,
+    image_mime,
+    runtime_from_environment,
+)
 from krakadyl.adapters.laya import LayaAdapterError, analyze_handoff_note
+from krakadyl.adapters.sam import MAX_INPUT_BYTES
+from krakadyl.adapters.sam_annotation import parse_sam_annotation
 from krakadyl.adapters.muse import MuseAdapterError, propose_action
-from krakadyl.api.seed import CASE_ID, ensure_seeded, observation_file_path
+from krakadyl.api.seed import CAPTURE_MANDATE_ID, CASE_ID, ensure_seeded, observation_file_path
+from krakadyl.core.acquisition import (
+    AcquisitionAuthorization,
+    AcquisitionOutcomeUnknown,
+    AcquisitionProposal,
+    AcquisitionRecoveryRequired,
+    EvaluationOutcome,
+    UnknownDisposition,
+    UnknownResolution,
+    canonical_record_digest,
+    requirement_revision_digest,
+)
+from krakadyl.core.acquisition_routes import AcquisitionRoute, RouteRefusal, resolvable_requirement_ids
+from krakadyl.core.evaluation import (
+    AcquisitionRecordView,
+    EvaluationRejected,
+    abstain_requirement,
+    acquisition_history,
+    record_evaluation,
+)
 from krakadyl.core.continuity import evidence_state_from_requirement, next_move
 from krakadyl.core.executor import (
     DEFAULT_PREPARED_ACTION_TTL,
@@ -132,6 +160,9 @@ app.add_middleware(
 
 store = KrakadylStore(DB_PATH)
 ensure_seeded(store, DATA_DIR)
+# None unless operator credentials are configured — every acquisition
+# endpoint then answers 503 instead of improvising an identity.
+acquisition = runtime_from_environment(store, DATA_DIR)
 
 
 def now() -> datetime:
@@ -449,6 +480,7 @@ def prepare(case_id: str, body: PrepareRequest) -> PrepareResponse:
         destination=body.destination,
         now=now(),
         ttl=DEFAULT_PREPARED_ACTION_TTL,
+        resolvable_requirement_ids=_resolvable_ids(case_id, requirements),
     )
     _persist_prepare_result(case_id, proposed_action, decision, prepared)
     store.log_event(
@@ -677,6 +709,417 @@ def recover(case_id: str, body: RecoverRequest) -> RecoverResponse:
     )
 
 
+# --- Level 3: authorized acquisition. Identity here is the operator
+# bearer token the request PROVES (Authorization: Bearer ...), never a
+# principal it asserts in its body — the gap docs/red-team-api-and-
+# frontend.md recorded for the Level 1/2 endpoints does not extend to
+# anything that can capture, spend, or resolve. ---
+
+
+def _capture_mandate(case_id: str) -> Optional[Mandate]:
+    return store.get(case_id, "mandate", CAPTURE_MANDATE_ID, Mandate)
+
+
+def _resolvable_ids(case_id: str, requirements: list[EvidenceRequirement]) -> frozenset[str]:
+    if acquisition is None:
+        return frozenset()
+    return resolvable_requirement_ids(
+        case_id=case_id,
+        requirements=requirements,
+        hypotheses=_load_hypotheses(case_id),
+        capture_mandate=_capture_mandate(case_id),
+        sources=acquisition.sources,
+        now=now(),
+    )
+
+
+def _require_acquisition():
+    if acquisition is None:
+        raise HTTPException(
+            503,
+            "acquisition is disabled: no operator credentials are configured (KRAKADYL_OPERATOR_TOKENS)",
+        )
+    return acquisition
+
+
+def _operator(authorization: Optional[str]) -> tuple[str, str]:
+    runtime = _require_acquisition()
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(401, "an operator bearer token is required", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        return runtime.credentials.identify(token.strip()), token.strip()
+    except CredentialRejected as exc:
+        raise HTTPException(401, str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
+
+
+def _requirement_or_404(case_id: str, requirement_id: str) -> EvidenceRequirement:
+    requirement = store.get(case_id, "requirement", requirement_id, EvidenceRequirement)
+    if requirement is None:
+        raise HTTPException(404, "no such requirement")
+    return requirement
+
+
+class StoredAcquisitionProposal(BaseModel):
+    id: str
+    proposal: AcquisitionProposal
+    proposal_digest: str
+    proposed_by: str
+    created_at: datetime
+
+
+class StoredAcquisitionAuthorization(BaseModel):
+    id: str
+    proposal_id: str
+    authorization: AcquisitionAuthorization
+
+
+class RouteView(BaseModel):
+    requirement: EvidenceRequirement
+    requirement_revision: str
+    route: Optional[AcquisitionRoute]
+    refusal: Optional[str]
+
+
+class AcquisitionOverview(BaseModel):
+    enabled: bool
+    sam_enabled: bool
+    routes: list[RouteView]
+    proposals: list[StoredAcquisitionProposal]
+    authorizations: list[StoredAcquisitionAuthorization]
+    history: list[AcquisitionRecordView]
+
+
+class ProposeAcquisitionRequest(BaseModel):
+    capture_instructions: str = Field(min_length=1, max_length=2000)
+    sam_prompt: Optional[str] = Field(default=None, max_length=256)
+
+
+class EvaluateRequest(BaseModel):
+    expected_requirement_revision: str
+    criterion_id: str = Field(min_length=1, max_length=128)
+    criterion_version: str = Field(min_length=1, max_length=32)
+    outcome: EvaluationOutcome
+    rationale: str = Field(min_length=1, max_length=4000)
+
+
+class AbstainRequest(BaseModel):
+    expected_requirement_revision: str
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class ReconcileRequest(BaseModel):
+    disposition: UnknownDisposition
+    rationale: str = Field(min_length=1, max_length=4000)
+
+
+class AnnotationBox(BaseModel):
+    object_id: str
+    x1: int
+    y1: int
+    x2_inclusive: int
+    y2_inclusive: int
+    box_confidence: Optional[str]
+
+
+class AnnotationView(BaseModel):
+    annotation_id: str
+    output_digest: str
+    is_empty: bool
+    sidecar_status: str
+    frame_width: Optional[int]
+    frame_height: Optional[int]
+    boxes: list[AnnotationBox]
+    diagnostics: list[str]
+    trust: str = "untrusted model output — not evidence until an identified evaluator records an evaluation"
+
+
+@app.get("/api/cases/{case_id}/acquisition", response_model=AcquisitionOverview)
+def get_acquisition(case_id: str) -> AcquisitionOverview:
+    _case_or_404(case_id)
+    requirements = _load_requirements(case_id)
+    hypotheses = _load_hypotheses(case_id)
+    capture_mandate = _capture_mandate(case_id)
+    routes = []
+    for requirement in requirements:
+        if not requirement.discriminating_question:
+            continue
+        if acquisition is None:
+            found: AcquisitionRoute | RouteRefusal = RouteRefusal(
+                requirement_id=requirement.id, reason="acquisition is disabled in this deployment"
+            )
+        else:
+            found = acquisition.route(
+                case_id=case_id, requirement=requirement, hypotheses=hypotheses,
+                capture_mandate=capture_mandate, now=now(),
+            )
+        routes.append(RouteView(
+            requirement=requirement,
+            requirement_revision=requirement_revision_digest(requirement),
+            route=found if isinstance(found, AcquisitionRoute) else None,
+            refusal=found.reason if isinstance(found, RouteRefusal) else None,
+        ))
+    return AcquisitionOverview(
+        enabled=acquisition is not None,
+        sam_enabled=acquisition is not None and acquisition.sam_enabled,
+        routes=routes,
+        proposals=store.list(case_id, "acquisition_proposal", StoredAcquisitionProposal),
+        authorizations=store.list(case_id, "acquisition_authorization", StoredAcquisitionAuthorization),
+        history=acquisition_history(store, case_id),
+    )
+
+
+@app.post(
+    "/api/cases/{case_id}/requirements/{requirement_id}/acquisition-proposals",
+    response_model=StoredAcquisitionProposal,
+)
+def propose_acquisition(
+    case_id: str, requirement_id: str, body: ProposeAcquisitionRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> StoredAcquisitionProposal:
+    _case_or_404(case_id)
+    identity, _ = _operator(authorization)
+    runtime = _require_acquisition()
+    requirement = _requirement_or_404(case_id, requirement_id)
+    try:
+        proposal = runtime.build_proposal(
+            case_id=case_id,
+            requirement=requirement,
+            hypotheses=_load_hypotheses(case_id),
+            capture_mandate=_capture_mandate(case_id),
+            capture_instructions=body.capture_instructions,
+            sam_prompt=body.sam_prompt,
+            now=now(),
+        )
+    except AcquisitionUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    digest = canonical_record_digest(proposal)
+    stored = StoredAcquisitionProposal(
+        id=f"proposal-{digest[:16]}-{uuid.uuid4().hex[:6]}",
+        proposal=proposal, proposal_digest=digest, proposed_by=identity, created_at=now(),
+    )
+    store.put(case_id, "acquisition_proposal", stored, now().isoformat())
+    store.log_event(
+        case_id, "acquisition_proposed",
+        f"{identity} proposed a capture for {requirement_id}"
+        + (f" with SAM prompt '{proposal.processing_plan.prompt}'" if proposal.processing_plan else " (capture only)"),
+        {"proposal_id": stored.id, "proposal_digest": digest}, now().isoformat(),
+    )
+    return stored
+
+
+@app.post(
+    "/api/cases/{case_id}/acquisition-proposals/{proposal_id}/authorize",
+    response_model=StoredAcquisitionAuthorization,
+)
+def authorize_acquisition(
+    case_id: str, proposal_id: str, authorization: Optional[str] = Header(default=None),
+) -> StoredAcquisitionAuthorization:
+    _case_or_404(case_id)
+    identity, token = _operator(authorization)
+    stored = store.get(case_id, "acquisition_proposal", proposal_id, StoredAcquisitionProposal)
+    if stored is None:
+        raise HTTPException(404, "no such acquisition proposal")
+    grant = _require_acquisition().authorize(stored.proposal, token, now())
+    record = StoredAcquisitionAuthorization(id=grant.authorization_id, proposal_id=proposal_id, authorization=grant)
+    store.put(case_id, "acquisition_authorization", record, now().isoformat())
+    store.log_event(
+        case_id, "acquisition_authorized",
+        f"{identity} authorized proposal {proposal_id} until {grant.expires_at.isoformat()} — single use",
+        {"proposal_id": proposal_id, "authorization_id": grant.authorization_id}, now().isoformat(),
+    )
+    return record
+
+
+async def _bounded_body(request: Request, limit: int) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdigit() or int(declared) > limit):
+        raise HTTPException(413, f"capture exceeds the {limit}-byte image limit")
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > limit:
+            raise HTTPException(413, f"capture exceeds the {limit}-byte image limit")
+    return bytes(content)
+
+
+@app.post(
+    "/api/cases/{case_id}/acquisition-authorizations/{authorization_id}/capture",
+    response_model=AcquisitionRecordView,
+)
+async def capture_acquisition(
+    case_id: str, authorization_id: str, request: Request,
+    authorization: Optional[str] = Header(default=None),
+) -> AcquisitionRecordView:
+    """The request body is the operator's photograph (image/png or
+    image/jpeg). It is held in memory until the gate admits the
+    workflow; nothing is written if admission fails."""
+    _case_or_404(case_id)
+    identity, token = _operator(authorization)
+    runtime = _require_acquisition()
+    record = store.get(case_id, "acquisition_authorization", authorization_id, StoredAcquisitionAuthorization)
+    if record is None:
+        raise HTTPException(404, "no such acquisition authorization")
+    stored = store.get(case_id, "acquisition_proposal", record.proposal_id, StoredAcquisitionProposal)
+    if stored is None:
+        raise HTTPException(409, "authorization exists but its proposal does not")
+    content = await _bounded_body(request, MAX_INPUT_BYTES)
+    declared_type = request.headers.get("content-type", "").split(";")[0].strip()
+    if declared_type not in {"image/png", "image/jpeg"} or image_mime(content) != declared_type:
+        raise HTTPException(415, "capture must be a PNG or JPEG image whose bytes match its Content-Type")
+    try:
+        result = await run_in_threadpool(runtime.acquire, stored.proposal, record.authorization, token, content)
+    except AcquisitionOutcomeUnknown as exc:
+        store.log_event(
+            case_id, "acquisition_unknown",
+            f"{exc.phase.value} outcome is UNKNOWN for attempt {exc.attempt_id}; no retry or refund until a human reconciles it",
+            {"attempt_id": exc.attempt_id, "phase": exc.phase.value}, now().isoformat(),
+        )
+        raise HTTPException(502, f"outcome unknown for attempt {exc.attempt_id}; reconcile before retrying") from exc
+    except AcquisitionRecoveryRequired as exc:
+        raise HTTPException(500, f"durable acquisition state needs recovery: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    store.log_event(
+        case_id, "acquisition_completed",
+        f"{identity} captured observation sha256:{result.observation.digest[:12]}…"
+        + (f"; SAM returned {'an empty' if result.annotation.is_empty else 'a'} candidate (untrusted)" if result.annotation else ""),
+        {"workflow_id": result.workflow.workflow_id, "observation_id": result.observation.observation_id},
+        now().isoformat(),
+    )
+    return next(h for h in acquisition_history(store, case_id) if h.workflow.workflow_id == result.workflow.workflow_id)
+
+
+def _history_or_404(case_id: str, workflow_id: str) -> AcquisitionRecordView:
+    for item in acquisition_history(store, case_id):
+        if item.workflow.workflow_id == workflow_id:
+            return item
+    raise HTTPException(404, "no such acquisition workflow")
+
+
+# Raw captured bytes and model output need a proven operator (red team
+# F4); the metadata in GET /acquisition stays as open as the Level 1/2
+# read endpoints, which docs/red-team-api-and-frontend.md already covers.
+@app.get("/api/cases/{case_id}/acquisitions/{workflow_id}/observation")
+def get_acquired_observation(
+    case_id: str, workflow_id: str, authorization: Optional[str] = Header(default=None),
+) -> Response:
+    _operator(authorization)
+    runtime = _require_acquisition()
+    item = _history_or_404(case_id, workflow_id)
+    if item.observation is None:
+        raise HTTPException(404, "this workflow recorded no observation")
+    try:
+        content = runtime.artifacts.read_verified(item.observation)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(409, "stored capture failed read-time digest verification; not served") from exc
+    return Response(content, media_type=image_mime(content) or "application/octet-stream",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/api/cases/{case_id}/acquisitions/{workflow_id}/annotation", response_model=AnnotationView)
+def get_acquired_annotation(
+    case_id: str, workflow_id: str, authorization: Optional[str] = Header(default=None),
+) -> AnnotationView:
+    _operator(authorization)
+    runtime = _require_acquisition()
+    item = _history_or_404(case_id, workflow_id)
+    if item.annotation is None:
+        raise HTTPException(404, "this workflow recorded no annotation")
+    try:
+        content = runtime.artifacts.read_annotation(item.annotation)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(409, "stored annotation failed read-time digest verification; not served") from exc
+    sidecar = parse_sam_annotation(content)
+    first = sidecar.records[0] if sidecar.records else None
+    return AnnotationView(
+        annotation_id=item.annotation.annotation_id,
+        output_digest=item.annotation.output_digest,
+        is_empty=item.annotation.is_empty,
+        sidecar_status=sidecar.status,
+        frame_width=first.frame_width if first else None,
+        frame_height=first.frame_height if first else None,
+        boxes=[AnnotationBox(
+            object_id=r.object_id, x1=r.x1, y1=r.y1, x2_inclusive=r.x2_inclusive,
+            y2_inclusive=r.y2_inclusive, box_confidence=r.box_confidence,
+        ) for r in sidecar.records],
+        diagnostics=[d.code for d in sidecar.diagnostics],
+    )
+
+
+@app.post("/api/cases/{case_id}/acquisitions/{workflow_id}/evaluations", response_model=AcquisitionRecordView)
+def evaluate_acquisition(
+    case_id: str, workflow_id: str, body: EvaluateRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> AcquisitionRecordView:
+    _case_or_404(case_id)
+    identity, _ = _operator(authorization)
+    try:
+        record_evaluation(
+            store, case_id=case_id, workflow_id=workflow_id,
+            expected_requirement_revision=body.expected_requirement_revision,
+            evaluator_identity=identity, criterion_id=body.criterion_id,
+            criterion_version=body.criterion_version, outcome=body.outcome,
+            rationale=body.rationale, now=now(),
+            verify_artifacts=_require_acquisition().artifacts.verify_for_evaluation,
+        )
+    except EvaluationRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _history_or_404(case_id, workflow_id)
+
+
+@app.post("/api/cases/{case_id}/requirements/{requirement_id}/abstain", response_model=EvidenceRequirement)
+def abstain(
+    case_id: str, requirement_id: str, body: AbstainRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> EvidenceRequirement:
+    _case_or_404(case_id)
+    identity, _ = _operator(authorization)
+    _requirement_or_404(case_id, requirement_id)
+    try:
+        return abstain_requirement(
+            store, case_id=case_id, requirement_id=requirement_id,
+            expected_requirement_revision=body.expected_requirement_revision,
+            actor_identity=identity, reason=body.reason, now=now(),
+        )
+    except EvaluationRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/cases/{case_id}/acquisition-attempts/{attempt_id}/reconcile", response_model=AcquisitionRecordView)
+def reconcile_attempt(
+    case_id: str, attempt_id: str, body: ReconcileRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> AcquisitionRecordView:
+    _case_or_404(case_id)
+    identity, token = _operator(authorization)
+    runtime = _require_acquisition()
+    owner = next(
+        (h for h in acquisition_history(store, case_id) if any(a.attempt.attempt_id == attempt_id for a in h.attempts)),
+        None,
+    )
+    if owner is None:
+        raise HTTPException(404, "no such acquisition attempt")
+    resolution = UnknownResolution(
+        case_id=case_id, resolution_id=f"resolution-{uuid.uuid4().hex[:12]}",
+        workflow_id=owner.workflow.workflow_id, attempt_id=attempt_id,
+        disposition=body.disposition, actor_identity=identity,
+        rationale=body.rationale, resolved_at=now(),
+    )
+    try:
+        runtime.gate.reconcile_unknown(attempt_id, resolution, token, now=now())
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    store.log_event(
+        case_id, "acquisition_reconciled",
+        f"{identity} reconciled attempt {attempt_id} as {body.disposition.value}",
+        {"attempt_id": attempt_id, "resolution_id": resolution.resolution_id}, now().isoformat(),
+    )
+    return _history_or_404(case_id, owner.workflow.workflow_id)
+
+
 # --- dev-only endpoints: simulate the staleness Level 2 exists to
 # catch, so the mechanism can be demonstrated from the UI. Gated behind
 # KRAKADYL_ENABLE_DEV_ROUTES (default on, for local/demo convenience) —
@@ -766,7 +1209,12 @@ def dev_unresolve_requirement(case_id: str) -> dict:
 
 
 @dev_router.post("/api/dev/cases/{case_id}/reset")
-def dev_reset(case_id: str) -> dict:
+def dev_reset(case_id: str, authorization: Optional[str] = Header(default=None)) -> dict:
+    # Red team F5: reset also deletes acquisition records (their audit
+    # trail), so once acquisition is enabled it needs a proven operator,
+    # unlike the other dev simulations, which only touch demo files.
+    if acquisition is not None:
+        _operator(authorization)
     store.reset_case(case_id)
     ensure_seeded(store, DATA_DIR)
     return {"ok": True}

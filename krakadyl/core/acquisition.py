@@ -566,6 +566,29 @@ def canonical_record_digest(record: AcquisitionRecord) -> str:
     return hashlib.sha256(canonical_bytes(payload)).hexdigest()
 
 
+def requirement_revision_digest(requirement: Any) -> str:
+    """Versioned digest of one requirement's full current state.
+
+    The single definition shared by proposal construction and the gate's
+    in-transaction staleness check, so the two can never drift apart.
+    """
+    return hashlib.sha256(canonical_bytes({
+        "digest_type": "acquisition_requirement_revision",
+        "digest_version": 1,
+        "requirement": requirement.model_dump(mode="json"),
+    })).hexdigest()
+
+
+def need_state_digest(requirement: Any, hypotheses: list[Any]) -> str:
+    """Digest of the requirement plus every hypothesis it discriminates, in id order."""
+    return hashlib.sha256(canonical_bytes({
+        "digest_type": "acquisition_need_state",
+        "digest_version": 1,
+        "requirement": requirement.model_dump(mode="json"),
+        "hypotheses": [item.model_dump(mode="json") for item in sorted(hypotheses, key=lambda item: item.id)],
+    })).hexdigest()
+
+
 def processor_request_for(
     plan: ProcessingPlan,
     observation: AcquiredObservation,

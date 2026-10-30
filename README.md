@@ -159,6 +159,14 @@ use. Every button calls a real endpoint; nothing in the UI re-decides
 what the executor already decided. See `frontend/README.md` for how to
 run both.
 
+**Level 3 (acquisition), wired but not yet closed:** an open requirement
+that states a discriminating question can now get a new capture —
+proposed, authorized by a human holding a real operator token,
+submitted, optionally segmented by SAM 3.1, and then evaluated by an
+identified person. A self-evaluation is recorded as a claim; only an
+independent evaluator resolves the requirement. The live SAM closing run
+is still pending. See [docs/level3-case-wiring.md](docs/level3-case-wiring.md).
+
 ## Not just forensics
 
 KRAKADYL is released under an open license specifically so it is not

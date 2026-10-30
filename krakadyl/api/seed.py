@@ -18,12 +18,21 @@ from krakadyl.core.models import (
     Mandate,
     Mission,
     Observation,
+    RecoveryWindow,
+    RecoveryWindowKind,
     TaskResponsibility,
     TaskStatus,
 )
 from krakadyl.store import KrakadylStore
 
 CASE_ID = "case-001"
+# Seeded mandates stay valid long enough to demo through judging and
+# beyond — found while wiring Level 3: the original +5 days expired them
+# on 2026-11-01, before the 2026-11-04 deadline, which would have turned
+# every live demo action into FORBIDDEN (correctly, but not usefully).
+SEED_MANDATE_VALIDITY = timedelta(days=30)
+CAPTURE_MANDATE_ID = "mandate-capture-001"
+CLOCK_REQUIREMENT_ID = "req-device-a-clock"
 SEED_NOW = datetime(2026, 10, 27, 16, 0, tzinfo=timezone.utc)
 
 
@@ -89,7 +98,7 @@ def ensure_seeded(store: KrakadylStore, data_dir: Path) -> None:
         operations=["package_export"],
         destinations=["reviewer-authorized"],
         valid_from=SEED_NOW - timedelta(days=1),
-        valid_until=SEED_NOW + timedelta(days=5),
+        valid_until=SEED_NOW + SEED_MANDATE_VALIDITY,
     )
     mission = Mission(
         id=CASE_ID,
@@ -106,6 +115,38 @@ def ensure_seeded(store: KrakadylStore, data_dir: Path) -> None:
             "req-timestamp-check", "device-A and device-B timestamps are mutually consistent", None
         ),
     ]
+    # Level 3: a separate, narrower mandate for capture — the package
+    # export mandate above never grants acquiring anything new, and
+    # widening it would silently change what every Level 1/2 check sees.
+    capture_mandate = Mandate(
+        id=CAPTURE_MANDATE_ID,
+        issuer="legal-authority-001",
+        principal="investigator-A",
+        resources=[f"{CASE_ID}/operator-intake"],
+        operations=["capture", "derive_annotation"],
+        destinations=["local-only", "https://api.meta.ai/v1"],
+        valid_from=SEED_NOW - timedelta(days=1),
+        valid_until=SEED_NOW + SEED_MANDATE_VALIDITY,
+    )
+    requirements.append(
+        EvidenceRequirement(
+            id=CLOCK_REQUIREMENT_ID,
+            predicate="device-A's clock offset against reference time is established",
+            acceptable_source_class="operator photograph",
+            recovery_window=RecoveryWindow(
+                kind=RecoveryWindowKind.CONDITIONAL,
+                condition="device-A's battery depletes or the device is powered off",
+                what_is_lost_if_missed="the live clock state device-A had at seizure",
+                depends_on_hypothesis_ids=["hyp-002"],
+            ),
+            responsibility=TaskResponsibility(owner="investigator-A", status=TaskStatus.ASSIGNED),
+            discriminating_question=(
+                "Photographed beside the reference clock, does device-A's on-screen clock "
+                "match reference time within one minute?"
+            ),
+            answer_classes=["clock_matches_reference", "clock_offset_detected", "not_determinable"],
+        )
+    )
     hypotheses = [
         Hypothesis(
             id="hyp-001",
@@ -113,11 +154,21 @@ def ensure_seeded(store: KrakadylStore, data_dir: Path) -> None:
             status=HypothesisStatus.ACCEPTED,
             discriminating_requirement_id="req-timestamp-check",
         ),
+        Hypothesis(
+            id="hyp-002",
+            explanation=(
+                "Device A's clock was correct at seizure, so its photo timestamps can be "
+                "compared directly with device B's."
+            ),
+            status=HypothesisStatus.PROPOSED,
+            discriminating_requirement_id=CLOCK_REQUIREMENT_ID,
+        ),
     ]
 
     now_iso = SEED_NOW.isoformat()
     store.put(CASE_ID, "mission", mission, now_iso)
     store.put(CASE_ID, "mandate", mandate, now_iso)
+    store.put(CASE_ID, "mandate", capture_mandate, now_iso)
     for o in observations:
         store.put(CASE_ID, "observation", o, now_iso)
     for r in requirements:

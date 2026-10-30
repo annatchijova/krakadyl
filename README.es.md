@@ -168,6 +168,15 @@ de dos dispositivos que usan los demos. Cada botón llama a un endpoint
 real; nada en la interfaz vuelve a decidir lo que el ejecutor ya
 decidió. Ver `frontend/README.md` para correr ambos.
 
+**Level 3 (adquisición), conectado pero todavía sin cerrar:** un
+requisito abierto que plantea una pregunta discriminante ahora puede
+obtener una captura nueva — propuesta, autorizada por una persona con un
+token de operador real, enviada, opcionalmente segmentada por SAM 3.1, y
+después evaluada por alguien identificado. Una auto-evaluación queda
+registrada como afirmación; solo una evaluación independiente resuelve
+el requisito. Falta la corrida de cierre con SAM en vivo. Ver
+[docs/level3-case-wiring.md](docs/level3-case-wiring.md).
+
 ## No es solo para forense
 
 KRAKADYL se publica bajo licencia abierta específicamente para que no
