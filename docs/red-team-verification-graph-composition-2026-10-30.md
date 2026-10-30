@@ -166,6 +166,21 @@ accepted.
 `test_same_digest_from_distinct_primary_sources_can_remain_independent` cover
 the adversarial case and its bounded negative control.
 
+### RT-VERIFY-10 — Duplicate observation IDs were resolved by list order
+
+**Observation:** the dependency validator materialized observations as a
+dictionary keyed by ID. If the input list contained the same ID twice, the last
+entry silently replaced the first one.
+
+**Induction:** an invalidated target followed by a valid observation with the
+same ID produced the valid result, while reversing the list changed the
+outcome. The boundary now rejects every duplicate observation ID before graph
+resolution, including callers handling legacy requirements.
+
+**Status:** fixed by `341a3e0`; regression
+`test_duplicate_observation_ids_are_not_last_write_wins` covers the order-
+dependence case.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -189,8 +204,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced sixteen passing tests after the
-source-identity fix. The full locked suite produced **393 passed**. The live Meta
+The focused verification graph suite produced seventeen passing tests after the
+namespace fix. The full locked suite produced **394 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -222,9 +237,10 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Sixteen graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Seventeen graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
+| Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
