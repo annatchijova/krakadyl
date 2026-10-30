@@ -301,6 +301,19 @@ checking uniqueness or root attribution.
 **Status:** fixed by `536dbd8`; regression
 `test_runtime_rejects_empty_verifier_identity` covers the anonymous-actor path.
 
+### RT-VERIFY-19 — Runtime accepted an empty verification identifier
+
+**Observation:** `verification_id` has a construction-time non-empty
+constraint, but runtime graph resolution used an empty ID as a normal map key
+when a non-revalidated record reached the boundary.
+
+**Induction:** a graph containing one record with `verification_id=""` passed
+the dependency checks. Runtime now rejects empty verification IDs before
+building the record namespace.
+
+**Status:** fixed by `5097eb7`; regression
+`test_runtime_rejects_empty_verification_id` covers the malformed identifier.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -324,8 +337,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced twenty-seven passing tests after the
-anonymous-verifier fix. The full locked suite produced **404 passed**. The live Meta
+The focused verification graph suite produced twenty-eight passing tests after the
+empty-ID fix. The full locked suite produced **405 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -357,7 +370,7 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Twenty-seven graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Twenty-eight graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
@@ -369,6 +382,7 @@ check and must be normalized at acquisition.
 | Runtime could accept an observation dependency cycle | Observation | Failing regression `test_runtime_rejects_observation_dependency_cycles` | Confirmed and fixed by `00ab994` |
 | Runtime could accept repeated basis or parent edges | Observation | Failing regressions `test_runtime_rejects_duplicate_basis_observations` and `test_runtime_rejects_duplicate_parent_verification_ids` | Confirmed and fixed by `4ca7378` |
 | Runtime could accept an anonymous verifier | Observation | Failing regression `test_runtime_rejects_empty_verifier_identity` | Confirmed and fixed by `536dbd8` |
+| Runtime could accept an empty verification identifier | Observation | Failing regression `test_runtime_rejects_empty_verification_id` | Confirmed and fixed by `5097eb7` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
