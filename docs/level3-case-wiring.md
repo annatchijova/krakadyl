@@ -91,6 +91,8 @@ Done after the first four commits; eight findings reproduced and fixed (evaluati
 - Run B returned one parsed region around the synthetic clock. Investigator-C recorded `NO_DISCRIMINATING_CHANGE`; the image contained no trusted reference time, so the requirement stayed open.
 - Both runs verified that capture and annotation alone did not change the requirement or hypotheses. No SAM output was promoted automatically.
 - Provider request IDs and conservative list-price usage are recorded. The report explicitly does not claim account billing reconciliation.
+
+An earlier non-interactive attempt reached Meta for Run A and then terminated with `EOFError` before evaluation; its generated report undercounted that call because the run entry was not appended. Including that interrupted attempt, the observed list-price ceiling across the two live sessions is 7,500 USD micros, subject to provider billing reconciliation. The runner now refuses non-interactive live execution before dispatch.
 2. Evaluator contract for a named inference mechanism (D1).
 3. Contradiction semantics (D2).
 4. Identity beyond shared tokens (D5).

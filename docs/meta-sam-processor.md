@@ -23,6 +23,8 @@ Meta's current documentation says Standard-mode content is not used to train Met
 
 Offline adapter tests use synthetic bytes and an injected transport. The live closing run on 2026-10-30 used only two generated synthetic PNGs and no case evidence. Meta returned a completed empty annotation for Run A and a completed parsed region for Run B, each with a provider request ID. Investigator-C independently evaluated them as `INSUFFICIENT_OR_INVALID` and `NO_DISCRIMINATING_CHANGE`; both workflows remained open and no SAM output was promoted. The report is `out/level3-closing/20261030T211357Z-live/report.json`. The run demonstrates the custody and evaluation boundary, not retention terms, model accuracy, production authorization, or provider billing reconciliation. The recorded 5,000 USD micros is the conservative list-price estimate for two image calls.
 
+There was also one earlier non-interactive Run A dispatch before the runner reached its human-evaluation prompt and received `EOFError`. Its report did not retain the run entry, so it is not included in the 5,000-micro report total. The observed list-price exposure across both live sessions is therefore at most 7,500 USD micros until Meta billing is reconciled. The runner now requires a TTY before any live dispatch.
+
 The prompt's linguistic form is not automatically proven to be a noun phrase. The exact prompt remains part of the approved request digest; reviewers must authorize its content. Provider response text and segmentation tokens remain untrusted data.
 
 ## Skills applied
