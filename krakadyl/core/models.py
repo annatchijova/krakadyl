@@ -230,6 +230,37 @@ class Observation(BaseModel):
     evidence_custody: EvidenceCustody
 
 
+class VerificationBasis(BaseModel):
+    """A typed source used by one verification, never a prose citation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    observation_id: str = Field(min_length=1)
+    observation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class VerificationRecord(BaseModel):
+    """One verification and the primary observations it actually relied on."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    verification_id: str = Field(min_length=1)
+    verifier_identity: str = Field(min_length=1)
+    target_observation_id: str = Field(min_length=1)
+    basis: tuple[VerificationBasis, ...] = Field(min_length=1)
+    method: str = Field(min_length=1, max_length=256)
+    recorded_at: datetime
+
+    @model_validator(mode="after")
+    def _basis_is_unique_and_timed(self) -> "VerificationRecord":
+        if self.recorded_at.utcoffset() is None:
+            raise ValueError("verification timestamp must include a timezone")
+        ids = [item.observation_id for item in self.basis]
+        if len(set(ids)) != len(ids):
+            raise ValueError("verification basis observations must be unique")
+        return self
+
+
 class Claim(BaseModel):
     id: str
     statement: str
@@ -324,6 +355,10 @@ class EvidenceRequirement(BaseModel):
     blocked_by_authority: bool = False
     blocked_reason: Optional[str] = None
     responsibility: TaskResponsibility
+    # Structured provenance is optional for legacy records while the
+    # verification graph is being introduced. When present, execution
+    # validates every source and rejects shared primary ancestry.
+    verification_records: tuple[VerificationRecord, ...] = ()
     # Level 3: the question a new capture would have to answer, and the
     # categorical answers that would discriminate between hypotheses.
     # Without both, no acquisition can be proposed for this requirement
@@ -342,6 +377,30 @@ class EvidenceRequirement(BaseModel):
                 "a requirement cannot be both 'resolved' and 'unresolvable' — "
                 "these are mutually exclusive outcomes"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _verification_records_are_independent(self) -> "EvidenceRequirement":
+        if not self.verification_records:
+            return self
+        if self.observation_id is None:
+            raise ValueError("structured verification records require an observation_id")
+        if len({record.verification_id for record in self.verification_records}) != len(self.verification_records):
+            raise ValueError("verification record IDs must be unique")
+        if len({record.verifier_identity for record in self.verification_records}) != len(self.verification_records):
+            raise ValueError("independent verification records require distinct verifiers")
+        for record in self.verification_records:
+            if record.target_observation_id != self.observation_id:
+                raise ValueError("verification record targets a different observation")
+        for index, first in enumerate(self.verification_records):
+            first_sources = {item.observation_id for item in first.basis}
+            for second in self.verification_records[index + 1:]:
+                shared = first_sources.intersection(item.observation_id for item in second.basis)
+                if shared:
+                    raise ValueError(
+                        "independent verification records share a primary source: "
+                        + ", ".join(sorted(shared))
+                    )
         return self
 
     @model_validator(mode="after")

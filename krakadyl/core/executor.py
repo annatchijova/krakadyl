@@ -54,6 +54,7 @@ from krakadyl.core.models import (
 )
 from krakadyl.core.policy import decide
 from krakadyl.core.receipt import seal
+from krakadyl.core.verification import validate_verification_dependencies
 
 DEFAULT_PREPARED_ACTION_TTL = timedelta(minutes=15)
 
@@ -150,6 +151,7 @@ class EvidenceCheck:
     failure_reasons: dict[str, str]
     reasons: list[str]
     conflicted_ids: list[str] = field(default_factory=list)
+    verification_failures: list[str] = field(default_factory=list)
 
 
 def check_evidence(
@@ -210,10 +212,23 @@ def check_evidence(
             conflicted_ids.append(o.id)
             failure_reasons.setdefault(o.id, f"requirement '{req.id}' has an open team conflict")
 
+    verification_failures: list[str] = []
+    for o in included:
+        req = requirements_by_observation.get(o.id)
+        if req is None:
+            continue
+        failures = validate_verification_dependencies(req, observations, observation_files)
+        if failures:
+            verification_failures.extend(f"{o.id}: {failure}" for failure in failures)
+            failure_reasons.setdefault(o.id, "verification dependency graph is no longer valid")
+
     reasons: list[str] = []
     if integrity_failures:
         evidence_state = EvidenceState.CONFLICTING
         reasons.append(f"integrity check failed for: {', '.join(integrity_failures)}")
+    elif verification_failures:
+        evidence_state = EvidenceState.CONFLICTING
+        reasons.append("verification dependency graph invalid: " + "; ".join(verification_failures))
     elif conflicted_ids:
         evidence_state = EvidenceState.CONFLICTING
         reasons.append(f"open team conflict on the requirement governing: {', '.join(conflicted_ids)}")
@@ -235,6 +250,7 @@ def check_evidence(
         failure_reasons=failure_reasons,
         reasons=reasons,
         conflicted_ids=conflicted_ids,
+        verification_failures=verification_failures,
     )
 
 
@@ -265,7 +281,11 @@ def _resolvable_by_route(
     requirements: list[EvidenceRequirement],
     resolvable_requirement_ids: frozenset[str],
 ) -> bool:
-    if evidence_check.evidence_state != EvidenceState.MISSING or evidence_check.integrity_failures:
+    if (
+        evidence_check.evidence_state != EvidenceState.MISSING
+        or evidence_check.integrity_failures
+        or evidence_check.verification_failures
+    ):
         return False
     if not evidence_check.unverified_ids:
         return False

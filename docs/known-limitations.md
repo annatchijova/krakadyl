@@ -14,10 +14,12 @@ the mandate, the observation bytes, and the `VERIFIED_DONE` status. A changed
 requirement blocks publication.
 
 **Missing guarantee:** the system does not yet represent the complete evidence
-verification graph as typed state. `verified_against` is provenance text, and a
-requirement currently records one effective verifier rather than a set of
-verification records with recursively typed source dependencies. Therefore the
-system cannot independently prove that:
+verification graph for every case as typed state. Structured
+`VerificationRecord`/`VerificationBasis` values now validate direct sources and
+reject directly shared primary sources, but legacy requirements still use
+`verified_against` as provenance text, and the structured graph does not yet
+model recursive verification nodes or logical invalidation events. Therefore
+the system cannot independently prove that:
 
 - every primary source used by a verification is still valid when execution
   happens if the source changed without a corresponding requirement update;
@@ -31,24 +33,27 @@ system cannot independently prove that:
 detect a change it cannot see. This is not a claim that the receipt seal is
 broken; it is a boundary of the evidence model before sealing.
 
-**Required closure:** introduce a typed, append-only verification graph with
-source-node IDs and digests, verification records, explicit verifier identity,
-and dependency edges. At preparation and execution, walk the transitive closure
-and require current integrity/validity for every node. Independence must be
-computed from disjoint source ancestry, not inferred from different human
-names. A source invalidation must atomically mark dependent verifications and
-requirements stale or make execution abstain until reevaluation.
+**Required closure:** extend the typed, append-only graph with recursive
+source-node IDs, validity/invalidation events, and dependency edges. At
+preparation and execution, walk the full transitive closure and require current
+integrity/validity for every node. Independence must be computed from disjoint
+source ancestry, not inferred from different human names. A source invalidation
+must atomically mark dependent verifications and requirements stale or make
+execution abstain until reevaluation.
 
 **Adversarial acceptance cases:**
 
 1. Two investigators verify a target using the same primary source; the graph
-   rejects the pair as not independently corroborating.
+   rejects the pair as not independently corroborating. **Implemented for
+   structured direct sources.**
 2. Two investigators verify a target using disjoint valid primary sources; the
-   graph accepts the independence claim.
+   graph accepts the independence claim. **Implemented for structured direct
+   sources.**
 3. Prepare with valid sources, invalidate one primary source without editing the
-   derived requirement, then execute; publication is refused.
+   derived requirement, then execute; publication is refused. **Implemented for
+   structured direct sources.**
 4. Change only a derived requirement; the existing revision fence still refuses
-   execution.
+   execution. **Implemented.**
 
 **Related remediation:** `daa264e` added requirement-dependency snapshots and
 execution-time revalidation. That closes case 4, but deliberately does not
