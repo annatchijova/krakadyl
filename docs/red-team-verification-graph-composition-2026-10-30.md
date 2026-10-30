@@ -134,7 +134,7 @@ case produced no dependency failure before the fix. The validator now rejects
 missing or invalidated targets for every verification record, not only the
 root requirement target.
 
-**Status:** fixed by `pending commit`; regression
+**Status:** fixed by `9156ec2`; regression
 `test_verification_record_target_must_exist` covers the missing-target case.
 
 ## Negative controls and refuted explanations
