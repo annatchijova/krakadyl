@@ -408,6 +408,9 @@ class EvidenceRequirement(BaseModel):
                 raise ValueError("verification record references an unknown parent")
         if len({record.verifier_identity for record in self.verification_records}) != len(self.verification_records):
             raise ValueError("independent verification records require distinct verifiers")
+        verifier_identities = {record.verifier_identity for record in self.verification_records}
+        if self.responsibility.verified_by not in verifier_identities:
+            raise ValueError("verified_by must match a structured verifier")
         referenced_ids = {
             parent
             for record in self.verification_records

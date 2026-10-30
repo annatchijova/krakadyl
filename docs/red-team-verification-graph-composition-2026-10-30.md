@@ -108,11 +108,27 @@ misleading proposal.
 **Status:** fixed by `fd7d389`. The overview and Muse summary now share
 `_currently_verified()`.
 
+### RT-VERIFY-07 — Responsibility attribution was not bound to the graph
+
+**Observation:** a structured requirement could name `verified_by` as an
+identity absent from every `VerificationRecord.verifier_identity`.
+
+**Induction:** the model accepted the mismatch before the fix, allowing the
+summary responsibility and the supporting graph to describe different
+verifiers. The model now rejects the requirement unless `verified_by` is one of
+the structured verifiers.
+
+**Status:** fixed by `28ff6cf`; regression
+`test_requirement_verifier_must_be_present_in_structured_records` covers the
+negative control.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
 - Two roots sharing direct or recursive primary ancestry are rejected.
 - A valid mandate and intact bytes do not override logical invalidation.
+- A structured requirement cannot attribute verification to an identity absent
+  from its verification records.
 - A changed requirement revision does not remain executable after preparation.
 - Muse output still cannot grant authority or resolve evidence; the live
   adversarial and composed-authorization tests preserve this boundary.
@@ -129,8 +145,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced eight passing tests after the
-cycle fix. The live Meta smoke tests observed parsed Muse output and completed
+The focused verification graph suite produced nine passing tests after the
+attribution fix. The live Meta smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
 establish robustness against provider drift.

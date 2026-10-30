@@ -112,6 +112,18 @@ def test_shared_primary_source_cannot_be_called_independent(graph_case):
         )
 
 
+def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
+    _, _, requirement, _ = graph_case
+    mismatched = requirement.model_copy(update={
+        "responsibility": requirement.responsibility.model_copy(update={
+            "verified_by": "investigator-E",
+        }),
+    })
+
+    with pytest.raises(ValueError, match="verified_by must match a structured verifier"):
+        EvidenceRequirement(**mismatched.model_dump())
+
+
 def test_verification_cannot_use_target_as_its_own_primary_source(graph_case):
     observations, _, _, target = graph_case
     with pytest.raises(ValueError, match="target observation cannot be a verification source"):
