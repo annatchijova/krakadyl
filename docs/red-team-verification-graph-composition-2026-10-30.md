@@ -120,7 +120,8 @@ the structured verifiers.
 
 **Status:** fixed by `28ff6cf`; regression
 `test_requirement_verifier_must_be_present_in_structured_records` covers the
-negative control.
+negative control. The follow-up regression also requires the identity to be a
+root verifier, not merely a parent verifier in the same graph.
 
 ## Negative controls and refuted explanations
 
@@ -145,8 +146,9 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced nine passing tests after the
-attribution fix. The live Meta smoke tests observed parsed Muse output and completed
+The focused verification graph suite produced ten passing tests after the
+attribution fix. The full locked suite produced **387 passed**. The live Meta
+smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
 establish robustness against provider drift.

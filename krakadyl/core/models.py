@@ -408,9 +408,6 @@ class EvidenceRequirement(BaseModel):
                 raise ValueError("verification record references an unknown parent")
         if len({record.verifier_identity for record in self.verification_records}) != len(self.verification_records):
             raise ValueError("independent verification records require distinct verifiers")
-        verifier_identities = {record.verifier_identity for record in self.verification_records}
-        if self.responsibility.verified_by not in verifier_identities:
-            raise ValueError("verified_by must match a structured verifier")
         referenced_ids = {
             parent
             for record in self.verification_records
@@ -419,6 +416,9 @@ class EvidenceRequirement(BaseModel):
         roots = [record for record in self.verification_records if record.verification_id not in referenced_ids]
         if not roots or any(record.target_observation_id != self.observation_id for record in roots):
             raise ValueError("verification graph root targets a different observation")
+        root_verifier_identities = {record.verifier_identity for record in roots}
+        if self.responsibility.verified_by not in root_verifier_identities:
+            raise ValueError("verified_by must match a root structured verifier")
         for record in self.verification_records:
             if any(basis.observation_id == record.target_observation_id for basis in record.basis):
                 raise ValueError("target observation cannot be a verification source")

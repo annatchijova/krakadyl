@@ -120,7 +120,44 @@ def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
         }),
     })
 
-    with pytest.raises(ValueError, match="verified_by must match a structured verifier"):
+    with pytest.raises(ValueError, match="verified_by must match a root structured verifier"):
+        EvidenceRequirement(**mismatched.model_dump())
+
+
+def test_requirement_verifier_must_be_a_root_verifier(graph_case):
+    observations, _, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    primary_two = next(item for item in observations if item.id == "obs-primary-2")
+    mismatched = requirement.model_copy(update={
+        "responsibility": requirement.responsibility.model_copy(update={
+            "verified_by": "investigator-E",
+        }),
+        "verification_records": (
+            VerificationRecord(
+                verification_id="parent-check",
+                verifier_identity="investigator-E",
+                target_observation_id=primary_one.id,
+                basis=(VerificationBasis(
+                    observation_id=primary_two.id, observation_digest=primary_two.digest,
+                ),),
+                method="check primary one",
+                recorded_at=NOW,
+            ),
+            VerificationRecord(
+                verification_id="root-check",
+                verifier_identity="investigator-C",
+                target_observation_id=target.id,
+                basis=(VerificationBasis(
+                    observation_id=primary_one.id, observation_digest=primary_one.digest,
+                ),),
+                parent_verification_ids=("parent-check",),
+                method="check target",
+                recorded_at=NOW,
+            ),
+        ),
+    })
+
+    with pytest.raises(ValueError, match="verified_by must match a root structured verifier"):
         EvidenceRequirement(**mismatched.model_dump())
 
 
