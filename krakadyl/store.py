@@ -127,6 +127,24 @@ CREATE TABLE IF NOT EXISTS acquisition_evaluations (
     created_at TEXT NOT NULL,
     UNIQUE (workflow_id, evaluator_identity)
 );
+CREATE TABLE IF NOT EXISTS team_records (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_id TEXT NOT NULL UNIQUE,
+    case_id TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    record_json TEXT NOT NULL,
+    record_digest TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+-- Level 4: a teammate's statement is never rewritten; a correction is a
+-- new record. Deletion stays possible only for the token-gated dev reset.
+CREATE TRIGGER IF NOT EXISTS team_records_append_only
+BEFORE UPDATE ON team_records
+BEGIN
+    SELECT RAISE(ABORT, 'team records are append-only');
+END;
 CREATE TABLE IF NOT EXISTS acquisition_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     case_id TEXT NOT NULL,
@@ -159,7 +177,7 @@ class KrakadylStore:
             schema_version = self._conn.execute(
                 "SELECT version FROM acquisition_schema_meta WHERE singleton=1"
             ).fetchone()
-            if schema_version is None or schema_version[0] not in (1, 2, 3, 4, 5):
+            if schema_version is None or schema_version[0] not in (1, 2, 3, 4, 5, 6):
                 raise RuntimeError("unsupported SQLite acquisition schema version")
             if schema_version[0] < 3:
                 workflow_columns = {
@@ -184,11 +202,12 @@ class KrakadylStore:
             self._conn.execute(
                 "INSERT OR IGNORE INTO acquisition_gate_state (singleton, dispatch_generation) VALUES (1, 0)"
             )
-            if schema_version[0] < 5:
-                # v5 only adds acquisition_evaluations, created above by
-                # CREATE TABLE IF NOT EXISTS; no existing row changes.
+            if schema_version[0] < 6:
+                # v5 added acquisition_evaluations and v6 team_records (with
+                # its append-only trigger), both created above by
+                # CREATE ... IF NOT EXISTS; no existing row changes.
                 self._conn.execute(
-                    "UPDATE acquisition_schema_meta SET version=5 WHERE singleton=1"
+                    "UPDATE acquisition_schema_meta SET version=6 WHERE singleton=1"
                 )
             self._conn.commit()
         except BaseException:
@@ -306,6 +325,7 @@ class KrakadylStore:
             self._conn.execute(f"DELETE FROM acquisition_attempts WHERE workflow_id IN ({workflow_ids})", (case_id,))
             self._conn.execute(f"DELETE FROM acquisition_reservations WHERE workflow_id IN ({workflow_ids})", (case_id,))
             self._conn.execute("DELETE FROM acquisition_events WHERE case_id=?", (case_id,))
+            self._conn.execute("DELETE FROM team_records WHERE case_id=?", (case_id,))
             self._conn.execute("DELETE FROM acquisition_revocations WHERE case_id=?", (case_id,))
             self._conn.execute("DELETE FROM acquisition_workflows WHERE case_id=?", (case_id,))
 
