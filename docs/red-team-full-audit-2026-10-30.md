@@ -366,8 +366,10 @@ non-principal capture tests remained green.
 **Remediation:** the API now reloads the capture mandate after resolving the
 proposal, rebinds the authenticated identity, checks proposal mandate ID and
 revision, and runs the same capture scope/validity check before issuing the
-grant. The atomic dispatch gate remains the final fence for a concurrent change
-between grant issuance and capture; it still checks the current mandate before
+grant. It repeats that validation after grant construction and before the
+atomic object/event write, so a mandate change observed in that window leaves
+no grant behind. The atomic dispatch gate remains the final fence for a
+concurrent change after persistence; it still checks the current mandate before
 any source or processor call.
 
 **Residual boundary:** the API-level precheck is not itself the durable

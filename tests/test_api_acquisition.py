@@ -167,6 +167,43 @@ def test_authorization_is_not_persisted_after_capture_mandate_revocation(api):
     assert client.get("/api/cases/case-001/acquisition", headers=A).json()["authorizations"] == []
 
 
+def test_authorization_rechecks_mandate_after_grant_issuance(api, monkeypatch):
+    client, _ = api
+    import krakadyl.api.app as app_module
+    from krakadyl.core.models import Mandate
+
+    proposal = client.post(
+        f"/api/cases/case-001/requirements/{REQ}/acquisition-proposals",
+        json={"capture_instructions": "Photograph the clock."},
+        headers=A,
+    )
+    assert proposal.status_code == 200, proposal.text
+    original_authorize = app_module.acquisition.authorize
+
+    def authorize_then_revoke(proposal, token, now):
+        grant = original_authorize(proposal, token, now)
+        current = app_module._capture_mandate("case-001")
+        revoked = Mandate(
+            **{
+                **current.model_dump(),
+                "revoked": True,
+                "revoked_reason": "capture authority withdrawn during approval",
+                "revision": str(int(current.revision) + 1),
+            }
+        )
+        app_module.store.put("case-001", "mandate", revoked, app_module.now().isoformat())
+        return grant
+
+    monkeypatch.setattr(app_module.acquisition, "authorize", authorize_then_revoke)
+    grant = client.post(
+        f"/api/cases/case-001/acquisition-proposals/{proposal.json()['id']}/authorize",
+        headers=A,
+    )
+
+    assert grant.status_code == 409
+    assert client.get("/api/cases/case-001/acquisition", headers=A).json()["authorizations"] == []
+
+
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic token-for-a"}])
 def test_actions_require_a_proven_operator_token(api, headers):
     client, _ = api

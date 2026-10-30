@@ -1067,23 +1067,30 @@ def authorize_acquisition(
     capture_mandate = _capture_mandate(case_id)
     if capture_mandate is None:
         raise HTTPException(503, "case has no capture mandate")
-    _authenticated_principal(capture_mandate, identity, authorization)
+    def validate_current_capture_mandate(current: Mandate, at: datetime) -> None:
+        _authenticated_principal(current, identity, authorization)
+        if stored.proposal.mandate_id != current.id or stored.proposal.mandate_revision != current.revision:
+            raise HTTPException(409, "capture mandate changed since the proposal was created")
+        mandate_check = check_mandate(
+            current,
+            resource=f"{stored.proposal.case_id}/{stored.proposal.source_id}",
+            operation=CAPTURE_OPERATION,
+            destination=LOCAL_DESTINATION,
+            now=at,
+        )
+        if mandate_check.authority_state != AuthorityState.GRANTED or mandate_check.outside_scope:
+            raise HTTPException(
+                409,
+                "capture mandate does not authorize this proposal: " + "; ".join(mandate_check.reasons),
+            )
+
     authorization_time = now()
-    if (
-        stored.proposal.mandate_id != capture_mandate.id
-        or stored.proposal.mandate_revision != capture_mandate.revision
-    ):
-        raise HTTPException(409, "capture mandate changed since the proposal was created")
-    mandate_check = check_mandate(
-        capture_mandate,
-        resource=f"{stored.proposal.case_id}/{stored.proposal.source_id}",
-        operation=CAPTURE_OPERATION,
-        destination=LOCAL_DESTINATION,
-        now=authorization_time,
-    )
-    if mandate_check.authority_state != AuthorityState.GRANTED or mandate_check.outside_scope:
-        raise HTTPException(409, "capture mandate does not authorize this proposal: " + "; ".join(mandate_check.reasons))
+    validate_current_capture_mandate(capture_mandate, authorization_time)
     grant = _require_acquisition().authorize(stored.proposal, token, authorization_time)
+    post_grant_mandate = _capture_mandate(case_id)
+    if post_grant_mandate is None:
+        raise HTTPException(503, "case has no capture mandate")
+    validate_current_capture_mandate(post_grant_mandate, now())
     record = StoredAcquisitionAuthorization(id=grant.authorization_id, proposal_id=proposal_id, authorization=grant)
     event_time = now().isoformat()
     store.put_and_log_event(
