@@ -314,6 +314,21 @@ building the record namespace.
 **Status:** fixed by `5097eb7`; regression
 `test_runtime_rejects_empty_verification_id` covers the malformed identifier.
 
+### RT-VERIFY-20 — Runtime accepted incomplete provenance fields
+
+**Observation:** construction-time validation requires timezone-aware
+`recorded_at` values and a non-empty verification `method`, but runtime used
+neither field before accepting a graph.
+
+**Induction:** a naive timestamp or empty method passed dependency validation,
+leaving an apparently valid graph with non-defensible provenance. Runtime now
+rejects both conditions while keeping them separate from the authority
+decision.
+
+**Status:** fixed by `e686038`; regressions
+`test_runtime_rejects_naive_verification_timestamp` and
+`test_runtime_rejects_empty_verification_method` cover the malformed records.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -337,8 +352,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced twenty-eight passing tests after the
-empty-ID fix. The full locked suite produced **405 passed**. The live Meta
+The focused verification graph suite produced thirty passing tests after the
+provenance-field fix. The full locked suite produced **407 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -370,7 +385,7 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Twenty-eight graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Thirty graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
@@ -383,6 +398,7 @@ check and must be normalized at acquisition.
 | Runtime could accept repeated basis or parent edges | Observation | Failing regressions `test_runtime_rejects_duplicate_basis_observations` and `test_runtime_rejects_duplicate_parent_verification_ids` | Confirmed and fixed by `4ca7378` |
 | Runtime could accept an anonymous verifier | Observation | Failing regression `test_runtime_rejects_empty_verifier_identity` | Confirmed and fixed by `536dbd8` |
 | Runtime could accept an empty verification identifier | Observation | Failing regression `test_runtime_rejects_empty_verification_id` | Confirmed and fixed by `5097eb7` |
+| Runtime could accept incomplete verification provenance | Observation | Failing regressions `test_runtime_rejects_naive_verification_timestamp` and `test_runtime_rejects_empty_verification_method` | Confirmed and fixed by `e686038` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
