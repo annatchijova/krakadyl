@@ -31,7 +31,7 @@ import hashlib
 import json
 import secrets
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -148,6 +148,7 @@ class EvidenceCheck:
     unverified_ids: list[str]
     failure_reasons: dict[str, str]
     reasons: list[str]
+    conflicted_ids: list[str] = field(default_factory=list)
 
 
 def check_evidence(
@@ -156,6 +157,7 @@ def check_evidence(
     *,
     allowed_device: str,
     observation_files: dict[str, Path],
+    conflicted_requirement_ids: frozenset[str] = frozenset(),
 ) -> EvidenceCheck:
     """The one place evidence state gets derived — used by both
     `prepare_evidence_package` and `execute_prepared_action`, so the two
@@ -165,6 +167,11 @@ def check_evidence(
     `EvidenceRequirement` independently reached `VERIFIED_DONE` (via
     `continuity.evidence_state_from_requirement`), and its file's digest
     still matches what was acquired. Neither substitutes for the other.
+
+    Level 4: an observation whose requirement has an open team conflict
+    (`team.find_conflicts`) is CONFLICTING, even if the requirement
+    itself still reads VERIFIED_DONE — a disputed verification is not
+    silently trusted. Empty by default, which is the pre-Level-4 behavior.
     """
     included = [o for o in observations if o.source == allowed_device]
     excluded_devices = sorted({o.source for o in observations if o.source != allowed_device})
@@ -195,10 +202,20 @@ def check_evidence(
                 o.id, f"requirement '{req.id}' is {req.responsibility.status.value}, not independently verified"
             )
 
+    conflicted_ids: list[str] = []
+    for o in included:
+        req = requirements_by_observation.get(o.id)
+        if req is not None and req.id in conflicted_requirement_ids:
+            conflicted_ids.append(o.id)
+            failure_reasons.setdefault(o.id, f"requirement '{req.id}' has an open team conflict")
+
     reasons: list[str] = []
     if integrity_failures:
         evidence_state = EvidenceState.CONFLICTING
         reasons.append(f"integrity check failed for: {', '.join(integrity_failures)}")
+    elif conflicted_ids:
+        evidence_state = EvidenceState.CONFLICTING
+        reasons.append(f"open team conflict on the requirement governing: {', '.join(conflicted_ids)}")
     elif not included:
         evidence_state = EvidenceState.MISSING
     elif unverified:
@@ -216,6 +233,7 @@ def check_evidence(
         unverified_ids=unverified_ids,
         failure_reasons=failure_reasons,
         reasons=reasons,
+        conflicted_ids=conflicted_ids,
     )
 
 
@@ -271,6 +289,7 @@ def prepare_evidence_package(
     ttl: timedelta = DEFAULT_PREPARED_ACTION_TTL,
     excluded_resource_reasons: Optional[dict[str, str]] = None,
     resolvable_requirement_ids: frozenset[str] = frozenset(),
+    conflicted_requirement_ids: frozenset[str] = frozenset(),
 ) -> tuple[Decision, Optional[PreparedAction]]:
     """Resolves authority and evidence state for real. Returns a
     Decision always; returns a PreparedAction only when the verdict is
@@ -304,7 +323,8 @@ def prepare_evidence_package(
         now=now,
     )
     evidence_check = check_evidence(
-        observations, requirements, allowed_device=allowed_device, observation_files=observation_files
+        observations, requirements, allowed_device=allowed_device, observation_files=observation_files,
+        conflicted_requirement_ids=conflicted_requirement_ids,
     )
 
     verdict, policy_reasons = decide(
@@ -370,6 +390,7 @@ def execute_prepared_action(
     out_dir: Path,
     now: datetime,
     prev_receipt_hash: Optional[str] = None,
+    conflicted_requirement_ids: frozenset[str] = frozenset(),
 ) -> Receipt:
     """Fully revalidates against the CURRENT state before doing anything
     — nothing from `prepare` time is trusted here without being checked
@@ -447,6 +468,7 @@ def execute_prepared_action(
         requirements,
         allowed_device=allowed_device,
         observation_files=observation_files,
+        conflicted_requirement_ids=conflicted_requirement_ids,
     )
     current_resource_digests = {
         o.id: o.evidence_custody.integrity_digest
@@ -578,6 +600,7 @@ def propose_recovery_route(
     destination: str,
     now: datetime,
     ttl: timedelta = DEFAULT_PREPARED_ACTION_TTL,
+    conflicted_requirement_ids: frozenset[str] = frozenset(),
 ) -> RecoveryOutcome:
     """"Propose a still-legitimate route forward" — the half of Level 2
     that was only ever a known gap (`docs/levels.md`), not previously
@@ -612,9 +635,12 @@ def propose_recovery_route(
         )
 
     evidence_check = check_evidence(
-        observations, requirements, allowed_device=allowed_device, observation_files=observation_files
+        observations, requirements, allowed_device=allowed_device, observation_files=observation_files,
+        conflicted_requirement_ids=conflicted_requirement_ids,
     )
-    failing_ids = sorted(set(evidence_check.integrity_failures) | set(evidence_check.unverified_ids))
+    failing_ids = sorted(
+        set(evidence_check.integrity_failures) | set(evidence_check.unverified_ids) | set(evidence_check.conflicted_ids)
+    )
 
     if not failing_ids:
         return RecoveryOutcome(
