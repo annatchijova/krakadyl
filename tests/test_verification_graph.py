@@ -233,7 +233,7 @@ def test_observation_invalidation_is_atomic_and_visible_in_activity(tmp_path):
 
     updated = invalidate_observation(
         store, case_id="case-001", observation_id=observation.id,
-        reason="source provenance was disproved", now=NOW,
+        actor_identity="investigator-C", reason="source provenance was disproved", now=NOW,
     )
 
     assert updated.invalidated is True
@@ -260,7 +260,7 @@ def test_store_invalidation_blocks_a_prepared_action_after_reload(tmp_path, grap
 
     invalidate_observation(
         store, case_id="case-001", observation_id="obs-primary-1",
-        reason="provider provenance was invalidated", now=NOW,
+        actor_identity="investigator-C", reason="provider provenance was invalidated", now=NOW,
     )
     reloaded = store.list("case-001", "observation", Observation)
     receipt = execute_prepared_action(

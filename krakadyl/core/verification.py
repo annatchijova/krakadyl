@@ -108,6 +108,7 @@ def invalidate_observation(
     *,
     case_id: str,
     observation_id: str,
+    actor_identity: str,
     reason: str,
     now: datetime,
 ) -> Observation:
@@ -117,6 +118,8 @@ def invalidate_observation(
     consumers discover the invalid source at the next policy check, so an
     invalidation cannot be hidden by leaving derived requirement JSON untouched.
     """
+    if not actor_identity.strip():
+        raise VerificationInvalidationRejected("an invalidation needs an authenticated actor")
     if not reason.strip():
         raise VerificationInvalidationRejected("an invalidation needs a stated reason")
     if now.utcoffset() is None:
@@ -148,8 +151,12 @@ def invalidate_observation(
                 case_id,
                 now_iso,
                 "observation_invalidated",
-                f"Observation {observation_id} was invalidated: {reason.strip()}",
-                json.dumps({"observation_id": observation_id, "reason": reason.strip()}, sort_keys=True),
+                f"{actor_identity} invalidated observation {observation_id}: {reason.strip()}",
+                json.dumps({
+                    "observation_id": observation_id,
+                    "actor_identity": actor_identity,
+                    "reason": reason.strip(),
+                }, sort_keys=True),
             ),
         )
         return invalidated

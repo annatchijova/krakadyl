@@ -42,6 +42,46 @@ def test_case_overview_shows_the_seeded_two_device_case(client):
     assert device_b["in_mandate_scope"] is False
 
 
+def test_observation_invalidation_requires_authentication_and_records_actor(client):
+    anonymous = client.post(
+        "/api/cases/case-001/observations/obs-a1/invalidate",
+        headers={"Authorization": ""},
+        json={"reason": "primary source provenance was disproved"},
+    )
+    assert anonymous.status_code == 401
+
+    response = client.post(
+        "/api/cases/case-001/observations/obs-a1/invalidate",
+        json={"reason": "primary source provenance was disproved"},
+    )
+    assert response.status_code == 200
+    assert response.json()["invalidated"] is True
+    assert response.json()["invalidation_reason"] == "primary source provenance was disproved"
+
+    events = client.get("/api/cases/case-001/activity").json()
+    invalidation = next(event for event in events if event["kind"] == "observation_invalidated")
+    assert invalidation["detail"]["actor_identity"] == "investigator-A"
+
+
+def test_observation_invalidation_cannot_cross_case_or_repeat(client):
+    missing = client.post(
+        "/api/cases/no-such-case/observations/obs-a1/invalidate",
+        json={"reason": "not applicable"},
+    )
+    assert missing.status_code == 404
+
+    first = client.post(
+        "/api/cases/case-001/observations/obs-a1/invalidate",
+        json={"reason": "source was disproved"},
+    )
+    assert first.status_code == 200
+    repeated = client.post(
+        "/api/cases/case-001/observations/obs-a1/invalidate",
+        json={"reason": "second reason"},
+    )
+    assert repeated.status_code == 409
+
+
 def test_unknown_case_is_404(client):
     assert client.get("/api/cases/nope").status_code == 404
 

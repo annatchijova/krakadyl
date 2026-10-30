@@ -103,6 +103,10 @@ from krakadyl.core.team import (
     list_team_records,
     record_team_statement,
 )
+from krakadyl.core.verification import (
+    VerificationInvalidationRejected,
+    invalidate_observation,
+)
 from krakadyl.core.models import (
     Decision,
     EvidenceRequirement,
@@ -391,6 +395,10 @@ class TamperRequest(BaseModel):
     observation_id: str
 
 
+class InvalidateObservationRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=4000)
+
+
 class RevokeMandateRequest(BaseModel):
     reason: str = "case reassigned to another unit"
 
@@ -450,6 +458,33 @@ def get_case(case_id: str, authorization: Optional[str] = Header(default=None)) 
         latest_prepared_action=latest_prepared,
         latest_decision=latest_decision,
     )
+
+
+@app.post(
+    "/api/cases/{case_id}/observations/{observation_id}/invalidate",
+    response_model=Observation,
+)
+def invalidate_case_observation(
+    case_id: str,
+    observation_id: str,
+    body: InvalidateObservationRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> Observation:
+    identity, _ = _operator(authorization)
+    _case_or_404(case_id)
+    if store.get(case_id, "observation", observation_id, Observation) is None:
+        raise HTTPException(404, "no such observation in this case")
+    try:
+        return invalidate_observation(
+            store,
+            case_id=case_id,
+            observation_id=observation_id,
+            actor_identity=identity,
+            reason=body.reason,
+            now=now(),
+        )
+    except VerificationInvalidationRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @app.get("/api/cases/{case_id}/activity")
