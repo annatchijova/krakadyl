@@ -394,6 +394,21 @@ def test_runtime_rejects_duplicate_parent_verification_ids(graph_case):
     assert any("parent verification IDs must be unique" in failure for failure in failures)
 
 
+def test_runtime_rejects_empty_verifier_identity(graph_case):
+    observations, files, requirement, _ = graph_case
+    anonymous = requirement.model_copy(update={
+        "responsibility": requirement.responsibility.model_copy(update={"verified_by": ""}),
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={"verifier_identity": ""}),
+            requirement.verification_records[1],
+        ),
+    })
+
+    failures = validate_verification_dependencies(anonymous, observations, files)
+
+    assert any("verification identity must be non-empty" in failure for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
