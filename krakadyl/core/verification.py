@@ -57,6 +57,8 @@ def validate_verification_dependencies(
             failures.append(
                 f"verification target '{target.id}' is invalidated: {target.invalidation_reason}"
             )
+        elif not _file_matches(target, observation_files.get(target.id, Path("/nonexistent"))):
+            failures.append(f"verification target '{target.id}' failed integrity")
 
     def closure(record_id: str) -> set[str]:
         if record_id in active:
