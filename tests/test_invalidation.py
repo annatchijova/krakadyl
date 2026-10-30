@@ -247,6 +247,42 @@ def test_invalidated_target_observation_blocks_legacy_execution(tmp_path):
     assert not (tmp_path / "package" / "manifest.json").exists()
 
 
+def test_duplicate_requirements_for_one_observation_are_not_last_write_wins(tmp_path):
+    """One observation cannot inherit the most favorable duplicate requirement."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    observation = _observation("obs-a1", "device-A", raw / "a1.jpg", b"authentic device A photo")
+    files = {observation.id: raw / "a1.jpg"}
+    mandate = _mandate()
+    verified = _verified_requirement(observation.id)
+    unverified = EvidenceRequirement(**{
+        **verified.model_dump(),
+        "id": "req-unverified",
+        "resolved": False,
+        "responsibility": TaskResponsibility(**{
+            **verified.responsibility.model_dump(),
+            "status": TaskStatus.REPORTED_DONE,
+            "verified_by": None,
+            "verification_method": None,
+            "verified_against": None,
+        }),
+    })
+
+    decision, prepared = prepare_evidence_package(
+        proposed_action=_action(),
+        mandate=mandate,
+        observations=[observation],
+        requirements=[unverified, verified],
+        observation_files=files,
+        allowed_device="device-A",
+        destination="reviewer-authorized",
+        now=NOW,
+    )
+
+    assert decision.verdict != AuthorityVerdict.ALLOWED
+    assert prepared is None
+
+
 def test_prepared_action_without_dependency_snapshot_is_not_executable(tmp_path):
     raw = tmp_path / "raw"
     raw.mkdir()

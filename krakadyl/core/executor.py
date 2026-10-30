@@ -147,6 +147,7 @@ class EvidenceCheck:
     excluded_devices: list[str]
     integrity_failures: list[str]
     invalidation_failures: list[str]
+    requirement_conflicts: list[str]
     unverified: list[str]
     unverified_ids: list[str]
     failure_reasons: dict[str, str]
@@ -180,6 +181,15 @@ def check_evidence(
     included = [o for o in observations if o.source == allowed_device]
     excluded_devices = sorted({o.source for o in observations if o.source != allowed_device})
     requirements_by_observation = {r.observation_id: r for r in requirements if r.observation_id}
+    requirement_ids_by_observation: dict[str, list[str]] = {}
+    for requirement in requirements:
+        if requirement.observation_id:
+            requirement_ids_by_observation.setdefault(requirement.observation_id, []).append(requirement.id)
+    requirement_conflicts = [
+        f"{observation_id}: {', '.join(ids)}"
+        for observation_id, ids in sorted(requirement_ids_by_observation.items())
+        if len(ids) > 1
+    ]
 
     failure_reasons: dict[str, str] = {}
 
@@ -196,6 +206,9 @@ def check_evidence(
             "observation was logically invalidated"
             + (f": {observation.invalidation_reason}" if observation.invalidation_reason else "")
         )
+    for conflict in requirement_conflicts:
+        observation_id = conflict.split(":", 1)[0]
+        failure_reasons[observation_id] = f"multiple EvidenceRequirements govern the observation: {conflict}"
 
     unverified: list[str] = []
     unverified_ids: list[str] = []
@@ -238,6 +251,9 @@ def check_evidence(
     elif invalidation_failures:
         evidence_state = EvidenceState.CONFLICTING
         reasons.append(f"observation invalidated: {', '.join(invalidation_failures)}")
+    elif requirement_conflicts:
+        evidence_state = EvidenceState.CONFLICTING
+        reasons.append("ambiguous evidence requirements: " + "; ".join(requirement_conflicts))
     elif verification_failures:
         evidence_state = EvidenceState.CONFLICTING
         reasons.append("verification dependency graph invalid: " + "; ".join(verification_failures))
@@ -258,6 +274,7 @@ def check_evidence(
         excluded_devices=excluded_devices,
         integrity_failures=integrity_failures,
         invalidation_failures=invalidation_failures,
+        requirement_conflicts=requirement_conflicts,
         unverified=unverified,
         unverified_ids=unverified_ids,
         failure_reasons=failure_reasons,
@@ -298,6 +315,7 @@ def _resolvable_by_route(
         evidence_check.evidence_state != EvidenceState.MISSING
         or evidence_check.integrity_failures
         or evidence_check.invalidation_failures
+        or evidence_check.requirement_conflicts
         or evidence_check.verification_failures
     ):
         return False
