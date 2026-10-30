@@ -199,6 +199,39 @@ def test_api_execution_receipts_continue_the_case_chain(client):
     assert second["prev_hash"] == first["hash"]
 
 
+def test_concurrent_distinct_executions_do_not_fork_the_receipt_chain(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    import krakadyl.api.app as app_module
+
+    prepared_ids = [
+        client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()["prepared"]["id"]
+        for _ in range(2)
+    ]
+    barrier = Barrier(2)
+    original_execute = app_module.execute_prepared_action
+
+    def synchronized_execute(**kwargs):
+        barrier.wait(timeout=5)
+        return original_execute(**kwargs)
+
+    monkeypatch.setattr(app_module, "execute_prepared_action", synchronized_execute)
+
+    def request(prepared_id):
+        return app_module.execute(
+            "case-001",
+            app_module.ExecuteRequest(principal="investigator-A", prepared_action_id=prepared_id),
+            authorization="Bearer token-a",
+        ).receipt.model_dump()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        receipts = list(pool.map(request, prepared_ids))
+
+    assert sorted(receipt["executed"] for receipt in receipts) == [True, True]
+    assert sorted(receipt["prev_hash"] is None for receipt in receipts) == [False, True]
+
+
 def test_prepare_rolls_back_result_when_activity_event_cannot_be_written(client):
     import sqlite3
     import krakadyl.api.app as app_module

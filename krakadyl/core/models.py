@@ -603,3 +603,7 @@ class Receipt(BaseModel):
     prev_hash: Optional[str] = None
     hash: str
     created_at: datetime
+    # Runtime-only copy of the exact payload used to compute ``hash``.
+    # Excluded from persistence so it cannot silently become a second seal
+    # input; the API store uses it only to relink a concurrent append.
+    seal_payload: Optional[dict] = Field(default=None, exclude=True, repr=False)

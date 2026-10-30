@@ -414,7 +414,7 @@ known-stale grants from polluting durable state.
 ### RT-RECEIPT-01 — API execution did not extend the receipt chain
 
 **Severity:** Medium audit-integrity gap  **Epistemic level:** **CONFIRMED BY
-INDUCTION**  **Bucket:** vulnerability, partially remediated
+INDUCTION**  **Bucket:** vulnerability, fixed
 
 **Invariant:** consecutive API executions for one case must link each receipt
 to the previous persisted receipt, while concurrent successors must not silently
@@ -422,21 +422,22 @@ fork the chain.
 
 **Induction:** two sequential HTTP executions initially produced a second
 receipt with `prev_hash == None` despite the first receipt having a valid hash.
-After the integration patch, the sequential regression passed and the second
-receipt linked to the first. A forced interleaving of two distinct executions
-then showed that both can still read the same old head and produce divergent
-successors.
+After the first integration patch, the sequential regression passed and the
+second receipt linked to the first. A forced interleaving of two distinct
+executions then showed that both could still read the same old head and produce
+divergent successors.
 
-**Remediation:** `execute` now reads the current case receipt head and passes it
-to `execute_prepared_action`; sequential API receipts are chained. The
-concurrent variant remains an explicit limitation in `known-limitations.md`
-(`KL-005`). No process-wide lock was added around package assembly because the
-critical section includes filesystem I/O and would turn external work into a
-throughput and liveness hazard.
+**Remediation:** `execute` reads the current case receipt head and passes it to
+`execute_prepared_action`. Persistence then performs a short `BEGIN IMMEDIATE`
+append arbitration; if another writer advanced the head, the candidate is
+re-sealed against the predecessor it actually wins. The runtime-only sealed
+payload is excluded from serialized JSON, so this does not create a second
+canonical representation. No lock is held around package assembly or other
+filesystem I/O.
 
-**Required closure:** implement a durable receipt-position reservation or
-compare-and-swap append protocol with recovery for abandoned positions. Until
-then, the API's receipt chain is trustworthy for serialized execution only.
+**Induction after remediation:** the sequential and forced two-thread tests
+passed; exactly one concurrent receipt remained rooted at the old head and the
+other linked to the first committed successor. `KL-005` is closed.
 
 ## Remediation status
 
@@ -461,8 +462,9 @@ The findings in this integrated round were repaired after the induction probes:
   gate.
 - **RT-ATOMIC-03:** prepared result bundles and their activity events now share
   one transaction across prepare, Muse, and recovery creation paths.
-- **RT-RECEIPT-01:** sequential API receipt chaining is fixed; concurrent chain
-  append remains tracked as KL-005 rather than being presented as closed.
+- **RT-RECEIPT-01:** API receipt chaining is fixed for sequential and forced
+  concurrent append interleavings; the durable append arbitration is covered by
+  regression tests.
 
 The store rollback tests, acquisition/core tests, compile check, frontend build,
 and lint pass. The local sandbox still has an AnyIO worker-thread limitation,

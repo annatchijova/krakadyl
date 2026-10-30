@@ -374,6 +374,52 @@ class KrakadylStore:
                 self._conn.rollback()
                 raise
 
+    def append_execution_receipt(
+        self,
+        case_id: str,
+        obj: BaseModel,
+        now_iso: str,
+        relink: Callable[[BaseModel, Optional[str]], BaseModel],
+    ) -> BaseModel:
+        """Append a receipt against the serialized current chain head.
+
+        Receipt assembly happens before this method and may perform filesystem
+        I/O. The short transaction arbitrates only the persisted predecessor;
+        a concurrent successor is re-sealed against the head it actually won.
+        """
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                latest = self._conn.execute(
+                    "SELECT json FROM objects WHERE case_id=? AND kind='receipt' "
+                    "ORDER BY updated_at, rowid DESC LIMIT 1",
+                    (case_id,),
+                ).fetchone()
+                current_head = json.loads(latest[0])["hash"] if latest else None
+                candidate = obj if getattr(obj, "prev_hash", None) == current_head else relink(obj, current_head)
+                payload = candidate.model_dump_json()
+                row = self._conn.execute(
+                    "SELECT json FROM objects WHERE case_id=? AND kind='receipt' AND obj_id=?",
+                    (case_id, candidate.id),
+                ).fetchone()
+                if row is None:
+                    self._conn.execute(
+                        "INSERT INTO objects (case_id, kind, obj_id, json, updated_at) "
+                        "VALUES (?, 'receipt', ?, ?, ?)",
+                        (case_id, candidate.id, payload, now_iso),
+                    )
+                elif not json.loads(row[0]).get("executed") and getattr(candidate, "executed", False):
+                    self._conn.execute(
+                        "UPDATE objects SET json=?, updated_at=? "
+                        "WHERE case_id=? AND kind='receipt' AND obj_id=?",
+                        (payload, now_iso, case_id, candidate.id),
+                    )
+                self._conn.commit()
+                return candidate
+            except BaseException:
+                self._conn.rollback()
+                raise
+
     def get(self, case_id: str, kind: str, obj_id: str, model: Type[T]) -> Optional[T]:
         with self._write_lock:
             row = self._conn.execute(

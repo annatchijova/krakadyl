@@ -303,6 +303,7 @@ def _not_executed_receipt(
         prev_hash=prev_hash,
         hash=seal(payload, prev_hash),
         created_at=now,
+        seal_payload=payload,
     )
 
 
@@ -666,6 +667,7 @@ def execute_prepared_action(
         prev_hash=prev_receipt_hash,
         hash=receipt_hash,
         created_at=now,
+        seal_payload=payload,
     )
 
 

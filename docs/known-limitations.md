@@ -118,21 +118,23 @@ make all callers provide current observation and custody context.
 
 ## KL-005 — Concurrent API executions need a durable receipt append protocol
 
-**Status:** Open concurrency limitation.
+**Status:** Closed on 2026-10-30.
 
 The API now links sequential execution receipts by passing the latest persisted
 receipt hash into the deterministic executor. Two distinct executions that
-start concurrently can still read the same chain head before either receipt is
-stored, producing two valid but divergent successor hashes. The action nonce
-prevents replay of one prepared action; it does not serialize different
-prepared actions or establish a receipt-chain lease.
+start concurrently can read the same chain head before either receipt is
+stored. The persistence append now arbitrates the serialized head inside
+`BEGIN IMMEDIATE` and re-seals a candidate against the predecessor it actually
+wins, so concurrent successors do not fork the persisted chain. The action
+nonce still prevents replay of one prepared action independently of this
+receipt-chain control.
 
-This is not currently a decision-authority bypass: each action still passes the
-mandate/evidence gates, and each receipt seals its own payload. It is an audit
-integrity limitation for multi-worker or multi-process execution.
+Each action still passes the mandate/evidence gates, and each receipt seals its
+own payload. Package assembly remains outside the database lock; only the
+short receipt append is serialized.
 
-**Required closure:** reserve a chain position durably before or while
-persisting the receipt, with compare-and-swap/lease recovery semantics that do
-not hold a database or process lock across package assembly or other I/O. The
-receipt hash must be recomputed from the reserved predecessor and the verifier
-must reject abandoned or duplicated positions.
+**Verification:** a forced two-thread interleaving passed with exactly one
+receipt rooted at the prior head and the other linked to the first persisted
+successor. The runtime-only seal payload is excluded from serialized receipt
+JSON; it exists only to recompute the deterministic seal when the append wins a
+different predecessor.

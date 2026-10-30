@@ -128,6 +128,7 @@ from krakadyl.core.models import (
     ProposedAction,
     Receipt,
 )
+from krakadyl.core.receipt import seal
 from krakadyl.store import KrakadylStore
 
 DATA_DIR = Path(os.environ.get("KRAKADYL_DATA_DIR", "out/api"))
@@ -325,6 +326,15 @@ def _persist_prepare_result(
     store.put_prepare_result_and_log_event(
         case_id, proposed_action, decision, prepared, event_kind, summary, detail, ts
     )
+
+
+def _relink_receipt(receipt: Receipt, prev_hash: Optional[str]) -> Receipt:
+    if receipt.seal_payload is None:
+        raise RuntimeError("receipt cannot be relinked without its runtime seal payload")
+    return receipt.model_copy(update={
+        "prev_hash": prev_hash,
+        "hash": seal(receipt.seal_payload, prev_hash),
+    })
 
 
 # --- response shapes (UI-facing views composed from the real domain
@@ -768,7 +778,9 @@ def execute(
         prev_receipt_hash=previous_hash,
         conflicted_requirement_ids=_conflicted_ids(case_id, _load_requirements(case_id)),
     )
-    store.put_execution_receipt(case_id, receipt, now().isoformat())
+    receipt = store.append_execution_receipt(
+        case_id, receipt, now().isoformat(), _relink_receipt
+    )
     store.log_event(
         case_id,
         "executed" if receipt.executed else "execution_blocked",
