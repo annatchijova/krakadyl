@@ -71,7 +71,28 @@ from krakadyl.core.executor import (
     propose_recovery_route,
     verify_observation_integrity,
 )
+from krakadyl.core.handoff import (
+    HandoffRejected,
+    InFlightAcquisition,
+    ShiftEvent,
+    ShiftHandoff,
+    accept_handoff,
+    build_shift_handoff,
+    list_shift_events,
+    record_handoff,
+)
 from krakadyl.core.invalidation import find_hypotheses_needing_review
+from krakadyl.core.team import (
+    ClaimKind,
+    Conflict,
+    EvidenceRef,
+    TeamRecord,
+    TeamRejected,
+    conflicted_requirement_ids,
+    find_conflicts,
+    list_team_records,
+    record_team_statement,
+)
 from krakadyl.core.models import (
     Decision,
     EvidenceRequirement,
@@ -303,6 +324,7 @@ class EvidenceItem(BaseModel):
     requirement_id: Optional[str]
     requirement_status: Optional[str]
     independently_verified: bool
+    team_conflict: bool = False
 
 
 class HypothesisItem(BaseModel):
@@ -402,6 +424,7 @@ def get_case(case_id: str) -> CaseOverview:
 
     requirements_by_obs = {r.observation_id: r for r in requirements if r.observation_id}
     in_scope_devices = {r.split("/")[-1] for r in mandate.resources}
+    conflicted = _conflicted_ids(case_id, requirements)
 
     evidence_items = []
     for o in observations:
@@ -414,6 +437,7 @@ def get_case(case_id: str) -> CaseOverview:
                 requirement_id=req.id if req else None,
                 requirement_status=req.responsibility.status.value if req else None,
                 independently_verified=(req is not None and evidence_state_from_requirement(req) == EvidenceState.SUFFICIENT),
+                team_conflict=req is not None and req.id in conflicted,
             )
         )
 
@@ -481,6 +505,7 @@ def prepare(case_id: str, body: PrepareRequest) -> PrepareResponse:
         now=now(),
         ttl=DEFAULT_PREPARED_ACTION_TTL,
         resolvable_requirement_ids=_resolvable_ids(case_id, requirements),
+        conflicted_requirement_ids=_conflicted_ids(case_id, requirements),
     )
     _persist_prepare_result(case_id, proposed_action, decision, prepared)
     store.log_event(
@@ -549,6 +574,8 @@ def propose_with_muse(case_id: str, body: MuseProposeRequest) -> MuseProposeResp
         destination=candidate.destination,
         now=now(),
         ttl=DEFAULT_PREPARED_ACTION_TTL,
+        resolvable_requirement_ids=_resolvable_ids(case_id, requirements),
+        conflicted_requirement_ids=_conflicted_ids(case_id, requirements),
     )
     _persist_prepare_result(case_id, proposed_action, decision, prepared)
     store.log_event(
@@ -653,6 +680,7 @@ def execute(case_id: str, body: ExecuteRequest) -> ExecuteResponse:
         consumed_nonces=consumed,
         out_dir=out_dir,
         now=now(),
+        conflicted_requirement_ids=_conflicted_ids(case_id, _load_requirements(case_id)),
     )
     store.put_execution_receipt(case_id, receipt, now().isoformat())
     store.log_event(
@@ -690,6 +718,7 @@ def recover(case_id: str, body: RecoverRequest) -> RecoverResponse:
         allowed_device=body.allowed_device,
         destination=body.destination,
         now=now(),
+        conflicted_requirement_ids=_conflicted_ids(case_id, requirements),
     )
     if outcome.recovered_prepared is not None:
         _persist_prepare_result(case_id, proposed_action, outcome.recovered_decision, outcome.recovered_prepared)
@@ -737,7 +766,7 @@ def _require_acquisition():
     if acquisition is None:
         raise HTTPException(
             503,
-            "acquisition is disabled: no operator credentials are configured (KRAKADYL_OPERATOR_TOKENS)",
+            "operator identity is not configured (KRAKADYL_OPERATOR_TOKENS): acquisition and team actions are disabled",
         )
     return acquisition
 
@@ -1118,6 +1147,207 @@ def reconcile_attempt(
         {"attempt_id": attempt_id, "resolution_id": resolution.resolution_id}, now().isoformat(),
     )
     return _history_or_404(case_id, owner.workflow.workflow_id)
+
+
+# --- Level 4: shared custody. Every statement is bound to the operator
+# token the request proves; conflicts are recomputed from the records on
+# every read and fed to the same executor checks as everything else. ---
+
+
+def _check_ref(case_id: str):
+    """Resolve a cited artifact to its stored record and re-hash its bytes.
+
+    The records are snapshotted HERE, before any transaction: the core
+    calls the returned checker inside `store.atomic_write`, which holds
+    the store's (non-reentrant) lock, so the checker itself must never
+    touch the store — found as a deadlock while testing Level 4. The
+    file/artifact re-hash still happens at call time, inside the
+    transaction; only the record lookup is from just before it."""
+    observations = {o.id: o for o in _load_observations(case_id)}
+    acquired = {
+        h.observation.observation_id: h.observation
+        for h in acquisition_history(store, case_id) if h.observation is not None
+    }
+
+    def check(ref: EvidenceRef) -> Optional[str]:
+        if ref.kind == "observation":
+            observation = observations.get(ref.ref_id)
+            if observation is None:
+                return "no such observation in this case"
+            if observation.evidence_custody.integrity_digest != ref.digest:
+                return "cited digest differs from the observation's recorded digest"
+            path = observation_file_path(DATA_DIR, case_id, observation.id)
+            if not verify_observation_integrity(observation, path):
+                return "the observation's file no longer matches its recorded digest"
+            return None
+        found = acquired.get(ref.ref_id)
+        if found is None:
+            return "no such acquired observation in this case"
+        if found.digest != ref.digest:
+            return "cited digest differs from the acquired observation's digest"
+        if acquisition is None:
+            return "acquired artifacts cannot be re-verified while acquisition is disabled"
+        try:
+            acquisition.artifacts.read_verified(found)
+        except (OSError, ValueError):
+            return "the stored capture no longer matches its recorded digest"
+        return None
+
+    return check
+
+
+def _conflicted_ids(case_id: str, requirements: list[EvidenceRequirement]) -> frozenset[str]:
+    return conflicted_requirement_ids(
+        [r.id for r in requirements], list_team_records(store, case_id), _check_ref(case_id)
+    )
+
+
+class TeamRequirementView(BaseModel):
+    requirement: EvidenceRequirement
+    requirement_revision: str
+    open_conflicts: list[Conflict]
+    resolved_conflicts: list[Conflict]
+
+
+class TeamOverview(BaseModel):
+    enabled: bool
+    operators: list[str]
+    requirements: list[TeamRequirementView]
+    records: list[TeamRecord]
+
+
+class TeamStatementRequest(BaseModel):
+    kind: ClaimKind
+    statement: str = Field(min_length=1, max_length=4000)
+    expected_requirement_revision: str
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list, max_length=16)
+    refers_to: list[str] = Field(default_factory=list, max_length=16)
+    verification_method: Optional[str] = Field(default=None, max_length=256)
+    resolves_conflict_id: Optional[str] = None
+    decision: Optional[str] = None
+
+
+class HandoffView(BaseModel):
+    handoff: ShiftHandoff
+    events: list[ShiftEvent]
+    pending_for: dict[str, list[str]]  # identity -> handoff ids addressed to them, not yet accepted
+
+
+class HandoffRequest(BaseModel):
+    to_actor: str = Field(min_length=1, max_length=128)
+    seen_state_digest: str
+    transfer_requirement_ids: list[str] = Field(default_factory=list, max_length=64)
+    note: str = Field(default="", max_length=4000)
+
+
+def _team_overview(case_id: str) -> TeamOverview:
+    records = list_team_records(store, case_id)
+    check = _check_ref(case_id)
+    views = []
+    for requirement in _load_requirements(case_id):
+        open_, closed = find_conflicts(requirement.id, records, check)
+        views.append(TeamRequirementView(
+            requirement=requirement, requirement_revision=requirement_revision_digest(requirement),
+            open_conflicts=open_, resolved_conflicts=closed,
+        ))
+    return TeamOverview(
+        enabled=acquisition is not None,
+        operators=sorted(acquisition.credentials.token_hashes) if acquisition is not None else [],
+        requirements=views,
+        records=records,
+    )
+
+
+def _current_handoff(case_id: str) -> ShiftHandoff:
+    return build_shift_handoff(
+        case_id=case_id,
+        requirements=_load_requirements(case_id),
+        hypotheses=_load_hypotheses(case_id),
+        records=list_team_records(store, case_id),
+        check_ref=_check_ref(case_id),
+        acquisitions=[
+            InFlightAcquisition(workflow_id=h.workflow.workflow_id, requirement_id=h.requirement_id, state=h.state)
+            for h in acquisition_history(store, case_id)
+        ],
+        now=now(),
+    )
+
+
+@app.get("/api/cases/{case_id}/team", response_model=TeamOverview)
+def get_team(case_id: str) -> TeamOverview:
+    _case_or_404(case_id)
+    return _team_overview(case_id)
+
+
+@app.post("/api/cases/{case_id}/requirements/{requirement_id}/team-records", response_model=TeamOverview)
+def post_team_statement(
+    case_id: str, requirement_id: str, body: TeamStatementRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> TeamOverview:
+    _case_or_404(case_id)
+    identity, _ = _operator(authorization)
+    _requirement_or_404(case_id, requirement_id)
+    try:
+        record_team_statement(
+            store, case_id=case_id, requirement_id=requirement_id, kind=body.kind, actor=identity,
+            statement=body.statement, expected_requirement_revision=body.expected_requirement_revision,
+            check_ref=_check_ref(case_id), now=now(), evidence_refs=tuple(body.evidence_refs),
+            refers_to=tuple(body.refers_to), verification_method=body.verification_method,
+            resolves_conflict_id=body.resolves_conflict_id, decision=body.decision,
+        )
+    except TeamRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _team_overview(case_id)
+
+
+def _handoff_view(case_id: str) -> HandoffView:
+    events = list_shift_events(store, case_id)
+    accepted = {e.handoff_id for e in events if e.kind == "accepted"}
+    pending: dict[str, list[str]] = {}
+    for e in events:
+        if e.kind == "handoff" and e.event_id not in accepted and e.to_actor:
+            pending.setdefault(e.to_actor, []).append(e.event_id)
+    return HandoffView(handoff=_current_handoff(case_id), events=events, pending_for=pending)
+
+
+@app.get("/api/cases/{case_id}/handoff", response_model=HandoffView)
+def get_handoff(case_id: str) -> HandoffView:
+    _case_or_404(case_id)
+    return _handoff_view(case_id)
+
+
+@app.post("/api/cases/{case_id}/handoffs", response_model=HandoffView)
+def post_handoff(
+    case_id: str, body: HandoffRequest, authorization: Optional[str] = Header(default=None),
+) -> HandoffView:
+    _case_or_404(case_id)
+    identity, _ = _operator(authorization)
+    try:
+        record_handoff(
+            store, case_id=case_id, from_actor=identity, to_actor=body.to_actor,
+            known_identities=set(_require_acquisition().credentials.token_hashes),
+            seen_state_digest=body.seen_state_digest, current=_current_handoff(case_id),
+            transfer_requirement_ids=tuple(body.transfer_requirement_ids), note=body.note, now=now(),
+        )
+    except HandoffRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _handoff_view(case_id)
+
+
+@app.post("/api/cases/{case_id}/handoffs/{handoff_id}/accept", response_model=HandoffView)
+def post_accept_handoff(
+    case_id: str, handoff_id: str, authorization: Optional[str] = Header(default=None),
+) -> HandoffView:
+    _case_or_404(case_id)
+    identity, _ = _operator(authorization)
+    try:
+        accept_handoff(
+            store, case_id=case_id, handoff_id=handoff_id, actor=identity,
+            current=_current_handoff(case_id), now=now(),
+        )
+    except HandoffRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _handoff_view(case_id)
 
 
 # --- dev-only endpoints: simulate the staleness Level 2 exists to

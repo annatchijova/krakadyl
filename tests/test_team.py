@@ -248,3 +248,26 @@ def test_conflict_descriptions_describe_the_case_not_people(case):
         text = conflict.description.lower()
         assert not [term for term in BLAME_TERMS if term in text], text
         assert "investigator-" not in text  # parties are data, not narration
+
+
+def test_a_verification_that_predates_team_records_can_still_be_disputed(case):
+    store, refs = case
+    store.put(CASE, "requirement", EvidenceRequirement(**{**_req(store).model_dump(), "resolved": True,
+        "responsibility": TaskResponsibility(owner="investigator-A", status=TaskStatus.VERIFIED_DONE,
+            reported_done_by="investigator-A", verified_by="investigator-C",
+            verification_method="peer-review").model_dump()}), NOW.isoformat())
+    _say(store, refs, "investigator-D", ClaimKind.DISPUTED, "the image on the share is truncated")
+    [conflict] = _open(store, refs)
+    assert conflict.kind == ConflictKind.DISPUTED and conflict.parties == ("investigator-D",)
+    with pytest.raises(TeamRejected, match="not a party"):
+        _say(store, refs, "investigator-C", ClaimKind.RESOLUTION, refers_to=conflict.record_ids,
+             resolves_conflict_id=conflict.conflict_id, decision="keep_current_state")
+    _, reopened = _say(store, refs, "investigator-E", ClaimKind.RESOLUTION, refers_to=conflict.record_ids,
+                       resolves_conflict_id=conflict.conflict_id, decision="reopen_requirement")
+    assert reopened.resolved is False and reopened.responsibility.status == TaskStatus.UNKNOWN
+
+
+def test_nothing_to_dispute_on_an_open_requirement(case):
+    store, refs = case
+    with pytest.raises(TeamRejected, match="nothing|no recorded"):
+        _say(store, refs, "investigator-D", ClaimKind.DISPUTED, "not done")

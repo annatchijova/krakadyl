@@ -15,7 +15,7 @@ What a record may change is narrow and stated here, once:
 | REPORTED_DONE | anyone | -> REPORTED_DONE (a claim; the first claimant stays on record) |
 | BLOCKED | anyone | owner: -> BLOCKED; others: recorded, no state change |
 | VERIFIED | not the claimant | -> resolved, VERIFIED_DONE — only with no open conflict |
-| DISPUTED | anyone | none; opens a conflict |
+| DISPUTED | anyone | none; opens a conflict (no `refers_to` = disputes the requirement's current recorded state, e.g. a verification made before team records existed) |
 | RESOLUTION | not a party to the conflict | closes it; `reopen_requirement` -> UNKNOWN, unresolved |
 
 Attaching evidence to a claim does not verify it (invariant 4: nobody
@@ -115,8 +115,6 @@ class TeamRecord(BaseModel):
                 raise ValueError("'tool:' verification methods are reserved for automated checks")
         elif self.verification_method is not None:
             raise ValueError("only a verification carries a verification method")
-        if self.kind == ClaimKind.DISPUTED and not self.refers_to:
-            raise ValueError("a dispute names the record(s) it disputes")
         if self.kind == ClaimKind.RESOLUTION:
             if not self.resolves_conflict_id or self.decision is None or not self.refers_to:
                 raise ValueError("a resolution names its conflict, the records in it, and a decision")
@@ -143,6 +141,9 @@ class TeamRejected(ValueError):
 
 
 # Returns None when the reference resolves to an intact record, otherwise why not.
+# It is called inside `store.atomic_write`, whose lock is not reentrant: a
+# checker must resolve records from a snapshot taken beforehand and must
+# never call the store itself, or the transaction deadlocks.
 RefChecker = Callable[[EvidenceRef], Optional[str]]
 
 
@@ -187,8 +188,9 @@ def find_conflicts(
     for record in records:
         if record.kind == ClaimKind.DISPUTED:
             disputed = [by_id[i] for i in record.refers_to if i in by_id]
+            target = f"{len(disputed)} earlier record(s)" if disputed else "the currently recorded state"
             add(ConflictKind.DISPUTED, [record, *disputed],
-                f"a recorded statement disputes {len(disputed)} earlier record(s) on {requirement_id}")
+                f"a recorded statement disputes {target} of {requirement_id}")
 
     for record in records:
         if record.kind in (ClaimKind.REPORTED_DONE, ClaimKind.VERIFIED):
@@ -313,6 +315,8 @@ def _transition(
         targets = [by_id.get(i) for i in record.refers_to]
         if any(t is None or t.kind not in (ClaimKind.REPORTED_DONE, ClaimKind.VERIFIED) for t in targets):
             raise TeamRejected("a dispute must name completion or verification records on this requirement")
+        if not targets and status not in (TaskStatus.REPORTED_DONE, TaskStatus.VERIFIED_DONE):
+            raise TeamRejected("there is no recorded completion or verification on this requirement to dispute")
         return r
 
     if record.kind == ClaimKind.RESOLUTION:
@@ -322,6 +326,12 @@ def _transition(
         if tuple(sorted(record.refers_to)) != conflict.record_ids:
             raise TeamRejected("a resolution must name exactly the records in the conflict")
         if record.actor in conflict.parties:
+            raise TeamRejected("a conflict is resolved by someone who is not a party to it")
+        if conflict.kind == ConflictKind.DISPUTED and record.actor in {
+            r.responsibility.reported_done_by, r.responsibility.verified_by
+        }:
+            # The disputed state may predate team records (seeded or
+            # evaluation-based verification); whoever it names is a party too.
             raise TeamRejected("a conflict is resolved by someone who is not a party to it")
         if record.decision == "keep_current_state":
             if conflict.kind == ConflictKind.EVIDENCE_MISMATCH:
