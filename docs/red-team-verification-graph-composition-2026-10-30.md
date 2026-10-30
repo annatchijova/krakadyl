@@ -197,6 +197,23 @@ building `records_by_id`.
 `test_duplicate_verification_ids_are_not_last_write_wins` covers the bypass of
 the construction-time guard.
 
+### RT-VERIFY-12 — A valid graph could verify the wrong requirement target
+
+**Observation:** model construction requires every root record to target the
+requirement's `observation_id`, but runtime dependency validation did not repeat
+that cross-object binding. A graph for another observation could therefore be
+attached to an otherwise resolved requirement through an unvalidated model
+copy.
+
+**Induction:** two valid roots for `obs-primary-1` passed while the requirement
+governed `obs-target`. The runtime validator now rejects graphs without a root,
+graphs without a requirement target, and every root whose target differs from
+the requirement target.
+
+**Status:** fixed by `38bcb5e`; regression
+`test_verification_roots_must_match_the_requirement_target` covers the
+cross-object substitution.
+
 ## Negative controls and refuted explanations
 
 - Two structured roots with disjoint valid primary sources remain accepted.
@@ -220,8 +237,8 @@ The locked environment produced:
 382 passed in 13.67s
 ```
 
-The focused verification graph suite produced eighteen passing tests after the
-verification-namespace fix. The full locked suite produced **395 passed**. The live Meta
+The focused verification graph suite produced nineteen passing tests after the
+requirement-target binding fix. The full locked suite produced **396 passed**. The live Meta
 smoke tests observed parsed Muse output and completed
 SAM sidecar attempts, including an empty candidate that remained unevaluated.
 Those live calls establish behavior for the bounded run only; they do not
@@ -253,11 +270,12 @@ check and must be normalized at acquisition.
 |---|---|---|---|
 | Direct self-reference was accepted before the patch | Observation | Failing regression `test_verification_cannot_use_target_as_its_own_primary_source` | Confirmed |
 | Indirect observation cycles were accepted before the patch | Observation | Failing regression `test_verification_observation_dependencies_cannot_cycle` | Confirmed |
-| The current model rejects both classes | Observation | Eighteen graph tests and full locked suite | Confirmed in tested scope |
+| The current model rejects both classes | Observation | Nineteen graph tests and full locked suite | Confirmed in tested scope |
 | A target could change bytes and digest together after verification | Observation | Failing regression `test_verification_target_digest_is_bound_at_verification_time` | Confirmed and fixed by `173c75c` |
 | Distinct IDs could represent one primary source | Observation | Failing regression `test_distinct_ids_for_the_same_primary_source_are_not_independent` | Confirmed and fixed by `a8e42fa` |
 | Duplicate IDs could resolve by list order | Observation | Failing regression `test_duplicate_observation_ids_are_not_last_write_wins` | Confirmed and fixed by `341a3e0` |
 | Duplicate verification IDs could alter root calculation | Observation | Failing regression `test_duplicate_verification_ids_are_not_last_write_wins` | Confirmed and fixed by `0c62e16` |
+| A valid graph could verify the wrong requirement target | Observation | Failing regression `test_verification_roots_must_match_the_requirement_target` | Confirmed and fixed by `38bcb5e` |
 | Legacy prose can encode dependencies not recoverable by the graph | Code fact / limitation | `EvidenceRequirement.verified_against` has no typed edges | Open |
 
 ## Skills used
