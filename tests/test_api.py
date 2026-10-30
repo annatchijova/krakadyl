@@ -270,6 +270,41 @@ def test_replay_is_refused_even_through_the_api(client):
     assert persisted.executed is True
 
 
+def test_execute_reloads_mandate_after_authorization_before_dispatch(client, monkeypatch):
+    """A mandate revoked after initial authentication must block dispatch."""
+    import krakadyl.api.app as app_module
+    from krakadyl.core.models import Mandate
+
+    prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
+    prepared_id = prep["prepared"]["id"]
+    initial = app_module._current_mandate("case-001")
+    revoked = Mandate(
+        **{
+            **initial.model_dump(),
+            "revoked": True,
+            "revoked_reason": "revoked between authentication and dispatch",
+            "revision": str(int(initial.revision) + 1),
+        }
+    )
+    reads = []
+
+    def mandate_transition(case_id):
+        reads.append(case_id)
+        return initial if len(reads) == 1 else revoked
+
+    monkeypatch.setattr(app_module, "_current_mandate", mandate_transition)
+    response = client.post(
+        "/api/cases/case-001/actions/execute",
+        json={"principal": "investigator-A", "prepared_action_id": prepared_id},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["receipt"]["executed"] is False
+    assert "revoked" in body["receipt"]["observed_effect"]
+    assert len(reads) == 2
+
+
 def test_execution_failure_after_nonce_claim_burns_prepared_action(client, monkeypatch):
     import krakadyl.api.app as app_module
 

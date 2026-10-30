@@ -724,6 +724,13 @@ def execute(
     files = _observation_files(case_id, observations)
     nonce_claimed = store.claim_nonce(case_id, prepared.nonce, prepared.id, now().isoformat())
     consumed = set() if nonce_claimed else {prepared.nonce}
+    # The first mandate read protects the lookup and binds the asserted
+    # principal. Re-read after the one-shot nonce claim so a revocation or
+    # reassignment committed while the action was being assembled cannot be
+    # hidden by that earlier snapshot. This read is the authorization
+    # linearization point for dispatch; the executor receives this same object.
+    mandate = _current_mandate(case_id)
+    _authenticated_principal(mandate, body.principal, authorization)
     out_dir = DATA_DIR / case_id / "packages" / prepared.id
 
     receipt = execute_prepared_action(

@@ -291,6 +291,50 @@ memory multiplier.
 `HandoffRequest.note` at 4,000. Those sibling paths were not counted as this
 finding.
 
+### RT-AUTH-04 — execution reused a pre-claim mandate snapshot
+
+**Severity:** High conditional authorization race  **Epistemic level:**
+**CONFIRMED BY INDUCTION**  **Bucket:** vulnerability
+
+**Invariant:** the mandate used by the executor must be the mandate observed
+after the one-shot execution claim and immediately before dispatch. A mandate
+revoked before that point must prevent publication, even when the prepared
+action, evidence bytes, and original authorization remain intact.
+
+**Firstness:** the API loaded the mandate once for initial principal
+authentication, then loaded the prepared action, evidence, and nonce and passed
+the original object to `execute_prepared_action`. The core revalidated the
+object it received, but the API did not reload the current stored mandate at
+the effect boundary.
+
+**Abduction:** a revocation committed between the initial authentication read
+and dispatch would be invisible to the executor because the caller supplied a
+stale snapshot.
+
+**Deduction:** force `_current_mandate` to return the original mandate on the
+first read and a revoked, higher-revision mandate on the next read. The
+unfixed endpoint should execute with one read; the corrected endpoint should
+make two reads and return a non-executed receipt containing the revocation
+reason.
+
+**Induction:** the regression test first failed on the unfixed code: it returned
+`200` with an executed receipt and only one mandate read. After the surgical
+patch, the same test passed with two reads and `receipt.executed == false`.
+The related happy-path, replay, nonce-burn, and concurrent-claim tests also
+passed.
+
+**Remediation:** `execute` now reloads the mandate and rebinds the authenticated
+principal after claiming the nonce, then passes that exact snapshot to the
+executor. This read is the authorization linearization point for dispatch. A
+revocation observed there blocks publication; the already-claimed nonce remains
+consumed, conservatively preventing an ambiguous retry from bypassing the
+authorization transition.
+
+**Residual boundary:** a revocation committed after this linearization read
+cannot recall a dispatch already authorized by the API. Stronger recall would
+require a transactional effect boundary or a downstream capability that checks
+a fencing revision at the irreversible sink.
+
 ## Remediation status
 
 The findings in this integrated round were repaired after the induction probes:
@@ -307,6 +351,8 @@ The findings in this integrated round were repaired after the induction probes:
   atomically with their activity events.
 - **RT-RESOURCE-01:** Laya notes are bounded to 4,000 characters at the
   Pydantic boundary, with a 4,001-character regression test.
+- **RT-AUTH-04:** execution reloads and reauthenticates the mandate after the
+  nonce claim, before passing the snapshot to the executor.
 
 The store rollback tests, acquisition/core tests, compile check, frontend build,
 and lint pass. The local sandbox still has an AnyIO worker-thread limitation,
@@ -340,4 +386,5 @@ bearer credential on every consequential path.
 Skills used: `discriminating-proof`, `invariant-hunting`, `falsifiable-testing`,
 `concurrency-reasoning`, `distributed-write-atomicity`,
 `resource-exhaustion-review`, `secure-by-construction`, `audit-before-patch`,
-`surgical-patcher`, `remediation-driven-reporting`, and `git-discipline`.
+`surgical-patcher`, `remediation-driven-reporting`,
+`dont-fall-in-love-with-the-bug`, and `git-discipline`.
