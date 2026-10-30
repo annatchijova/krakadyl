@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   api,
   type ActivityEvent,
@@ -35,7 +35,13 @@ function App() {
   const [operatorToken, setOperatorToken] = useState("");
   const [pendingOperatorToken, setPendingOperatorToken] = useState("");
 
-  function authenticate(event: React.FormEvent<HTMLFormElement>) {
+  const refresh = useCallback(async () => {
+    const [o, a] = await Promise.all([api.getCase(CASE_ID), api.getActivity(CASE_ID)]);
+    setOverview(o);
+    setActivity(a);
+  }, []);
+
+  async function authenticate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const token = pendingOperatorToken.trim();
     if (!token) return;
@@ -43,18 +49,14 @@ function App() {
     api.setOperatorToken(token);
     setOverview(null);
     setError(null);
+    try {
+      await refresh();
+    } catch (e) {
+      api.setOperatorToken("");
+      setOperatorToken("");
+      setError(String(e));
+    }
   }
-
-  const refresh = useCallback(async () => {
-    const [o, a] = await Promise.all([api.getCase(CASE_ID), api.getActivity(CASE_ID)]);
-    setOverview(o);
-    setActivity(a);
-  }, []);
-
-  useEffect(() => {
-    if (!operatorToken) return;
-    refresh().catch((e) => setError(String(e)));
-  }, [operatorToken, refresh]);
 
   async function guarded(fn: () => Promise<void>) {
     setBusy(true);
