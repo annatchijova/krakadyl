@@ -83,7 +83,7 @@ Done after the first four commits; eight findings reproduced and fixed (evaluati
 
 ## What is still open — and blocks calling Level 3 complete
 
-1. **The live closing run.** `level3-acquisition-contracts.md` requires a real SAM call on a real capture that returns a technically valid but non-discriminating result, plus a separate adversarial run with a convincing incorrect annotation. Both need: the user's approval of the spend ceiling (≈USD 0.01 for four images), a decision on what material is sent to Meta (synthetic only), and a current check of Meta's retention terms. Not run here.
+1. **The live closing run.** Ready to execute: `demo/run_level3_live_closing.py` (rehearse first with `--dry-run`). It sends only two script-generated PNGs, spends exactly two SAM image calls (USD 0.005 at list price) with the gate's deployment budget set to the same ceiling, checks automatically that neither capture nor annotation promoted anything, asks a human for each evaluation, and writes `out/level3-closing/<timestamp>/report.json`. It refuses to start without `META_API_KEY`, `--max-usd-micros 5000` or more, and `--meta-retention-reviewed`. Original requirement: `level3-acquisition-contracts.md` requires a real SAM call on a real capture that returns a technically valid but non-discriminating result, plus a separate adversarial run with a convincing incorrect annotation. Both need: the user's approval of the spend ceiling (≈USD 0.01 for four images), a decision on what material is sent to Meta (synthetic only), and a current check of Meta's retention terms. Not run here.
 2. Evaluator contract for a named inference mechanism (D1).
 3. Contradiction semantics (D2).
 4. Identity beyond shared tokens (D5).
