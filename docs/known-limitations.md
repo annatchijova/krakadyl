@@ -4,6 +4,9 @@ This file is the explicit register of guarantees KRAKADYL does not currently
 make. A limitation is not silently converted into a pass: affected paths must
 warn, abstain, or remain out of scope until the stated closure condition is met.
 
+The complete adversarial review of verification-graph composition is recorded
+in [`red-team-verification-graph-composition-2026-10-30.md`](red-team-verification-graph-composition-2026-10-30.md).
+
 ## KL-001 — Verification dependency graph is not yet first-class
 
 **Status:** Open architectural limitation.
@@ -16,11 +19,14 @@ requirement blocks publication.
 **Missing guarantee:** the system does not yet represent the complete evidence
 verification graph for every case as typed state. Structured
 `VerificationRecord`/`VerificationBasis` values now validate direct and
-recursive sources, reject shared primary ancestry, and recheck current source
-bytes. Structured observations can now be invalidated through an atomic,
-audited transition. Legacy requirements still use `verified_against` as
-provenance text, and not every external semantic invalidation is forced through
-that transition. Therefore the system cannot independently prove that:
+recursive sources, reject shared primary ancestry, self-reference, and cycles
+in the observation dependency graph, and recheck current source bytes.
+Duplicate requirements for one observation are treated as a conflict rather
+than last-write-wins. Structured observations can now be invalidated through an
+atomic, audited transition, and the executor, case overview, and Muse summary
+use current validity checks. Legacy requirements still use `verified_against`
+as provenance text, and not every external semantic invalidation is forced
+through that transition. Therefore the system cannot independently prove that:
 
 - every legacy primary source used by a verification is still valid when
   execution happens if the source changed without a corresponding requirement
@@ -53,10 +59,16 @@ reevaluation. Migrate legacy requirements away from prose-only provenance.
    structured sources, including typed logical invalidation.**
 4. Change only a derived requirement; the existing revision fence still refuses
    execution. **Implemented.**
+5. A verification uses its target as a source, directly or through a cycle of
+   observation dependencies. **Implemented.**
+6. A stale consumer describes invalidated structured evidence as verified.
+   **Implemented for the executor, case overview, and Muse summary.**
 
 **Related remediation:** `daa264e` added requirement-dependency snapshots and
-execution-time revalidation. That closes case 4, but deliberately does not
-claim cases 1–3.
+execution-time revalidation. `28bdf63` and `8a2cbbe` close direct and indirect
+self-reference for structured graphs; `fd7d389` aligns read-only summaries
+with current evidence validity. These fixes do not migrate legacy prose into a
+typed dependency graph.
 
 ## KL-002 — Standalone receipt verification does not derive authority
 
