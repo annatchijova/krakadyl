@@ -64,16 +64,17 @@ def validate_verification_dependencies(
         elif not _file_matches(target, observation_files.get(target.id, Path("/nonexistent"))):
             failures.append(f"verification target '{target.id}' failed integrity")
 
-    def closure(record_id: str) -> set[str]:
+    def closure(record_id: str) -> tuple[set[str], set[str]]:
         if record_id in active:
             failures.append(f"verification dependency cycle at '{record_id}'")
-            return set()
+            return set(), set()
         record = records_by_id.get(record_id)
         if record is None:
             failures.append(f"verification parent '{record_id}' is absent")
-            return set()
+            return set(), set()
         active.add(record_id)
         sources: set[str] = set()
+        source_identities: set[str] = set()
         for basis in record.basis:
             sources.add(basis.observation_id)
             marker = (basis.observation_id, basis.observation_digest)
@@ -84,6 +85,7 @@ def validate_verification_dependencies(
             if observation is None:
                 failures.append(f"verification source '{basis.observation_id}' is absent")
                 continue
+            source_identities.add(observation.source)
             if observation.invalidated:
                 failures.append(
                     f"verification source '{basis.observation_id}' is invalidated: "
@@ -96,9 +98,11 @@ def validate_verification_dependencies(
             if not _file_matches(observation, observation_files.get(observation.id, Path("/nonexistent"))):
                 failures.append(f"verification source '{basis.observation_id}' failed integrity")
         for parent_id in record.parent_verification_ids:
-            sources.update(closure(parent_id))
+            parent_sources, parent_identities = closure(parent_id)
+            sources.update(parent_sources)
+            source_identities.update(parent_identities)
         active.remove(record_id)
-        return sources
+        return sources, source_identities
 
     referenced_ids = {
         parent
@@ -107,13 +111,19 @@ def validate_verification_dependencies(
     }
     roots = [record for record in requirement.verification_records if record.verification_id not in referenced_ids]
     root_sources = [closure(record.verification_id) for record in roots]
-    for index, first in enumerate(root_sources):
-        for second in root_sources[index + 1:]:
-            shared = first.intersection(second)
+    for index, (first_ids, first_identities) in enumerate(root_sources):
+        for second_ids, second_identities in root_sources[index + 1:]:
+            shared = first_ids.intersection(second_ids)
+            shared_identities = first_identities.intersection(second_identities)
             if shared:
                 failures.append(
                     "independent verification roots share primary source(s): "
                     + ", ".join(sorted(shared))
+                )
+            if shared_identities:
+                failures.append(
+                    "independent verification roots share primary source identity(s): "
+                    + ", ".join(sorted(shared_identities))
                 )
     return tuple(dict.fromkeys(failures))
 

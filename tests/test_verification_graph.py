@@ -114,6 +114,73 @@ def test_shared_primary_source_cannot_be_called_independent(graph_case):
         )
 
 
+def test_distinct_ids_for_the_same_primary_source_are_not_independent(graph_case):
+    observations, files, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    duplicate = primary_one.model_copy(update={"id": "obs-primary-duplicate"})
+    duplicated_requirement = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={
+                "verification_id": "verification-one",
+                "verifier_identity": "investigator-C",
+                "basis": (VerificationBasis(
+                    observation_id=primary_one.id,
+                    observation_digest=primary_one.digest,
+                ),),
+            }),
+            requirement.verification_records[1].model_copy(update={
+                "verification_id": "verification-two",
+                "verifier_identity": "investigator-D",
+                "basis": (VerificationBasis(
+                    observation_id=duplicate.id,
+                    observation_digest=duplicate.digest,
+                ),),
+            }),
+        ),
+    })
+    duplicated_observations = observations + [duplicate]
+    duplicated_files = {**files, duplicate.id: files[primary_one.id]}
+
+    failures = validate_verification_dependencies(
+        duplicated_requirement, duplicated_observations, duplicated_files,
+    )
+
+    assert any("share primary source identity" in failure for failure in failures)
+
+
+def test_same_digest_from_distinct_primary_sources_can_remain_independent(graph_case):
+    observations, files, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    independent_copy = primary_one.model_copy(update={
+        "id": "obs-primary-independent",
+        "source": "primary-three",
+    })
+    independent_requirement = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={
+                "basis": (VerificationBasis(
+                    observation_id=primary_one.id,
+                    observation_digest=primary_one.digest,
+                ),),
+            }),
+            requirement.verification_records[1].model_copy(update={
+                "basis": (VerificationBasis(
+                    observation_id=independent_copy.id,
+                    observation_digest=independent_copy.digest,
+                ),),
+            }),
+        ),
+    })
+    independent_observations = observations + [independent_copy]
+    independent_files = {**files, independent_copy.id: files[primary_one.id]}
+
+    failures = validate_verification_dependencies(
+        independent_requirement, independent_observations, independent_files,
+    )
+
+    assert failures == ()
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
