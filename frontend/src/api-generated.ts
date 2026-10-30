@@ -409,6 +409,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cases/{case_id}/counterfactuals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Counterfactuals */
+        get: operations["get_counterfactuals_api_cases__case_id__counterfactuals_get"];
+        put?: never;
+        /** Post Counterfactual */
+        post: operations["post_counterfactual_api_cases__case_id__counterfactuals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dev/cases/{case_id}/tamper": {
         parameters: {
             query?: never;
@@ -905,6 +923,60 @@ export interface components {
          * @enum {string}
          */
         ConflictKind: "competing_completion" | "disputed" | "evidence_mismatch" | "status_contradiction";
+        /** Counterfactual */
+        Counterfactual: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /**
+             * Hypothetical
+             * @default true
+             * @constant
+             */
+            hypothetical: true;
+            /** Counterfactual Id */
+            counterfactual_id: string;
+            /** Case Id */
+            case_id: string;
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            question: components["schemas"]["Question"];
+            /** Deltas */
+            deltas: components["schemas"]["Delta"][];
+            /** Base State Digest */
+            base_state_digest: string;
+            real: components["schemas"]["Outcome"];
+            hypothetical_outcome: components["schemas"]["Outcome"];
+            /** Verdict Changed */
+            verdict_changed: boolean;
+            /** Effects */
+            effects: components["schemas"]["DeltaEffect"][];
+            /**
+             * Caveat
+             * @default Hypothetical. Computed on copies of the case's inputs under the stated assumptions; never applied to the case and never executable. Each assumption is a limit someone would have to change for real, through the normal authority and verification paths.
+             */
+            caveat: string;
+        };
+        /** CounterfactualRequest */
+        CounterfactualRequest: {
+            question: components["schemas"]["Question"];
+            /** Deltas */
+            deltas: components["schemas"]["Delta"][];
+        };
+        /** CounterfactualView */
+        CounterfactualView: {
+            counterfactual: components["schemas"]["Counterfactual"];
+            /** Stale */
+            stale: boolean;
+        };
         /** CustodyTransfer */
         CustodyTransfer: {
             /** From Holder */
@@ -952,6 +1024,29 @@ export interface components {
              */
             decided_at: string;
         };
+        /** Delta */
+        Delta: {
+            kind: components["schemas"]["DeltaKind"];
+            /** Value */
+            value?: string | null;
+            /** Requirement Id */
+            requirement_id?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /** DeltaEffect */
+        DeltaEffect: {
+            delta: components["schemas"]["Delta"];
+            /** Necessary */
+            necessary: boolean;
+            /** Sufficient Alone */
+            sufficient_alone: boolean;
+        };
+        /**
+         * DeltaKind
+         * @enum {string}
+         */
+        DeltaKind: "grant_resource" | "grant_operation" | "grant_destination" | "extend_mandate_until" | "mandate_not_revoked" | "requirement_verified" | "requirement_unresolvable" | "conflict_resolved" | "source_available";
         /** EvaluateRequest */
         EvaluateRequest: {
             /** Expected Requirement Revision */
@@ -1415,6 +1510,20 @@ export interface components {
             visual_region?: string | null;
             evidence_custody: components["schemas"]["EvidenceCustody"];
         };
+        /** Outcome */
+        Outcome: {
+            verdict: components["schemas"]["AuthorityVerdict"];
+            evidence_state: components["schemas"]["EvidenceState"];
+            authority_state: components["schemas"]["AuthorityState"];
+            /** Reasons */
+            reasons: string[];
+            /** Would Include */
+            would_include: string[];
+            /** Next Move Primary */
+            next_move_primary: string | null;
+            /** Next Move Uncertain */
+            next_move_uncertain: boolean;
+        };
         /** PrepareRequest */
         PrepareRequest: {
             /** Principal */
@@ -1538,6 +1647,22 @@ export interface components {
             capture_instructions: string;
             /** Sam Prompt */
             sam_prompt?: string | null;
+        };
+        /**
+         * Question
+         * @description The action asked about — today the one domain action, package export.
+         */
+        Question: {
+            /**
+             * Operation
+             * @default package_export
+             * @constant
+             */
+            operation: "package_export";
+            /** Allowed Device */
+            allowed_device: string;
+            /** Destination */
+            destination: string;
         };
         /** Receipt */
         Receipt: {
@@ -2751,6 +2876,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HandoffView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_counterfactuals_api_cases__case_id__counterfactuals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CounterfactualView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_counterfactual_api_cases__case_id__counterfactuals_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CounterfactualRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CounterfactualView"];
                 };
             };
             /** @description Validation Error */
