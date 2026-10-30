@@ -2,7 +2,7 @@
 
 ## Scope and epistemic discipline
 
-This audit covers the live `main` tree at commit `21be5cf` after the ordered
+This audit covers the live `main` tree at commit `a80e10e` after the ordered
 Level 3, Level 4, and Level 5 merges and the bearer-authentication round. The
 threat model is an HTTP caller who
 can reach the API, can submit arbitrary JSON and case identifiers, and may hold
@@ -20,9 +20,9 @@ Claims below use these levels:
 ## Test evidence
 
 - The earlier baseline run recorded `344 passed` with
-  `tests/test_laya_adapter.py` excluded. A later rerun is not certified green:
-  the local Python/AnyIO worker-thread path hangs even in a minimal FastAPI
-  application, so the HTTP suite was not counted as passed in this round.
+  `tests/test_laya_adapter.py` excluded. The external CI run
+  `41127587728` on `a80e10e` passed the complete configured Python command,
+  including the HTTP suite, and the frontend build/lint jobs.
 - Direct induction probes for RT-AUTH-01 through RT-RESOURCE-01 ran in fresh
   temporary databases and are recorded under each finding.
 - `python3 -m compileall -q krakadyl demo tools`: passed.
@@ -309,9 +309,10 @@ The findings in this integrated round were repaired after the induction probes:
   Pydantic boundary, with a 4,001-character regression test.
 
 The store rollback tests, acquisition/core tests, compile check, frontend build,
-and lint pass. The HTTP regression tests are committed but cannot be certified
-in this sandbox because the local AnyIO worker-thread bridge hangs even for a
-minimal FastAPI application; CI remains the authoritative external run.
+and lint pass. The local sandbox still has an AnyIO worker-thread limitation,
+but CI run `41127587728` is the authoritative external verification and passed
+the HTTP regression suite. CI reported only the existing React lint warning and
+the runner's Node 20 action deprecation annotation.
 
 ## Refuted vectors
 
