@@ -5,7 +5,14 @@ EvidenceRequirement that discriminates it is no longer resolved.
 from datetime import datetime, timezone
 
 from krakadyl.core.invalidation import find_hypotheses_needing_review
-from krakadyl.core.models import EvidenceRequirement, Hypothesis, TaskResponsibility, TaskStatus
+from krakadyl.core.models import (
+    EvidenceCustody,
+    EvidenceRequirement,
+    Hypothesis,
+    Observation,
+    TaskResponsibility,
+    TaskStatus,
+)
 
 NOW = datetime(2026, 10, 27, 19, 0, tzinfo=timezone.utc)
 
@@ -71,3 +78,49 @@ def test_dangling_reference_to_a_deleted_requirement_is_caught_not_crashed_on():
     h = _hypothesis("hyp-1", "req-does-not-exist")
     flagged = find_hypotheses_needing_review([h], [])
     assert flagged == [("hyp-1", "discriminating requirement 'req-does-not-exist' no longer exists in this case")]
+
+
+def test_invalidated_verification_observation_flags_resolved_hypothesis():
+    req = EvidenceRequirement(
+        id="req-1",
+        predicate="which device captured this photo",
+        acceptable_source_class="device manifest",
+        observation_id="obs-1",
+        resolved=True,
+        responsibility=TaskResponsibility(
+            owner="investigator-A",
+            status=TaskStatus.VERIFIED_DONE,
+            reported_done_by="investigator-A",
+            verified_by="investigator-C",
+            verification_method="peer-review",
+        ),
+    )
+    observation = Observation(
+        id="obs-1",
+        source="device-A",
+        digest="a" * 64,
+        captured_at=NOW,
+        actor="investigator-A",
+        evidence_custody=EvidenceCustody(
+            acquired_by="investigator-A",
+            acquired_at=NOW,
+            acquisition_method="forensic-reader",
+            integrity_digest="a" * 64,
+        ),
+        invalidated=True,
+        invalidation_reason="source provenance was disproved",
+    )
+
+    flagged = find_hypotheses_needing_review(
+        [_hypothesis("hyp-1", "req-1")],
+        [req],
+        observations=[observation],
+        observation_files={},
+    )
+
+    assert flagged == [
+        (
+            "hyp-1",
+            "verification observation 'obs-1' was invalidated: source provenance was disproved",
+        )
+    ]

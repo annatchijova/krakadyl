@@ -145,8 +145,9 @@ atomic invalidation transition, or the safe claim is abstention rather than
 automatic propagation. Migration of legacy provenance and first-class
 dependency propagation remain open architectural work. Structured
 hypothesis-recovery alternatives now require observation/file context and are
-revalidated before a suggestion is returned. Legacy alternatives still lack
-typed dependency closure and remain `WARN`.
+revalidated before a suggestion is returned, and hypothesis-review flags use
+the same current context. Legacy alternatives and context-free callers still
+lack typed dependency closure and remain `WARN`.
 
 ## Claim audit
 

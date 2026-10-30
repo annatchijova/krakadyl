@@ -92,7 +92,7 @@ Their outputs cannot grant authority, resolve evidence, or execute actions.
 Live probes demonstrate observed behavior for a bounded corpus only; they do not
 establish robustness against model drift or every adversarial input.
 
-## KL-004 — Hypothesis recovery recommendations lack observation context
+## KL-004 — Legacy hypothesis planning lacks typed observation context
 
 **Status:** Partially closed for structured requirements; legacy planning
 remains limited. This is not an execution authorization bypass.
@@ -100,15 +100,17 @@ remains limited. This is not an execution authorization bypass.
 `propose_hypothesis_recovery()` receives requirements and hypotheses. For a
 structured alternative it now requires the current observation collection and
 artifact paths, walks the verification graph, and abstains when context is
-missing or a dependency is invalid. Legacy alternatives still use their
-historical requirement state because their prose provenance has no typed edges.
-The execution path remains protected because a recovered action must pass
+missing or a dependency is invalid. The case overview's hypothesis review
+detector also receives current context and flags invalidated structured
+evidence. Legacy alternatives and callers without typed context still use
+historical requirement state because prose provenance has no typed edges. The
+execution path remains protected because a recovered action must pass
 `check_evidence()` and the normal prepare/execute gates.
 
 **Impact:** a legacy source requirement whose external semantic status changed
 outside the typed observation transition can still influence a recovery
-suggestion. The suggestion is not permission, evidence resolution, or
-publication, but its display should be treated as `WARN`.
+suggestion or planning view. Neither output is permission, evidence resolution,
+or publication, but it should be displayed as `WARN`.
 
 **Required closure:** migrate legacy provenance to typed dependency records and
 make all callers provide current observation and custody context.

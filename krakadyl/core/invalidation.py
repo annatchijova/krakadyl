@@ -70,6 +70,9 @@ def staleness_reason(
 def find_hypotheses_needing_review(
     hypotheses: list[Hypothesis],
     requirements: list[EvidenceRequirement],
+    *,
+    observations: Optional[list[Observation]] = None,
+    observation_files: Optional[dict[str, Path]] = None,
 ) -> list[tuple[str, str]]:
     """The other half of Level 2: a Hypothesis whose discriminating
     requirement stopped being resolved (or became unresolvable) needs
@@ -83,6 +86,7 @@ def find_hypotheses_needing_review(
     surfaces what needs attention, it doesn't mutate anything.
     """
     requirements_by_id = {r.id: r for r in requirements}
+    observations_by_id = {o.id: o for o in observations or []}
     flagged: list[tuple[str, str]] = []
 
     for h in hypotheses:
@@ -108,6 +112,28 @@ def find_hypotheses_needing_review(
             continue
         if not req.resolved:
             flagged.append((h.id, f"discriminating requirement '{req.id}' is no longer resolved"))
+            continue
+        if req.observation_id and observations is not None and observation_files is not None:
+            observation = observations_by_id.get(req.observation_id)
+            if observation is None:
+                flagged.append(
+                    (h.id, f"verification observation '{req.observation_id}' no longer exists")
+                )
+                continue
+            if observation.invalidated:
+                flagged.append(
+                    (
+                        h.id,
+                        f"verification observation '{observation.id}' was invalidated: "
+                        f"{observation.invalidation_reason}",
+                    )
+                )
+                continue
+            failures = validate_verification_dependencies(req, observations, observation_files)
+            if failures:
+                flagged.append(
+                    (h.id, f"verification dependencies for '{req.id}' are invalid: {'; '.join(failures)}")
+                )
 
     return flagged
 

@@ -448,7 +448,14 @@ def get_case(case_id: str, authorization: Optional[str] = Header(default=None)) 
             )
         )
 
-    flagged = dict(find_hypotheses_needing_review(hypotheses, requirements))
+    flagged = dict(
+        find_hypotheses_needing_review(
+            hypotheses,
+            requirements,
+            observations=observations,
+            observation_files=files,
+        )
+    )
     hypothesis_items = [
         HypothesisItem(hypothesis=h, needs_review=h.id in flagged, review_reason=flagged.get(h.id))
         for h in hypotheses
