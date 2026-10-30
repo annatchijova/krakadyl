@@ -107,6 +107,18 @@ def test_non_principal_operator_cannot_use_the_mandate(client):
     assert "mandate is scoped" in response.json()["detail"]
 
 
+def test_non_principal_operator_cannot_probe_prepared_action_ids(client):
+    prepared = client.post("/api/cases/case-001/actions/prepare", json={}).json()["prepared"]
+    for prepared_action_id in (prepared["id"], "prepared-does-not-exist"):
+        response = client.post(
+            "/api/cases/case-001/actions/execute",
+            headers={"Authorization": "Bearer token-c"},
+            json={"prepared_action_id": prepared_action_id},
+        )
+        assert response.status_code == 403
+        assert "mandate is scoped" in response.json()["detail"]
+
+
 def test_prepare_then_execute_happy_path(client):
     prep = client.post("/api/cases/case-001/actions/prepare", json={"principal": "investigator-A"}).json()
     assert prep["decision"]["verdict"] == "allowed"
@@ -408,6 +420,15 @@ def test_analyze_note_requires_the_right_principal(client):
         json={"principal": "someone-else", "note_text": "anything"},
     )
     assert resp.status_code == 403
+
+
+def test_analyze_note_has_a_bounded_input_contract():
+    import krakadyl.api.app as app_module
+    from pydantic import ValidationError
+
+    assert len(app_module.AnalyzeNoteRequest(note_text="x" * 4000).note_text) == 4000
+    with pytest.raises(ValidationError):
+        app_module.AnalyzeNoteRequest(note_text="x" * 4001)
 
 
 def test_wrong_principal_is_rejected_on_every_action_endpoint(client):

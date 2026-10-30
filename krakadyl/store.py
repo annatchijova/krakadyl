@@ -279,6 +279,51 @@ class KrakadylStore:
                 (case_id, kind, obj.id, obj.model_dump_json(), now_iso),
             )
 
+    @staticmethod
+    def _put_object(connection: sqlite3.Connection, case_id: str, kind: str, obj: BaseModel, now_iso: str) -> None:
+        connection.execute(
+            "INSERT INTO objects (case_id, kind, obj_id, json, updated_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(case_id, kind, obj_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
+            (case_id, kind, obj.id, obj.model_dump_json(), now_iso),
+        )
+
+    def put_prepare_result(
+        self,
+        case_id: str,
+        proposed_action: BaseModel,
+        decision: BaseModel,
+        prepared: Optional[BaseModel],
+        now_iso: str,
+    ) -> None:
+        """Persist the complete prepare result as one logical transition."""
+        def transition(connection: sqlite3.Connection) -> None:
+            self._put_object(connection, case_id, "proposed_action", proposed_action, now_iso)
+            self._put_object(connection, case_id, "decision", decision, now_iso)
+            if prepared is not None:
+                self._put_object(connection, case_id, "prepared_action", prepared, now_iso)
+
+        self.atomic_write(transition)
+
+    def put_and_log_event(
+        self,
+        case_id: str,
+        kind: str,
+        obj: BaseModel,
+        event_kind: str,
+        summary: str,
+        detail: dict,
+        now_iso: str,
+    ) -> None:
+        """Persist an object and its reconstruction event atomically."""
+        def transition(connection: sqlite3.Connection) -> None:
+            self._put_object(connection, case_id, kind, obj, now_iso)
+            connection.execute(
+                "INSERT INTO events (case_id, ts, kind, summary, detail_json) VALUES (?, ?, ?, ?, ?)",
+                (case_id, now_iso, event_kind, summary, json.dumps(detail)),
+            )
+
+        self.atomic_write(transition)
+
     def put_execution_receipt(self, case_id: str, obj: BaseModel, now_iso: str) -> None:
         payload = obj.model_dump_json()
         with self._write_lock:

@@ -289,6 +289,44 @@ def test_atomic_write_rolls_back_all_callback_mutations(tmp_path):
     assert store._conn.in_transaction is False
 
 
+def test_prepare_result_rolls_back_its_bundle_on_failure(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+    store.atomic_write(lambda connection: connection.execute(
+        "CREATE TRIGGER fail_decision_insert BEFORE INSERT ON objects "
+        "WHEN NEW.kind='decision' BEGIN SELECT RAISE(ABORT, 'decision rejected'); END"
+    ))
+
+    with pytest.raises(sqlite3.IntegrityError, match="decision rejected"):
+        store.put_prepare_result(
+            "case-001", _mandate(id="proposal-1"), _mandate(id="decision-1"),
+            _mandate(id="prepared-1"), NOW.isoformat(),
+        )
+
+    rows = store.read_locked(lambda connection: connection.execute(
+        "SELECT kind FROM objects WHERE case_id=? ORDER BY kind", ("case-001",)
+    ).fetchall())
+    assert rows == []
+
+
+def test_object_and_audit_event_roll_back_together(tmp_path):
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+    store.atomic_write(lambda connection: connection.execute(
+        "CREATE TRIGGER fail_audit_event BEFORE INSERT ON events "
+        "WHEN NEW.kind='proposal' BEGIN SELECT RAISE(ABORT, 'audit rejected'); END"
+    ))
+
+    with pytest.raises(sqlite3.IntegrityError, match="audit rejected"):
+        store.put_and_log_event(
+            "case-001", "acquisition_proposal", _mandate(id="proposal-1"),
+            "proposal", "proposal created", {}, NOW.isoformat(),
+        )
+
+    assert store.read_locked(lambda connection: connection.execute(
+        "SELECT COUNT(*) FROM objects WHERE case_id=?", ("case-001",)
+    ).fetchone()[0]) == 0
+    assert store.list_events("case-001") == []
+
+
 def test_acquisition_schema_v1_migrates_additively_to_v7(tmp_path):
     database = tmp_path / "legacy-acquisition.db"
     connection = sqlite3.connect(database)

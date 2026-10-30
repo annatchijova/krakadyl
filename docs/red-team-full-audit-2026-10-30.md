@@ -291,6 +291,28 @@ memory multiplier.
 `HandoffRequest.note` at 4,000. Those sibling paths were not counted as this
 finding.
 
+## Remediation status
+
+The findings in this integrated round were repaired after the induction probes:
+
+- **RT-AUTH-02:** `execute` now authenticates the mandate principal before
+  resolving `prepared_action_id`; the valid and nonexistent ID probes both
+  return `403` to the wrong operator.
+- **RT-AUTH-03:** acquisition authorization now checks the live capture
+  mandate principal before creating a durable grant; the rejected operator
+  leaves zero authorization records.
+- **RT-ATOMIC-01:** prepare, Muse, and recovery results use one SQLite
+  transaction for proposal, decision, and prepared action.
+- **RT-ATOMIC-02:** acquisition proposal and authorization objects are written
+  atomically with their activity events.
+- **RT-RESOURCE-01:** Laya notes are bounded to 4,000 characters at the
+  Pydantic boundary, with a 4,001-character regression test.
+
+The store rollback tests, acquisition/core tests, compile check, frontend build,
+and lint pass. The HTTP regression tests are committed but cannot be certified
+in this sandbox because the local AnyIO worker-thread bridge hangs even for a
+minimal FastAPI application; CI remains the authoritative external run.
+
 ## Refuted vectors
 
 - SQL injection was **FALSIFIED** by tracing the live query sites: external

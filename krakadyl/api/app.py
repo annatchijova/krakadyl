@@ -292,10 +292,7 @@ def _persist_prepare_result(
     case_id: str, proposed_action: ProposedAction, decision: Decision, prepared: Optional[PreparedAction]
 ) -> None:
     ts = now().isoformat()
-    store.put(case_id, "proposed_action", proposed_action, ts)
-    store.put(case_id, "decision", decision, ts)
-    if prepared is not None:
-        store.put(case_id, "prepared_action", prepared, ts)
+    store.put_prepare_result(case_id, proposed_action, decision, prepared, ts)
 
 
 # --- response shapes (UI-facing views composed from the real domain
@@ -357,7 +354,7 @@ class MuseProposeResponse(BaseModel):
 
 class AnalyzeNoteRequest(BaseModel):
     principal: Optional[str] = None
-    note_text: str
+    note_text: str = Field(min_length=1, max_length=4000)
 
 
 class AnalyzeNoteResponse(BaseModel):
@@ -651,6 +648,8 @@ def execute(
 ) -> ExecuteResponse:
     _operator(authorization)
     _case_or_404(case_id)
+    mandate = _current_mandate(case_id)
+    _authenticated_principal(mandate, body.principal, authorization)
     prepared = store.get(case_id, "prepared_action", body.prepared_action_id, PreparedAction)
     if prepared is None:
         raise HTTPException(404, "no such prepared action")
@@ -669,8 +668,6 @@ def execute(
     observations = [o for o in _load_observations(case_id) if o.id not in excluded_ids]
     requirements = [r for r in _load_requirements(case_id) if r.observation_id not in excluded_ids]
     files = _observation_files(case_id, observations)
-    mandate = _current_mandate(case_id)
-    _authenticated_principal(mandate, body.principal, authorization)
     nonce_claimed = store.claim_nonce(case_id, prepared.nonce, prepared.id, now().isoformat())
     consumed = set() if nonce_claimed else {prepared.nonce}
     out_dir = DATA_DIR / case_id / "packages" / prepared.id
@@ -964,12 +961,12 @@ def propose_acquisition(
         id=f"proposal-{digest[:16]}-{uuid.uuid4().hex[:6]}",
         proposal=proposal, proposal_digest=digest, proposed_by=identity, created_at=now(),
     )
-    store.put(case_id, "acquisition_proposal", stored, now().isoformat())
-    store.log_event(
-        case_id, "acquisition_proposed",
+    event_time = now().isoformat()
+    store.put_and_log_event(
+        case_id, "acquisition_proposal", stored, "acquisition_proposed",
         f"{identity} proposed a capture for {requirement_id}"
         + (f" with SAM prompt '{proposal.processing_plan.prompt}'" if proposal.processing_plan else " (capture only)"),
-        {"proposal_id": stored.id, "proposal_digest": digest}, now().isoformat(),
+        {"proposal_id": stored.id, "proposal_digest": digest}, event_time,
     )
     return stored
 
@@ -983,16 +980,24 @@ def authorize_acquisition(
 ) -> StoredAcquisitionAuthorization:
     identity, token = _operator(authorization)
     _case_or_404(case_id)
+    capture_mandate = _capture_mandate(case_id)
+    if capture_mandate is None:
+        raise HTTPException(503, "case has no capture mandate")
+    if identity != capture_mandate.principal:
+        raise HTTPException(
+            403,
+            f"capture authorization is scoped to principal '{capture_mandate.principal}'",
+        )
     stored = store.get(case_id, "acquisition_proposal", proposal_id, StoredAcquisitionProposal)
     if stored is None:
         raise HTTPException(404, "no such acquisition proposal")
     grant = _require_acquisition().authorize(stored.proposal, token, now())
     record = StoredAcquisitionAuthorization(id=grant.authorization_id, proposal_id=proposal_id, authorization=grant)
-    store.put(case_id, "acquisition_authorization", record, now().isoformat())
-    store.log_event(
-        case_id, "acquisition_authorized",
+    event_time = now().isoformat()
+    store.put_and_log_event(
+        case_id, "acquisition_authorization", record, "acquisition_authorized",
         f"{identity} authorized proposal {proposal_id} until {grant.expires_at.isoformat()} — single use",
-        {"proposal_id": proposal_id, "authorization_id": grant.authorization_id}, now().isoformat(),
+        {"proposal_id": proposal_id, "authorization_id": grant.authorization_id}, event_time,
     )
     return record
 

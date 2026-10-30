@@ -117,6 +117,24 @@ def test_seeded_clock_requirement_has_a_route(api):
     assert route["refusal"] is None
 
 
+def test_non_principal_operator_cannot_issue_capture_authorization(api):
+    client, _ = api
+    proposal = client.post(
+        f"/api/cases/case-001/requirements/{REQ}/acquisition-proposals",
+        json={"capture_instructions": "Photograph the clock."},
+        headers=A,
+    )
+    assert proposal.status_code == 200, proposal.text
+    grant = client.post(
+        f"/api/cases/case-001/acquisition-proposals/{proposal.json()['id']}/authorize",
+        headers=C,
+    )
+    assert grant.status_code == 403
+    assert "scoped to principal" in grant.json()["detail"]
+    overview = client.get("/api/cases/case-001/acquisition", headers=A).json()
+    assert overview["authorizations"] == []
+
+
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic token-for-a"}])
 def test_actions_require_a_proven_operator_token(api, headers):
     client, _ = api
