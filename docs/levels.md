@@ -751,6 +751,17 @@ defined in [level3-acquisition-contracts.md](level3-acquisition-contracts.md).
 The adversarial contract review is recorded in
 [red-team-level3-acquisition-contract.md](red-team-level3-acquisition-contract.md).
 
+**Status as of 2026-10-30, stated precisely, not rounded up**: the
+acquisition lifecycle is wired into the case, the API and the workspace
+— route detection, `GATHER_EVIDENCE` from real routes, single-use human
+authorization with proven operator identity, operator-mediated capture,
+opt-in SAM, and `EvidenceEvaluation` with an independence rule that
+reuses `REPORTED_DONE`/`VERIFIED_DONE`. See
+[level3-case-wiring.md](level3-case-wiring.md). **Not complete**: the
+level-closing live SAM run (a real, non-discriminating result and a
+separate convincing-incorrect-annotation run) has not been executed; it
+needs an approved spend ceiling and data-scope decision first.
+
 ### Level 4 — Shared custody, team investigations
 
 More than one investigator on the same case. This is Level 2's

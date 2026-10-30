@@ -29,6 +29,14 @@ export type PrepareResponse = Schemas["PrepareResponse"];
 export type RecoverResponse = Schemas["RecoverResponse"];
 export type MuseProposeResponse = Schemas["MuseProposeResponse"];
 export type LayaSignals = Schemas["AnalyzeNoteResponse"];
+export type AcquisitionOverview = Schemas["AcquisitionOverview"];
+export type RouteView = Schemas["RouteView"];
+export type StoredAcquisitionProposal = Schemas["StoredAcquisitionProposal"];
+export type StoredAcquisitionAuthorization = Schemas["StoredAcquisitionAuthorization"];
+export type AcquisitionRecordView = Schemas["AcquisitionRecordView"];
+export type AnnotationView = Schemas["AnnotationView"];
+export type EvaluationOutcome = Schemas["EvaluationOutcome"];
+export type EvidenceRequirement = Schemas["EvidenceRequirement"];
 
 type GeneratedActivity =
   paths["/api/cases/{case_id}/activity"]["get"]["responses"][200]["content"]["application/json"];
@@ -70,6 +78,61 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // identity, not a cryptographic one — a real deployment replaces this
 // with whatever the actual login session resolves to, not a literal.
 const ACTING_PRINCIPAL = "investigator-A";
+
+// Level 3 acquisition endpoints do NOT use ACTING_PRINCIPAL: identity is
+// the operator bearer token the request proves. The token lives only in
+// React state for the tab's lifetime — never in localStorage.
+function bearer(token: string): Record<string, string> {
+  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+}
+
+export const acquisitionApi = {
+  overview: (caseId: string) => request<AcquisitionOverview>(`/api/cases/${caseId}/acquisition`),
+  propose: (caseId: string, requirementId: string, token: string, captureInstructions: string, samPrompt: string | null) =>
+    request<StoredAcquisitionProposal>(`/api/cases/${caseId}/requirements/${requirementId}/acquisition-proposals`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({ capture_instructions: captureInstructions, sam_prompt: samPrompt }),
+    }),
+  authorize: (caseId: string, proposalId: string, token: string) =>
+    request<StoredAcquisitionAuthorization>(`/api/cases/${caseId}/acquisition-proposals/${proposalId}/authorize`, {
+      method: "POST",
+      headers: bearer(token),
+    }),
+  capture: (caseId: string, authorizationId: string, token: string, file: File) =>
+    request<AcquisitionRecordView>(`/api/cases/${caseId}/acquisition-authorizations/${authorizationId}/capture`, {
+      method: "POST",
+      headers: { "Content-Type": file.type, Authorization: `Bearer ${token}` },
+      body: file,
+    }),
+  observationUrl: (caseId: string, workflowId: string) =>
+    `${API_BASE}/api/cases/${caseId}/acquisitions/${workflowId}/observation`,
+  annotation: (caseId: string, workflowId: string) =>
+    request<AnnotationView>(`/api/cases/${caseId}/acquisitions/${workflowId}/annotation`),
+  evaluate: (
+    caseId: string,
+    workflowId: string,
+    token: string,
+    body: { expected_requirement_revision: string; criterion_id: string; criterion_version: string; outcome: EvaluationOutcome; rationale: string },
+  ) =>
+    request<AcquisitionRecordView>(`/api/cases/${caseId}/acquisitions/${workflowId}/evaluations`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify(body),
+    }),
+  abstain: (caseId: string, requirementId: string, token: string, expectedRevision: string, reason: string) =>
+    request<EvidenceRequirement>(`/api/cases/${caseId}/requirements/${requirementId}/abstain`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({ expected_requirement_revision: expectedRevision, reason }),
+    }),
+  reconcile: (caseId: string, attemptId: string, token: string, disposition: "confirmed_not_dispatched" | "accepted_as_unknown", rationale: string) =>
+    request<AcquisitionRecordView>(`/api/cases/${caseId}/acquisition-attempts/${attemptId}/reconcile`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({ disposition, rationale }),
+    }),
+};
 
 export const api = {
   getCase: (caseId: string) => request<CaseOverview>(`/api/cases/${caseId}`),

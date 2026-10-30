@@ -95,7 +95,9 @@ export interface paths {
          *     The principal check runs BEFORE the billed call, not after — found
          *     by red-team review: checking identity after an expensive external
          *     call would still let an unauthorized caller trigger (and pay for)
-         *     the call itself, even if its result were then discarded.
+         *     the call itself, even if its result were then discarded. The
+         *     mandate and principal are reloaded after the call so revocation or
+         *     reassignment during the wait cannot produce a stale ALLOWED result.
          */
         post: operations["propose_with_muse_api_cases__case_id__actions_propose_with_muse_post"];
         delete?: never;
@@ -158,6 +160,164 @@ export interface paths {
         put?: never;
         /** Recover */
         post: operations["recover_api_cases__case_id__actions_recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/acquisition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Acquisition */
+        get: operations["get_acquisition_api_cases__case_id__acquisition_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/requirements/{requirement_id}/acquisition-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose Acquisition */
+        post: operations["propose_acquisition_api_cases__case_id__requirements__requirement_id__acquisition_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/acquisition-proposals/{proposal_id}/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Authorize Acquisition */
+        post: operations["authorize_acquisition_api_cases__case_id__acquisition_proposals__proposal_id__authorize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/acquisition-authorizations/{authorization_id}/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture Acquisition
+         * @description The request body is the operator's photograph (image/png or
+         *     image/jpeg). It is held in memory until the gate admits the
+         *     workflow; nothing is written if admission fails.
+         */
+        post: operations["capture_acquisition_api_cases__case_id__acquisition_authorizations__authorization_id__capture_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/acquisitions/{workflow_id}/observation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Acquired Observation */
+        get: operations["get_acquired_observation_api_cases__case_id__acquisitions__workflow_id__observation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/acquisitions/{workflow_id}/annotation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Acquired Annotation */
+        get: operations["get_acquired_annotation_api_cases__case_id__acquisitions__workflow_id__annotation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/acquisitions/{workflow_id}/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Evaluate Acquisition */
+        post: operations["evaluate_acquisition_api_cases__case_id__acquisitions__workflow_id__evaluations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/requirements/{requirement_id}/abstain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Abstain */
+        post: operations["abstain_api_cases__case_id__requirements__requirement_id__abstain_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cases/{case_id}/acquisition-attempts/{attempt_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Attempt */
+        post: operations["reconcile_attempt_api_cases__case_id__acquisition_attempts__attempt_id__reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -236,6 +396,279 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AbstainRequest */
+        AbstainRequest: {
+            /** Expected Requirement Revision */
+            expected_requirement_revision: string;
+            /** Reason */
+            reason: string;
+        };
+        /** AcquiredObservation */
+        AcquiredObservation: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Observation Id */
+            observation_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Source Attempt Id */
+            source_attempt_id: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Capability Version */
+            source_capability_version: string;
+            /** Artifact Reference */
+            artifact_reference: string;
+            /** Digest */
+            digest: string;
+            /** Byte Length */
+            byte_length: number;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Actor */
+            actor: string;
+            /** Retention Policy Id */
+            retention_policy_id: string;
+            /** Retention Policy Version */
+            retention_policy_version: string;
+        };
+        /** AcquisitionAuthorization */
+        AcquisitionAuthorization: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Authorization Id */
+            authorization_id: string;
+            /** Proposal Digest */
+            proposal_digest: string;
+            /** Need State Digest */
+            need_state_digest: string;
+            /** Mandate Id */
+            mandate_id: string;
+            /** Mandate Revision */
+            mandate_revision: string;
+            /** Authorizer Identity */
+            authorizer_identity: string;
+            /** Authentication Method */
+            authentication_method: string;
+            /** Retention Policy Id */
+            retention_policy_id: string;
+            /** Retention Policy Version */
+            retention_policy_version: string;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** AcquisitionNeedSnapshot */
+        AcquisitionNeedSnapshot: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Requirement Id */
+            requirement_id: string;
+            /** Requirement Revision */
+            requirement_revision: string;
+            /** Hypothesis Ids */
+            hypothesis_ids: string[];
+            /** Question */
+            question: string;
+            /** Answer Classes */
+            answer_classes: string[];
+            /** Need State Digest */
+            need_state_digest: string;
+        };
+        /** AcquisitionOverview */
+        AcquisitionOverview: {
+            /** Enabled */
+            enabled: boolean;
+            /** Sam Enabled */
+            sam_enabled: boolean;
+            /** Routes */
+            routes: components["schemas"]["RouteView"][];
+            /** Proposals */
+            proposals: components["schemas"]["StoredAcquisitionProposal"][];
+            /** Authorizations */
+            authorizations: components["schemas"]["StoredAcquisitionAuthorization"][];
+            /** History */
+            history: components["schemas"]["AcquisitionRecordView"][];
+        };
+        /**
+         * AcquisitionPhase
+         * @enum {string}
+         */
+        AcquisitionPhase: "source_capture" | "processor_derivation";
+        /** AcquisitionProposal */
+        AcquisitionProposal: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            need: components["schemas"]["AcquisitionNeedSnapshot"];
+            /** Source Id */
+            source_id: string;
+            /** Source Capability Version */
+            source_capability_version: string;
+            /** Capture Specification Json */
+            capture_specification_json: string;
+            source_usage_ceiling: components["schemas"]["ResourceUsage"];
+            /** Expected Outcomes */
+            expected_outcomes: string[];
+            /** Mandate Id */
+            mandate_id: string;
+            /** Mandate Revision */
+            mandate_revision: string;
+            ceilings: components["schemas"]["AggregateCeilings"];
+            retention: components["schemas"]["RetentionDecision"];
+            processing_plan?: components["schemas"]["ProcessingPlan"] | null;
+        };
+        /**
+         * AcquisitionRecordView
+         * @description Everything recorded about one workflow, read back from the gate's
+         *     own tables — the UI renders this, it never recomputes it.
+         */
+        AcquisitionRecordView: {
+            workflow: components["schemas"]["AcquisitionWorkflow"];
+            /** State */
+            state: string;
+            /** Requirement Id */
+            requirement_id: string;
+            proposal: components["schemas"]["AcquisitionProposal"];
+            /** Attempts */
+            attempts: components["schemas"]["AttemptView"][];
+            observation: components["schemas"]["AcquiredObservation"] | null;
+            annotation: components["schemas"]["AnnotationCandidate"] | null;
+            /** Evaluations */
+            evaluations: components["schemas"]["EvidenceEvaluation"][];
+            /** Created At */
+            created_at: string;
+        };
+        /** AcquisitionRoute */
+        AcquisitionRoute: {
+            /** Requirement Id */
+            requirement_id: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Capability Version */
+            source_capability_version: string;
+            /** Resource */
+            resource: string;
+            /** Mandate Id */
+            mandate_id: string;
+            /** Mandate Revision */
+            mandate_revision: string;
+            /** Question */
+            question: string;
+            /** Answer Classes */
+            answer_classes: string[];
+            /** Hypothesis Ids */
+            hypothesis_ids: string[];
+        };
+        /** AcquisitionWorkflow */
+        AcquisitionWorkflow: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Unknown Lock Digest */
+            unknown_lock_digest: string;
+            /** Proposal Digest */
+            proposal_digest: string;
+            /** Authorization Id */
+            authorization_id: string;
+            /** Actor Identity */
+            actor_identity: string;
+            /** Reservation Id */
+            reservation_id: string;
+            reserved_usage: components["schemas"]["ResourceUsage"];
+            actual_usage: components["schemas"]["ResourceUsage"];
+            current_phase?: components["schemas"]["AcquisitionPhase"] | null;
+            /**
+             * Unknown
+             * @default false
+             */
+            unknown: boolean;
+        };
+        /** AdapterAttempt */
+        AdapterAttempt: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Attempt Id */
+            attempt_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            phase: components["schemas"]["AcquisitionPhase"];
+            state: components["schemas"]["AttemptState"];
+            /** Request Reference */
+            request_reference: string;
+            /** Request Digest */
+            request_digest: string;
+            /** Reservation Id */
+            reservation_id: string;
+            reserved_usage: components["schemas"]["ResourceUsage"];
+            actual_usage: components["schemas"]["ResourceUsage"];
+            /** Retention Policy Id */
+            retention_policy_id: string;
+            /** Retention Policy Version */
+            retention_policy_version: string;
+            /** Provider Request Id */
+            provider_request_id?: string | null;
+            /** Outcome Reason */
+            outcome_reason?: string | null;
+        };
+        /** AggregateCeilings */
+        AggregateCeilings: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            per_requirement: components["schemas"]["ResourceUsage"];
+            per_case_mandate: components["schemas"]["ResourceUsage"];
+            deployment_account: components["schemas"]["ResourceUsage"];
+        };
         /** AnalyzeNoteRequest */
         AnalyzeNoteRequest: {
             /** Principal */
@@ -251,6 +684,96 @@ export interface components {
             claims_task_complete: number;
             /** Urgency */
             urgency: number;
+        };
+        /** AnnotationBox */
+        AnnotationBox: {
+            /** Object Id */
+            object_id: string;
+            /** X1 */
+            x1: number;
+            /** Y1 */
+            y1: number;
+            /** X2 Inclusive */
+            x2_inclusive: number;
+            /** Y2 Inclusive */
+            y2_inclusive: number;
+            /** Box Confidence */
+            box_confidence: string | null;
+        };
+        /** AnnotationCandidate */
+        AnnotationCandidate: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Annotation Id */
+            annotation_id: string;
+            /** Observation Id */
+            observation_id: string;
+            /** Observation Digest */
+            observation_digest: string;
+            /** Attempt Id */
+            attempt_id: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Model Version */
+            model_version: string;
+            /** Request Reference */
+            request_reference: string;
+            /** Request Digest */
+            request_digest: string;
+            /** Output Reference */
+            output_reference: string;
+            /** Output Digest */
+            output_digest: string;
+            usage: components["schemas"]["ResourceUsage"];
+            /** Is Empty */
+            is_empty: boolean;
+            /** Retention Policy Id */
+            retention_policy_id: string;
+            /** Retention Policy Version */
+            retention_policy_version: string;
+        };
+        /** AnnotationView */
+        AnnotationView: {
+            /** Annotation Id */
+            annotation_id: string;
+            /** Output Digest */
+            output_digest: string;
+            /** Is Empty */
+            is_empty: boolean;
+            /** Sidecar Status */
+            sidecar_status: string;
+            /** Frame Width */
+            frame_width: number | null;
+            /** Frame Height */
+            frame_height: number | null;
+            /** Boxes */
+            boxes: components["schemas"]["AnnotationBox"][];
+            /** Diagnostics */
+            diagnostics: string[];
+            /**
+             * Trust
+             * @default untrusted model output — not evidence until an identified evaluator records an evaluation
+             */
+            trust: string;
+        };
+        /**
+         * AttemptState
+         * @enum {string}
+         */
+        AttemptState: "reserved" | "dispatch_intent" | "completed" | "failed_before_dispatch" | "unknown_after_dispatch" | "reconciled_not_dispatched" | "closed_as_unknown";
+        /** AttemptView */
+        AttemptView: {
+            attempt: components["schemas"]["AdapterAttempt"];
+            /** State */
+            state: string;
         };
         /**
          * AuthorityState
@@ -320,6 +843,23 @@ export interface components {
              */
             decided_at: string;
         };
+        /** EvaluateRequest */
+        EvaluateRequest: {
+            /** Expected Requirement Revision */
+            expected_requirement_revision: string;
+            /** Criterion Id */
+            criterion_id: string;
+            /** Criterion Version */
+            criterion_version: string;
+            outcome: components["schemas"]["EvaluationOutcome"];
+            /** Rationale */
+            rationale: string;
+        };
+        /**
+         * EvaluationOutcome
+         * @enum {string}
+         */
+        EvaluationOutcome: "supports_requirement" | "contradicts_requirement" | "no_discriminating_change" | "insufficient_or_invalid";
         /**
          * EvidenceCustody
          * @description Chain of custody for an artifact — a different concept from
@@ -351,6 +891,48 @@ export interface components {
             /** Integrity Verified By */
             integrity_verified_by?: string | null;
         };
+        /** EvidenceEvaluation */
+        EvidenceEvaluation: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Evaluation Id */
+            evaluation_id: string;
+            /** Requirement Id */
+            requirement_id: string;
+            /** Observation Id */
+            observation_id: string;
+            /** Observation Digest */
+            observation_digest: string;
+            /** Annotation Id */
+            annotation_id?: string | null;
+            /** Annotation Digest */
+            annotation_digest?: string | null;
+            /** Evaluator Identity */
+            evaluator_identity: string;
+            /**
+             * Evaluator Type
+             * @enum {string}
+             */
+            evaluator_type: "human" | "named_inference_mechanism";
+            /** Criterion Id */
+            criterion_id: string;
+            /** Criterion Version */
+            criterion_version: string;
+            outcome: components["schemas"]["EvaluationOutcome"];
+            /** Rationale */
+            rationale: string;
+            /**
+             * Evaluated At
+             * Format: date-time
+             */
+            evaluated_at: string;
+        };
         /** EvidenceItem */
         EvidenceItem: {
             observation: components["schemas"]["Observation"];
@@ -364,6 +946,50 @@ export interface components {
             requirement_status: string | null;
             /** Independently Verified */
             independently_verified: boolean;
+        };
+        /**
+         * EvidenceRequirement
+         * @description `resolved` and `unresolvable` are deliberately mutually exclusive
+         *     — found contradictory (both True at once, meaning "resolved AND
+         *     permanently unresolvable" simultaneously) while self-red-teaming
+         *     the Level 2 build. Reproduced, then fixed with the validator below.
+         */
+        EvidenceRequirement: {
+            /** Id */
+            id: string;
+            /** Predicate */
+            predicate: string;
+            /** Acceptable Source Class */
+            acceptable_source_class: string;
+            /** Freshness Requirement */
+            freshness_requirement?: string | null;
+            /** Observation Id */
+            observation_id?: string | null;
+            /**
+             * Resolved
+             * @default false
+             */
+            resolved: boolean;
+            /**
+             * Unresolvable
+             * @default false
+             */
+            unresolvable: boolean;
+            /** Unresolvable Reason */
+            unresolvable_reason?: string | null;
+            recovery_window?: components["schemas"]["RecoveryWindow"] | null;
+            /**
+             * Blocked By Authority
+             * @default false
+             */
+            blocked_by_authority: boolean;
+            /** Blocked Reason */
+            blocked_reason?: string | null;
+            responsibility: components["schemas"]["TaskResponsibility"];
+            /** Discriminating Question */
+            discriminating_question?: string | null;
+            /** Answer Classes */
+            answer_classes?: string[];
         };
         /**
          * EvidenceState
@@ -630,6 +1256,51 @@ export interface components {
             /** Nonce */
             nonce: string;
         };
+        /** ProcessingPlan */
+        ProcessingPlan: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Capability Id */
+            capability_id: string;
+            /** Capability Version */
+            capability_version: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Model Version */
+            model_version: string;
+            /** Prompt */
+            prompt: string;
+            /** Prompt Template Version */
+            prompt_template_version: string;
+            /** Parameters Json */
+            parameters_json: string;
+            /** Authorized Source Id */
+            authorized_source_id: string;
+            /** Input Transformation */
+            input_transformation: string;
+            /** Destination */
+            destination: string;
+            usage_ceiling: components["schemas"]["ResourceUsage"];
+            /** Retention Policy Id */
+            retention_policy_id: string;
+            /** Retention Policy Version */
+            retention_policy_version: string;
+        };
+        /** ProposeAcquisitionRequest */
+        ProposeAcquisitionRequest: {
+            /** Capture Instructions */
+            capture_instructions: string;
+            /** Sam Prompt */
+            sam_prompt?: string | null;
+        };
         /** Receipt */
         Receipt: {
             /** Id */
@@ -657,6 +1328,12 @@ export interface components {
              */
             created_at: string;
         };
+        /** ReconcileRequest */
+        ReconcileRequest: {
+            disposition: components["schemas"]["UnknownDisposition"];
+            /** Rationale */
+            rationale: string;
+        };
         /** RecoverRequest */
         RecoverRequest: {
             /** Principal */
@@ -683,6 +1360,96 @@ export interface components {
             /** Closed Reason */
             closed_reason: string | null;
         };
+        /**
+         * RecoveryWindow
+         * @description Whether, and how, this evidence could still be lost irreversibly.
+         *
+         *     The six questions that matter, made explicit fields instead of left
+         *     to be inferred: until when (if known or estimated) or under what
+         *     condition (if event-triggered) can it be obtained, what hypotheses
+         *     need it, what's uncertain about its relevance, what it costs to
+         *     acquire, and what's lost if it's missed. Authority ("is it allowed
+         *     now") is deliberately NOT a field here — it comes from
+         *     Decision/decide(), so there is exactly one place that fact lives.
+         *
+         *     `kind` exists because "no known expiry" (UNKNOWN) and "closes when
+         *     the device powers off, timing unknown" (CONDITIONAL) are different
+         *     situations that a single optional `until` datetime cannot represent
+         *     without silently treating both as "not urgent" — correction from
+         *     the Oct 27 review.
+         *
+         *     `validate_assignment=True` for the same reason as TaskResponsibility:
+         *     without it, `kind`/`until`/`condition` could be reassigned post-
+         *     construction without re-checking `_kind_matches_fields`, silently
+         *     producing an internally inconsistent window.
+         */
+        RecoveryWindow: {
+            /** @default unknown */
+            kind: components["schemas"]["RecoveryWindowKind"];
+            /** Until */
+            until?: string | null;
+            /** Estimate Basis */
+            estimate_basis?: string | null;
+            /** Condition */
+            condition?: string | null;
+            /** What Is Lost If Missed */
+            what_is_lost_if_missed: string;
+            /** Acquisition Cost */
+            acquisition_cost?: string | null;
+            /** Depends On Hypothesis Ids */
+            depends_on_hypothesis_ids?: string[];
+            /** Uncertainty Note */
+            uncertainty_note?: string | null;
+        };
+        /**
+         * RecoveryWindowKind
+         * @enum {string}
+         */
+        RecoveryWindowKind: "known" | "estimated" | "conditional" | "unknown";
+        /** ResourceUsage */
+        ResourceUsage: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Usd Micros */
+            usd_micros: number;
+            /** Bytes */
+            bytes: number;
+            /** Frames */
+            frames: number;
+            /** Duration Ms */
+            duration_ms: number;
+        };
+        /** RetentionDecision */
+        RetentionDecision: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Case Id */
+            case_id: string;
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Data Categories */
+            data_categories: string[];
+            /** Destination */
+            destination: string;
+            /** Retention Seconds */
+            retention_seconds: number;
+            /** Disposition */
+            disposition: string;
+            /** Decided By */
+            decided_by: string;
+            /** Valid Until */
+            valid_until?: string | null;
+        };
         /** RevokeMandateRequest */
         RevokeMandateRequest: {
             /**
@@ -691,11 +1458,114 @@ export interface components {
              */
             reason: string;
         };
+        /** RouteView */
+        RouteView: {
+            requirement: components["schemas"]["EvidenceRequirement"];
+            /** Requirement Revision */
+            requirement_revision: string;
+            route: components["schemas"]["AcquisitionRoute"] | null;
+            /** Refusal */
+            refusal: string | null;
+        };
+        /** StoredAcquisitionAuthorization */
+        StoredAcquisitionAuthorization: {
+            /** Id */
+            id: string;
+            /** Proposal Id */
+            proposal_id: string;
+            authorization: components["schemas"]["AcquisitionAuthorization"];
+        };
+        /** StoredAcquisitionProposal */
+        StoredAcquisitionProposal: {
+            /** Id */
+            id: string;
+            proposal: components["schemas"]["AcquisitionProposal"];
+            /** Proposal Digest */
+            proposal_digest: string;
+            /** Proposed By */
+            proposed_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** TamperRequest */
         TamperRequest: {
             /** Observation Id */
             observation_id: string;
         };
+        /**
+         * TaskResponsibility
+         * @description Who owns a piece of WORK, who accepted it, and its real status.
+         *
+         *     This is about tasks — assignment, acceptance, execution of a step —
+         *     not about evidence. See EvidenceCustody below for the chain-of-
+         *     custody concept this used to be conflated with (renamed from
+         *     `Custody` on 2026-10-27, per the Oct 27 review: completing a task
+         *     does not, by itself, demonstrate custody of whatever it produced).
+         *
+         *     `validate_assignment=True` — found by self-red-teaming the Level 2
+         *     build: without it, `resp.status = TaskStatus.VERIFIED_DONE` after
+         *     construction bypassed the independent-verification validator below
+         *     entirely (Pydantic only runs validators at construction by default).
+         *     Reproduced, then fixed here — the earlier claim that this was
+         *     "enforced at construction time" was true but incomplete.
+         */
+        TaskResponsibility: {
+            /** Owner */
+            owner: string;
+            status: components["schemas"]["TaskStatus"];
+            /** Assigned At */
+            assigned_at?: string | null;
+            /** Accepted By */
+            accepted_by?: string | null;
+            /** Accepted At */
+            accepted_at?: string | null;
+            /** Reported Done By */
+            reported_done_by?: string | null;
+            /** Reported Done At */
+            reported_done_at?: string | null;
+            /** Verified By */
+            verified_by?: string | null;
+            /** Verified At */
+            verified_at?: string | null;
+            /** Verification Method */
+            verification_method?: string | null;
+            /** Verified Against */
+            verified_against?: string | null;
+            /** Due At */
+            due_at?: string | null;
+        };
+        /**
+         * TaskStatus
+         * @description Full lifecycle of a piece of investigative work.
+         *
+         *     UNASSIGNED -> ASSIGNED -> ACKNOWLEDGED -> IN_PROGRESS -> REPORTED_DONE
+         *     -> VERIFIED_DONE is the expected happy path. BLOCKED/EXPIRED/
+         *     CANCELLED/UNKNOWN exist because real investigations have those
+         *     outcomes too, and a status enum that can't represent them gets
+         *     abused to represent them anyway.
+         *
+         *     Enforced today in the one place that currently sets this state
+         *     (TaskResponsibility itself, via the validator below) — not yet
+         *     proven against every possible mutation path, persistence, or
+         *     serialization, which is still open work:
+         *     - ASSIGNED is not ACKNOWLEDGED. Handing a task to someone is not the
+         *       same fact as that person having taken responsibility for it.
+         *     - REPORTED_DONE is never read as VERIFIED_DONE by anything
+         *       downstream (see continuity.py::evidence_state_from_requirement).
+         *     - Neither collapses back into UNASSIGNED or "unknown" — a
+         *       reported-but-unverified claim is uncertainty that gets preserved
+         *       as its own state. See docs/terminal-first-and-blame.md.
+         * @enum {string}
+         */
+        TaskStatus: "unassigned" | "assigned" | "acknowledged" | "in_progress" | "reported_done" | "verified_done" | "blocked" | "expired" | "cancelled" | "unknown";
+        /**
+         * UnknownDisposition
+         * @enum {string}
+         */
+        UnknownDisposition: "confirmed_not_dispatched" | "accepted_as_unknown";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -976,6 +1846,321 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecoverResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_acquisition_api_cases__case_id__acquisition_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_acquisition_api_cases__case_id__requirements__requirement_id__acquisition_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeAcquisitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredAcquisitionProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    authorize_acquisition_api_cases__case_id__acquisition_proposals__proposal_id__authorize_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredAcquisitionAuthorization"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_acquisition_api_cases__case_id__acquisition_authorizations__authorization_id__capture_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                authorization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionRecordView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_acquired_observation_api_cases__case_id__acquisitions__workflow_id__observation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_acquired_annotation_api_cases__case_id__acquisitions__workflow_id__annotation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    evaluate_acquisition_api_cases__case_id__acquisitions__workflow_id__evaluations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionRecordView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    abstain_api_cases__case_id__requirements__requirement_id__abstain_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AbstainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceRequirement"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_attempt_api_cases__case_id__acquisition_attempts__attempt_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionRecordView"];
                 };
             };
             /** @description Validation Error */
