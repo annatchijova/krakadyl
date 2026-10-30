@@ -23,7 +23,7 @@ class VerificationInvalidationRejected(ValueError):
 
 
 def _file_matches(observation: Observation, path: Path) -> bool:
-    if not path.exists():
+    if observation.digest != observation.evidence_custody.integrity_digest or not path.exists():
         return False
     return hashlib.sha256(path.read_bytes()).hexdigest() == observation.evidence_custody.integrity_digest
 

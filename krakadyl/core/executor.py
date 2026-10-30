@@ -73,7 +73,7 @@ def verify_observation_integrity(observation: Observation, file_path: Path) -> b
     bytes — a tampered or substituted file must be caught here, not
     assumed away because the metadata says it's fine.
     """
-    if not file_path.exists():
+    if observation.digest != observation.evidence_custody.integrity_digest or not file_path.exists():
         return False
     return sha256_file(file_path) == observation.evidence_custody.integrity_digest
 

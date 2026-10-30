@@ -293,6 +293,19 @@ def test_verification_record_target_integrity_is_rechecked(graph_case):
     assert any("verification target 'obs-primary-1' failed integrity" in failure for failure in failures)
 
 
+def test_verification_target_digest_must_match_custody_digest(graph_case):
+    observations, files, requirement, target = graph_case
+    drifted_target = target.model_copy(update={"digest": "f" * 64})
+    drifted_observations = [
+        drifted_target if observation.id == target.id else observation
+        for observation in observations
+    ]
+
+    failures = validate_verification_dependencies(requirement, drifted_observations, files)
+
+    assert any("verification target 'obs-target' failed integrity" in failure for failure in failures)
+
+
 @pytest.fixture
 def graph_case(tmp_path):
     target, target_path = _observation(tmp_path, "obs-target", "device-A", b"target bytes")
