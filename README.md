@@ -159,7 +159,7 @@ use. Every button calls a real endpoint; nothing in the UI re-decides
 what the executor already decided. See `frontend/README.md` for how to
 run both.
 
-For the reproducible MVP environment, use Python 3.11 and the committed
+For the reproducible presentation environment, use Python 3.11 and the committed
 `uv.lock`:
 
 ```

@@ -168,7 +168,7 @@ de dos dispositivos que usan los demos. Cada botón llama a un endpoint
 real; nada en la interfaz vuelve a decidir lo que el ejecutor ya
 decidió. Ver `frontend/README.md` para correr ambos.
 
-Para el entorno reproducible del MVP, usá Python 3.11 y el `uv.lock`
+Para el entorno reproducible de la presentación, usá Python 3.11 y el `uv.lock`
 committeado:
 
 ```

@@ -1,19 +1,19 @@
-# MVP Delivery Plan
+# Presentation Delivery Plan
 
 Deadline: 2026-11-04.
 
 ## Delivery target
 
-The MVP is a coherent investigator workspace, not a feature collection. A
-reviewer must be able to start the backend, authenticate as an operator, open
-the seeded case, inspect the evidence state, prepare and execute a bounded
-package, demonstrate stale-state recovery, and walk through the Level 3
-acquisition path without the frontend making an independent decision.
+The target is a presentable, defensible investigator workspace, not a reduced
+prototype. A reviewer must be able to start the backend, authenticate as an
+operator, open the seeded case, inspect the evidence state, prepare and execute
+a bounded package, demonstrate stale-state recovery, and walk through the Level
+3 acquisition path without the frontend making an independent decision.
 
-The existing Level 4 and Level 5 capabilities remain part of the product, but
-the deadline gate is the end-to-end case narrative above. We will reduce depth
-before reducing the authority, determinism, persistence, or evidence-integrity
-invariants already established by Levels 1–5.
+Levels 1–5 remain part of the product and their invariants are not traded away
+for deadline breadth. The deadline determines which narrative is polished and
+demonstrated end to end; it does not lower the standard of authority,
+determinism, persistence, or evidence integrity.
 
 ## Acceptance gates
 
@@ -36,11 +36,10 @@ invariants already established by Levels 1–5.
 
 ### 1. Reproducible execution environment
 
-- Pin or otherwise constrain the Python API/test stack after identifying a
-  working FastAPI/Starlette/AnyIO combination.
+- Keep the committed `uv.lock` and frontend lockfile as the execution contract.
 - Add a single documented environment check that exercises one sync FastAPI
   route and one real API request.
-- Keep the existing frontend lockfile and verify `npm ci`, build, and lint.
+- Verify `npm ci`, build, and lint from a clean checkout.
 
 ### 2. Demonstration path
 
@@ -55,17 +54,18 @@ invariants already established by Levels 1–5.
 - Re-run the full suite only after the integrated review, then record exact
   results and known environment limitations.
 
-## Explicit non-goals before the deadline
+## Deferred production extensions
 
 - A production identity provider, MFA, or distributed session service.
 - Multi-worker SQLite hardening or a distributed Muse cost limiter.
 - New levels or breadth that would weaken the completed levels' invariants.
 
-## Current blockers
+## Current blocker
 
-- The local Python environment's AnyIO worker-thread path hangs even in a
-  minimal FastAPI application. This is an environment reproducibility blocker;
-  it is not currently classified as a Krakadyl application defect.
-- The freeze tag `freeze-mvp-auth-20261030-173844` exists locally. Pushing it
-  was attempted but GitHub DNS was unavailable; retry before the next
-  significant mutation.
+The local Python environment's AnyIO worker-thread path hangs even in a minimal
+FastAPI application. This is an environment reproducibility blocker, not a
+Krakadyl application defect. CI now has a locked Python 3.11 workflow so the
+verification can run on a clean runner outside this sandbox.
+
+The freeze tag `freeze-mvp-auth-20261030-173844` is published remotely before
+the next significant mutation.

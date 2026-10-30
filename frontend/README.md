@@ -15,7 +15,7 @@ Backend (from the repo root, with the `api` extra installed —
 KRAKADYL_DATA_DIR=out/api uvicorn krakadyl.api.app:app --port 8000
 ```
 
-For the reproducible MVP environment, install from the repository lockfile
+For the reproducible presentation environment, install from the repository lockfile
 with Python 3.11:
 
 ```
