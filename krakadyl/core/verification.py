@@ -133,6 +133,17 @@ def validate_verification_dependencies(
         for parent in record.parent_verification_ids
     }
     roots = [record for record in requirement.verification_records if record.verification_id not in referenced_ids]
+    if not roots:
+        failures.append("verification graph has no root record")
+    elif requirement.observation_id is None:
+        failures.append("structured verification graph has no requirement target")
+    else:
+        for root in roots:
+            if root.target_observation_id != requirement.observation_id:
+                failures.append(
+                    f"verification root targets '{root.target_observation_id}' but requirement governs "
+                    f"'{requirement.observation_id}'"
+                )
     root_sources = [closure(record.verification_id) for record in roots]
     for index, (first_ids, first_identities) in enumerate(root_sources):
         for second_ids, second_identities in root_sources[index + 1:]:

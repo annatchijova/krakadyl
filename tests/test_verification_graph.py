@@ -225,6 +225,37 @@ def test_duplicate_verification_ids_are_not_last_write_wins(graph_case):
     assert any("duplicate verification id 'duplicate-verification'" in failure for failure in failures)
 
 
+def test_verification_roots_must_match_the_requirement_target(graph_case):
+    observations, files, requirement, target = graph_case
+    primary_one = next(item for item in observations if item.id == "obs-primary-1")
+    primary_two = next(item for item in observations if item.id == "obs-primary-2")
+    mismatched = requirement.model_copy(update={
+        "verification_records": (
+            requirement.verification_records[0].model_copy(update={
+                "target_observation_id": primary_one.id,
+                "target_observation_digest": primary_one.digest,
+                "basis": (VerificationBasis(
+                    observation_id=target.id,
+                    observation_digest=target.digest,
+                ),),
+            }),
+            requirement.verification_records[1].model_copy(update={
+                "target_observation_id": primary_one.id,
+                "target_observation_digest": primary_one.digest,
+                "basis": (VerificationBasis(
+                    observation_id=primary_two.id,
+                    observation_digest=primary_two.digest,
+                ),),
+            }),
+        ),
+    })
+
+    failures = validate_verification_dependencies(mismatched, observations, files)
+
+    assert any("verification root targets 'obs-primary-1' but requirement governs 'obs-target'" in failure
+               for failure in failures)
+
+
 def test_requirement_verifier_must_be_present_in_structured_records(graph_case):
     _, _, requirement, _ = graph_case
     mismatched = requirement.model_copy(update={
