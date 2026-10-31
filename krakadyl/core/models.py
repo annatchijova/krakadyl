@@ -208,6 +208,13 @@ class Mandate(BaseModel):
     revoked: bool = False
     revoked_reason: Optional[str] = None
     revision: str = "1"
+    # Level 6 delegation: a sub-mandate names the mandate it was derived from.
+    # None for a root mandate. The scope of a sub-mandate is enforced to be a
+    # subset of its parent's at derivation (krakadyl/core/delegation.py), and
+    # the parent's current validity is re-checked at authority time, so
+    # revoking a parent revokes everything delegated beneath it — this field
+    # alone grants nothing.
+    parent_id: Optional[str] = None
 
 
 class Mission(BaseModel):

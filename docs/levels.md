@@ -813,6 +813,25 @@ Work that spans days or weeks of actual investigation time, not
 compressed into a demo window — persistent missions, sub-mandates,
 revisiting a case after a long gap without having lost the thread.
 
+**Status as of 2026-10-31, stated precisely, not rounded up**: the
+authority core of this level — **sub-mandates with composition closure** —
+is implemented and tested (`krakadyl/core/delegation.py`, 14/14 in
+`tests/test_delegation.py`). A sub-mandate is a `Mandate` derived from a
+parent (`Mandate.parent_id`), enforced to be a strict subset of the
+parent's resources, operations, destinations, and validity window at
+construction (`derive_sub_mandate`), and decided at authority time against
+both the child and the current parent (`authority_under_delegation`), so a
+parent revoked or expired after derivation revokes everything delegated
+beneath it. `demo/run_case_003_level6.py` walks it end to end. This carries
+invariant 1 (authority outside the model) into delegation and reuses the
+one `check_mandate`. **Deliberately not built yet** (documented, not
+approximated — see [level6-sub-mandates.md](level6-sub-mandates.md)): API/
+persistence wiring for delegation, a full ancestor-chain walk beyond the
+immediate parent, and the mission-continuity-across-real-time strand.
+Missions already persist and `next_move`/the shift-handoff already answer
+"what do I pick up"; the time-spanning re-orientation on top of them is
+future Level 6 work.
+
 ### Level 7 — Ecosystem
 
 Real adapters to Velociraptor, SIFT, i2, and VIGÍA with explicit
