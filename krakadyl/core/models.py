@@ -585,6 +585,12 @@ class PreparedAction(BaseModel):
     excluded_resource_reasons: tuple[ExclusionRecord, ...] = ()
     source_revision_checked: str
     mandate_revision_checked: str
+    # The id of the mandate this action was prepared under — the case root by
+    # default, or a Level 6 sub-mandate when the action was delegated. Lets
+    # execute re-check the full delegation chain against the exact mandate the
+    # prepare decision was made under, not just a revision string (two
+    # sub-mandates could share revision "1").
+    mandate_id_checked: str = "mandate-001"
     expires_at: datetime
     nonce: str
 

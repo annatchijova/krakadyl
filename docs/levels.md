@@ -831,11 +831,16 @@ persistence: `POST .../mandates/{id}/delegations` (principal-gated,
 `derive_sub_mandate`), `GET .../delegations` (live chain status), and
 `POST .../delegations/{id}/authority-check` (re-resolves the chain against
 current persisted mandates, so revoking an ancestor flips a delegation to
-denied), all membership-gated, with `test_sub_mandate_delegation_over_http`
-covering the flow. **Deliberately not built yet** (documented, not
-approximated — see [level6-sub-mandates.md](level6-sub-mandates.md)):
-execution *under* a sub-mandate (threading it through prepare/execute), the
-delegation workspace UI, and the mission-continuity-across-real-time strand.
+denied), all membership-gated. A delegatee can also act under their
+sub-mandate: `prepare`/`execute` take an optional `sub_mandate_id`, gating
+the full chain at prepare and at the execute linearization point and binding
+the prepared action to the mandate it was prepared under (`mandate_id_checked`),
+while the root path stays byte-for-byte unchanged.
+`test_sub_mandate_delegation_over_http` and
+`test_execute_under_a_delegated_sub_mandate` cover the flow. **Deliberately
+not built yet** (documented, not approximated — see
+[level6-sub-mandates.md](level6-sub-mandates.md)): the delegation workspace UI,
+and the mission-continuity-across-real-time strand.
 Missions already persist and `next_move`/the shift-handoff already answer
 "what do I pick up"; the time-spanning re-orientation on top of them is
 future Level 6 work.

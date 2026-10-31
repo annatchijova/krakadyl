@@ -1100,3 +1100,63 @@ def test_sub_mandate_delegation_over_http(tmp_path, monkeypatch):
     assert any("parent mandate" in r or "root mandate" in r for r in denied.json()["reasons"])
     listed = client.get("/api/cases/case-001/delegations", headers=A).json()
     assert listed and all(d["live"] is False for d in listed)
+
+
+def test_execute_under_a_delegated_sub_mandate(tmp_path, monkeypatch):
+    """Level 6: a delegatee prepares and executes a package under their
+    sub-mandate; the action is bound to that sub-mandate (the root principal
+    cannot run it under the root, and a non-delegatee cannot run it at all);
+    and a parent revoked before prepare refuses the delegated prepare.
+    """
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')};investigator-J={hash_token('token-j')}",
+    )
+    monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
+    import krakadyl.api.app as app_module
+
+    importlib.reload(app_module)
+    client = TestClient(app_module.app)
+    A = {"Authorization": "Bearer token-a"}
+    J = {"Authorization": "Bearer token-j"}
+
+    parent_until = client.get("/api/cases/case-001", headers=A).json()["mandate"]["valid_until"]
+    sub = client.post(
+        "/api/cases/case-001/mandates/mandate-001/delegations", headers=A,
+        json={"principal": "investigator-J", "resources": ["case-001/device-A"],
+              "operations": ["package_export"], "destinations": ["reviewer-authorized"],
+              "valid_until": parent_until},
+    ).json()["mandate"]
+    sub_id = sub["id"]
+
+    # J prepares under the sub-mandate; the prepared action records it.
+    prep = client.post("/api/cases/case-001/actions/prepare", headers=J, json={
+        "principal": "investigator-J", "allowed_device": "device-A",
+        "destination": "reviewer-authorized", "sub_mandate_id": sub_id}).json()
+    assert prep["decision"]["verdict"] == "allowed"
+    assert prep["prepared"]["mandate_id_checked"] == sub_id
+    prepared_id = prep["prepared"]["id"]
+
+    # The root principal cannot execute a sub-prepared action under the root...
+    assert client.post("/api/cases/case-001/actions/execute", headers=A, json={
+        "principal": "investigator-A", "prepared_action_id": prepared_id}).status_code == 409
+    # ...nor can a non-delegatee claim the sub (A is not the sub's principal).
+    assert client.post("/api/cases/case-001/actions/execute", headers=A, json={
+        "principal": "investigator-A", "prepared_action_id": prepared_id,
+        "sub_mandate_id": sub_id}).status_code == 403
+
+    # The delegatee executes under the sub-mandate — the delegated action runs.
+    done = client.post("/api/cases/case-001/actions/execute", headers=J, json={
+        "principal": "investigator-J", "prepared_action_id": prepared_id, "sub_mandate_id": sub_id})
+    assert done.status_code == 200, done.text
+    assert done.json()["receipt"]["executed"] is True
+
+    # A parent revoked before a delegated prepare refuses it (the chain gate).
+    client.post("/api/dev/cases/case-001/revoke-mandate", headers=A, json={"reason": "reassigned"})
+    refused = client.post("/api/cases/case-001/actions/prepare", headers=J, json={
+        "principal": "investigator-J", "allowed_device": "device-A",
+        "destination": "reviewer-authorized", "sub_mandate_id": sub_id})
+    assert refused.status_code == 409
+    assert "parent mandate" in refused.json()["detail"] or "root mandate" in refused.json()["detail"]

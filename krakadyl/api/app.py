@@ -431,6 +431,11 @@ class PrepareRequest(BaseModel):
     principal: Optional[str] = None
     allowed_device: str = "device-A"
     destination: str = "reviewer-authorized"
+    # Level 6: act under a delegated sub-mandate instead of the case root. When
+    # set, the caller must be the sub-mandate's principal and the full chain
+    # must currently authorize the action; when absent, the root mandate is used
+    # exactly as before.
+    sub_mandate_id: Optional[str] = None
 
 
 class PrepareResponse(BaseModel):
@@ -465,6 +470,11 @@ class AnalyzeNoteResponse(BaseModel):
 class ExecuteRequest(BaseModel):
     principal: Optional[str] = None
     prepared_action_id: str
+    # Level 6: execute an action that was prepared under a delegated
+    # sub-mandate. Must name the same sub-mandate the action was prepared under
+    # (verified below); when absent, the root mandate path runs exactly as
+    # before.
+    sub_mandate_id: Optional[str] = None
 
 
 class ExecuteResponse(BaseModel):
@@ -616,12 +626,11 @@ def prepare(
 ) -> PrepareResponse:
     _operator(authorization)
     _case_or_404(case_id)
-    mandate = _current_mandate(case_id)
-    _authenticated_principal(mandate, body.principal, authorization)
+    proposed_action = _proposed_action(case_id, body.allowed_device, body.destination)
+    mandate = _prepare_action_mandate(case_id, body, proposed_action, authorization)
     observations = _load_observations(case_id)
     requirements = _load_requirements(case_id)
     files = _observation_files(case_id, observations)
-    proposed_action = _proposed_action(case_id, body.allowed_device, body.destination)
 
     decision, prepared = prepare_evidence_package(
         proposed_action=proposed_action,
@@ -785,11 +794,33 @@ def execute(
 ) -> ExecuteResponse:
     _operator(authorization)
     _case_or_404(case_id)
-    mandate = _current_mandate(case_id)
-    _authenticated_principal(mandate, body.principal, authorization)
+    # Authorize BEFORE the prepared-action lookup, so a caller who is not
+    # authorized cannot probe which prepared-action ids exist. The root path is
+    # unchanged; a delegated caller is authenticated against the sub-mandate
+    # named in the request (known here, before the lookup).
+    if getattr(body, "sub_mandate_id", None):
+        sub = _all_case_mandates(case_id).get(body.sub_mandate_id)
+        if sub is None or sub.parent_id is None:
+            raise HTTPException(404, "no such sub-mandate")
+        _authenticated_principal(sub, body.principal, authorization)
+    else:
+        mandate = _current_mandate(case_id)
+        _authenticated_principal(mandate, body.principal, authorization)
     prepared = store.get(case_id, "prepared_action", body.prepared_action_id, PreparedAction)
     if prepared is None:
         raise HTTPException(404, "no such prepared action")
+    # An action executes under the exact mandate it was prepared under: a
+    # sub-prepared action needs its sub named, and a root-prepared action needs
+    # no sub. This stops a root principal from quietly executing a delegated
+    # action under the root (even though the root could re-do it, that would
+    # erase the delegation binding and its chain re-check).
+    declared_mandate = body.sub_mandate_id or "mandate-001"
+    if prepared.mandate_id_checked != declared_mandate:
+        raise HTTPException(
+            409,
+            f"this action was prepared under mandate '{prepared.mandate_id_checked}'; "
+            "execute it under that mandate",
+        )
     proposed_action = store.get(case_id, "proposed_action", prepared.proposed_action_id, ProposedAction)
     decision = store.get(case_id, "decision", f"decision-{prepared.proposed_action_id}", Decision)
     if proposed_action is None or decision is None:
@@ -807,13 +838,17 @@ def execute(
     files = _observation_files(case_id, observations)
     nonce_claimed = store.claim_nonce(case_id, prepared.nonce, prepared.id, now().isoformat())
     consumed = set() if nonce_claimed else {prepared.nonce}
-    # The first mandate read protects the lookup and binds the asserted
-    # principal. Re-read after the one-shot nonce claim so a revocation or
-    # reassignment committed while the action was being assembled cannot be
-    # hidden by that earlier snapshot. This read is the authorization
-    # linearization point for dispatch; the executor receives this same object.
-    mandate = _current_mandate(case_id)
-    _authenticated_principal(mandate, body.principal, authorization)
+    # The early check above protects the lookup. Re-resolve after the one-shot
+    # nonce claim so a revocation or reassignment — of the mandate, or (for a
+    # delegated action) any ancestor in its chain — committed while the action
+    # was being assembled cannot be hidden by the earlier snapshot. This is the
+    # authorization linearization point for dispatch; the executor receives this
+    # same object.
+    if getattr(body, "sub_mandate_id", None):
+        mandate = _execute_action_mandate(case_id, prepared, body, authorization)
+    else:
+        mandate = _current_mandate(case_id)
+        _authenticated_principal(mandate, body.principal, authorization)
     out_dir = DATA_DIR / case_id / "packages" / prepared.id
     previous_receipts = store.list(case_id, "receipt", Receipt)
     previous_hash = previous_receipts[-1].hash if previous_receipts else None
@@ -967,6 +1002,56 @@ def _authenticated_principal(
             "principal field does not match the authenticated operator",
         )
     return identity
+
+
+def _prepare_action_mandate(case_id: str, body, proposed_action, authorization) -> Mandate:
+    """The mandate a prepare acts under: the case root, or a Level 6 sub-mandate
+    when `body.sub_mandate_id` is set. For a sub-mandate the caller must be its
+    principal and the full delegation chain must currently authorize the exact
+    (resource, operation, destination) the core will check — a revoked or
+    expired ancestor refuses the prepare rather than letting the sub's own
+    scope look sufficient on its own."""
+    sub_id = getattr(body, "sub_mandate_id", None)
+    if not sub_id:
+        mandate = _current_mandate(case_id)
+        _authenticated_principal(mandate, body.principal, authorization)
+        return mandate
+    mandates = _all_case_mandates(case_id)
+    sub = mandates.get(sub_id)
+    if sub is None or sub.parent_id is None:
+        raise HTTPException(404, "no such sub-mandate")
+    _authenticated_principal(sub, body.principal, authorization)
+    gate = authority_under_chain(
+        sub, mandates, resource=f"{proposed_action.mission_id}/{body.allowed_device}",
+        operation=proposed_action.operation, destination=body.destination, now=now(),
+    )
+    if gate.authority_state != AuthorityState.GRANTED:
+        raise HTTPException(409, "delegated authority does not cover this action: " + "; ".join(gate.reasons))
+    return sub
+
+
+def _execute_action_mandate(case_id: str, prepared: PreparedAction, body, authorization) -> Mandate:
+    """The mandate an execute acts under, resolved from the mandate the action
+    was prepared under (`prepared.mandate_id_checked`) — so a delegated action
+    executes under its own sub-mandate, not the root, and cannot be redirected
+    to a different mandate by the caller. For a sub-mandate the full chain is
+    re-checked against current state, catching an ancestor revoked between
+    prepare and execute. Read fresh each call so it is a real re-check."""
+    mandates = _all_case_mandates(case_id)
+    mandate = mandates.get(prepared.mandate_id_checked)
+    if mandate is None:
+        raise HTTPException(
+            409, f"the mandate this action was prepared under ('{prepared.mandate_id_checked}') no longer exists"
+        )
+    _authenticated_principal(mandate, body.principal, authorization)
+    if mandate.parent_id is not None:
+        gate = authority_under_chain(
+            mandate, mandates, resource=prepared.resource, operation=prepared.operation,
+            destination=prepared.destination, now=now(),
+        )
+        if gate.authority_state != AuthorityState.GRANTED:
+            raise HTTPException(409, "delegated authority no longer covers this action: " + "; ".join(gate.reasons))
+    return mandate
 
 
 def _requirement_or_404(case_id: str, requirement_id: str) -> EvidenceRequirement:

@@ -75,8 +75,21 @@ the same membership gate the read endpoints use (RT-API-01/02):
   (`_case_members` now counts every mandate principal), so they can read the
   case and delegate further down.
 
-`tests/test_api.py::test_sub_mandate_delegation_over_http` exercises the whole
-HTTP flow, including the revoke-kills-the-delegation re-check.
+A delegatee can also **act** under their sub-mandate: `POST .../actions/prepare`
+and `POST .../actions/execute` take an optional `sub_mandate_id`. When present,
+the caller is authenticated as the sub-mandate's principal and the full chain
+must grant the action — at prepare, and again at the execute linearization point
+after the one-shot nonce claim, so an ancestor revoked mid-flight denies
+dispatch. The prepared action records the mandate it was prepared under
+(`mandate_id_checked`), and execute requires the named mandate to match it, so a
+sub-prepared action cannot be run under the root (even by the root principal,
+who could otherwise re-do it and erase the delegation binding) and cannot be
+redirected to a different sub. When `sub_mandate_id` is absent the root path is
+byte-for-byte unchanged — the same two `_current_mandate` reads and the same
+no-existence-oracle ordering the earlier rounds red-teamed.
+`tests/test_api.py::test_sub_mandate_delegation_over_http` and
+`::test_execute_under_a_delegated_sub_mandate` exercise the whole HTTP flow,
+including revoke-kills-the-delegation at prepare and the binding checks.
 
 **Evidence of the invariant, not assertion of it.** `tests/test_delegation.py`
 (21 cases) states each property as a falsifiable check: widening any of the
@@ -108,14 +121,11 @@ one `check_mandate` is reused rather than re-deriving scope logic.
 
 ## What is deliberately not built yet (stated, not approximated)
 
-- **No execution under a sub-mandate yet.** Delegation is created, persisted,
-  listed, and its live authority is re-checked over HTTP (see "Wired to the API"
-  below), but `prepare`/`execute` still act under the case's root mandate, not a
-  delegatee's sub-mandate. Threading a sub-mandate through the prepare/execute
-  authority linearization points — so a junior actually assembles a package
-  under their delegated slice, chain re-checked at prepare and execute — is the
-  next increment, and must carry the same revalidation those paths already do.
-  The workspace UI for delegation is also still to come.
+- **No delegation workspace UI yet.** Delegation is fully usable over the API
+  (create, list, authority-check, and prepare/execute *under* a sub-mandate —
+  see "Wired to the API" below), but the React workspace does not yet show a
+  case's delegation tree or let an investigator delegate from it. That view is
+  the remaining Level 6 interface work.
 - **The other two Level 6 strands — persistent missions across real gaps and
   long-gap re-orientation — are not in this piece.** Missions already persist
   (SQLite) and `next_move`/the shift-handoff already answer "what do I pick up";
@@ -124,12 +134,12 @@ one `check_mandate` is reused rather than re-deriving scope logic.
 
 ## Required closure to call Level 6 complete
 
-Thread a sub-mandate through `prepare`/`execute` so a delegatee assembles a
-package under their delegated slice, with the chain re-checked at prepare and at
-execute exactly as those paths already revalidate the root mandate; add the
-delegation workspace UI; and add the mission-continuity-across-real-time strand.
-The authority core, the full ancestor-chain walk, and the HTTP/persistence
-wiring are built; what remains is letting a delegated action actually run, and
-the time-spanning strand. Until then this is Level 6's authority core and its
-delegation surface: real, tested, demonstrable over HTTP, and architecturally
-the piece the rest of Level 6 builds on.
+Add the delegation workspace UI (show a case's delegation tree and let an
+investigator delegate and act from it), and add the
+mission-continuity-across-real-time strand. The authority core, the full
+ancestor-chain walk, the HTTP/persistence wiring, and execution *under* a
+sub-mandate are built; what remains is the interface and the time-spanning
+strand. This is Level 6's authority mechanism end to end — a delegatee can be
+given a strictly bounded slice, act within it, and lose it the instant any
+ancestor is revoked — real, tested, demonstrable over HTTP, and the piece the
+rest of Level 6 builds on.

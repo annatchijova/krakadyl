@@ -437,6 +437,7 @@ def prepare_evidence_package(
         ),
         source_revision_checked=combined_revision,
         mandate_revision_checked=mandate.revision,
+        mandate_id_checked=mandate.id,
         expires_at=now + ttl,
         nonce=secrets.token_hex(8),
     )
