@@ -34,6 +34,15 @@ jobs:
       - name: Run Python tests
         run: uv run pytest -q tests --ignore=tests/test_laya_adapter.py
 
+      # Boots the real app under a live uvicorn server and drives
+      # GET + prepare + execute over HTTP — the one path TestClient cannot
+      # reach. The OS-level `timeout` is the point: if the AnyIO worker-thread
+      # hang ever regresses, this fails the job (exit 124) instead of hanging
+      # it until the job timeout. Runs under the locked 3.11 environment, which
+      # closes the delivery plan's "not yet proven under locked 3.11" caveat.
+      - name: Live-server API smoke check
+        run: timeout 90 uv run python tools/api_smoke.py
+
   frontend:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
