@@ -60,12 +60,35 @@ determinism, persistence, or evidence integrity.
 - Multi-worker SQLite hardening or a distributed Muse cost limiter.
 - New levels or breadth that would weaken the completed levels' invariants.
 
-## Current blocker
+## Live-server verification
 
-The local Python environment's AnyIO worker-thread path hangs even in a minimal
-FastAPI application. This is an environment reproducibility blocker, not a
-Krakadyl application defect. CI now has a locked Python 3.11 workflow so the
-verification can run on a clean runner outside this sandbox.
+An earlier revision of this plan recorded the local AnyIO worker-thread path as
+hanging even in a minimal FastAPI application, and concluded the live demo had
+to be replaced by CI-only verification. **That blocker does not reproduce as of
+2026-10-31** and the conclusion it drove is withdrawn.
 
-The freeze tag `freeze-mvp-auth-20261030-173844` is published remotely before
-the next significant mutation.
+Verified on 2026-10-31 against the real, unmodified `krakadyl.api.app:app` under
+a live uvicorn server (not `TestClient`): the core narrative —
+`GET /api/cases/case-001`, `POST .../actions/prepare`, `POST
+.../actions/execute` — returns a sealed, executed receipt over HTTP with
+operator-bearer auth, in single-digit milliseconds per request.
+`tools/api_smoke.py` reproduces this: it boots the server on an ephemeral port
+with a throwaway token and data directory, drives the three calls, asserts the
+receipt, and tears everything down. This is the live equivalent of acceptance
+gate 3 and the "one real API request" work-order item above.
+
+**Honest caveat, not yet closed.** This verification ran in the local `.venv`
+(Python 3.12), which is not the locked Python 3.11 environment the committed
+`uv.lock` and the CI workflow pin. CI builds and runs the suite under locked
+3.11 but exercises the API only through `TestClient`, never a live uvicorn
+server. So what is proven is that the live server serves the full narrative in
+this environment; what is not yet proven is that the locked 3.11 environment
+does too. Closure: run `tools/api_smoke.py` once under `uv run` on the locked
+environment (or add it as a CI step with a hard timeout, so a regression of the
+original hang fails the job instead of hanging it) before trusting a locked
+runner for a live demo. Record the demo in an environment where
+`tools/api_smoke.py` has passed.
+
+The freeze tags `freeze-mvp-auth-20261030-173844` and
+`freeze-before-redteam-remediation-20261030-175604` are published remotely;
+`pre-session-20261031-132449` tags the state before this verification pass.
