@@ -145,3 +145,74 @@ def authority_under_delegation(
     return check_mandate(
         sub_mandate, resource=resource, operation=operation, destination=destination, now=now
     )
+
+
+def resolve_delegation_chain(
+    mandate: Mandate, ancestors_by_id: dict[str, Mandate]
+) -> list[Mandate]:
+    """The leaf-to-root chain starting at `mandate`, following `parent_id`
+    through `ancestors_by_id`. Raises `DelegationRejected` if an ancestor named
+    in the chain is missing (a broken chain cannot be proven bounded) or if the
+    chain loops (a cycle would otherwise walk forever and has no root to anchor
+    authority on)."""
+    chain = [mandate]
+    seen = {mandate.id}
+    current = mandate
+    while current.parent_id is not None:
+        parent = ancestors_by_id.get(current.parent_id)
+        if parent is None:
+            raise DelegationRejected(
+                f"delegation chain is broken: ancestor '{current.parent_id}' of "
+                f"'{current.id}' was not provided"
+            )
+        if parent.id in seen:
+            raise DelegationRejected(f"delegation chain has a cycle at '{parent.id}'")
+        chain.append(parent)
+        seen.add(parent.id)
+        current = parent
+    return chain
+
+
+def authority_under_chain(
+    mandate: Mandate,
+    ancestors_by_id: dict[str, Mandate],
+    *,
+    resource: str,
+    operation: str,
+    destination: str,
+    now: datetime,
+) -> MandateCheck:
+    """Decide a (resource, operation, destination) triple under a full
+    delegation chain: every mandate from the leaf up to the root must currently
+    grant it, and the result is the most restrictive. Revoking or expiring ANY
+    ancestor denies the leaf, even a distant root above an intermediate mandate
+    that is still fine — the whole chain is the bound, not just the parent edge.
+
+    `ancestors_by_id` must contain every ancestor named by a `parent_id` in the
+    chain; a missing ancestor or a cycle is a `DelegationRejected`, never a
+    silent allow. A root mandate (no parent) is checked directly."""
+    chain = resolve_delegation_chain(mandate, ancestors_by_id)
+    # Walk root -> leaf so the outermost authority that fails is reported first:
+    # "the root is revoked" is a more useful cause than "the leaf is out of
+    # scope" when both could apply.
+    for link in reversed(chain):
+        check = check_mandate(
+            link, resource=resource, operation=operation, destination=destination, now=now
+        )
+        if check.authority_state != AuthorityState.GRANTED:
+            if link.id == mandate.id:
+                label = "this sub-mandate"
+            elif link.parent_id is None:
+                label = f"root mandate '{link.id}'"
+            else:
+                label = f"ancestor mandate '{link.id}'"
+            return MandateCheck(
+                outside_scope=check.outside_scope,
+                authority_state=check.authority_state,
+                reasons=[f"{label}: {r}" for r in check.reasons],
+            )
+    return MandateCheck(
+        outside_scope=False,
+        authority_state=AuthorityState.GRANTED,
+        reasons=[f"granted across a delegation chain of {len(chain)} mandate(s)"],
+    )

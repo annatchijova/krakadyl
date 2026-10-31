@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from krakadyl.core.delegation import (
     DelegationRejected,
+    authority_under_chain,
     authority_under_delegation,
     derive_sub_mandate,
 )
@@ -114,6 +115,39 @@ def main() -> None:
         ),
     )
     print("\nThe junior's sub-mandate was never touched; revoking the parent was enough.")
+
+    # 6. A three-level chain: senior -> lead -> junior. Revoking the distant
+    #    senior root denies the junior, even though the lead in the middle is
+    #    untouched and still valid.
+    lead = derive_sub_mandate(
+        senior, id="mandate-lead-001", principal="investigator-L",
+        resources=["case-001/device-A"], operations=["package_export"],
+        destinations=["reviewer-authorized"],
+        valid_from=NOW, valid_until=NOW + timedelta(days=2), now=NOW,
+    )
+    junior = derive_sub_mandate(
+        lead, id="mandate-junior-002", principal="investigator-J",
+        resources=["case-001/device-A"], operations=["package_export"],
+        destinations=["reviewer-authorized"],
+        valid_from=NOW, valid_until=NOW + timedelta(days=1), now=NOW,
+    )
+    print("\nChain: senior -> lead (investigator-L) -> junior (investigator-J).")
+    report_authority(
+        "5. Junior acts under the full chain (all three grant)",
+        authority_under_chain(
+            junior, {senior.id: senior, lead.id: lead},
+            resource="case-001/device-A", operation="package_export",
+            destination="reviewer-authorized", now=NOW,
+        ),
+    )
+    report_authority(
+        "6. The distant senior root is revoked — the lead is untouched, the junior still dies",
+        authority_under_chain(
+            junior, {revoked_senior.id: revoked_senior, lead.id: lead},
+            resource="case-001/device-A", operation="package_export",
+            destination="reviewer-authorized", now=NOW,
+        ),
+    )
 
 
 if __name__ == "__main__":

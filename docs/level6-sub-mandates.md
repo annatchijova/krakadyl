@@ -45,14 +45,30 @@ more restrictive of the two, evaluated against the current clock through the one
 the child too. `parent_id` is a binding, not a grant: a mismatched parent is a
 `DelegationRejected`, never a silent allow.
 
+**Full ancestor chain — enforced across every link (`authority_under_chain`).**
+Delegation composes: a sub-mandate is a `Mandate`, so a sub-sub-mandate is
+derivable from it, and static closure holds transitively (each link is a subset
+of its parent, so the leaf is a subset of the root). The dynamic bound is walked
+over the whole chain: `authority_under_chain` resolves the leaf-to-root chain
+through `parent_id` and requires *every* mandate from the leaf up to the root to
+currently grant the triple — the most restrictive wins. Revoking or expiring any
+ancestor, however distant, denies the leaf, even when the intermediate mandates
+are still fine. A chain with a missing ancestor or a cycle is a
+`DelegationRejected`, never a silent allow; the broadest failing authority is
+reported first (a revoked root over an out-of-scope leaf reads as the root).
+
 **Evidence of the invariant, not assertion of it.** `tests/test_delegation.py`
-(14 cases) states each property as a falsifiable check: widening any of the
+(21 cases) states each property as a falsifiable check: widening any of the
 three scope dimensions, starting before the parent, outliving or going
 open-ended under a bounded parent, delegating from a revoked or not-yet-effective
 parent — each is refused; a narrower slice is granted; the sub binds even where
 the parent would allow more; a parent revoked or expired after derivation
-revokes the delegated authority at check time. `demo/run_case_003_level6.py`
-walks the whole arc end to end, no network, no model.
+revokes the delegated authority at check time. For a three-level chain
+(root → lead → junior) the same holds transitively: the leaf binds below the
+root, revoking the distant root or an intermediate ancestor denies the leaf,
+root expiry expires the whole chain, and a broken or cyclic chain is rejected.
+`demo/run_case_003_level6.py` walks the whole arc end to end, no network, no
+model.
 
 ## Invariants carried from Level 1 (not deferred)
 
@@ -76,11 +92,6 @@ one `check_mandate` is reused rather than re-deriving scope logic.
   level started from (Level 1's "core skeleton" before the workspace, Level 3's
   contracts before the case wiring). Exposing delegation over HTTP, persisting a
   delegation chain, and showing it in the workspace are the next increments.
-- **Single-level parent/child only is tested exhaustively.** `derive_sub_mandate`
-  composes (a sub-mandate is a `Mandate`, so a sub-sub-mandate is derivable from
-  it), and `authority_under_delegation` checks one parent edge; a full chain
-  walk that re-checks every ancestor is a documented next step, not a claim made
-  here.
 - **The other two Level 6 strands — persistent missions across real gaps and
   long-gap re-orientation — are not in this piece.** Missions already persist
   (SQLite) and `next_move`/the shift-handoff already answer "what do I pick up";
@@ -90,8 +101,9 @@ one `check_mandate` is reused rather than re-deriving scope logic.
 ## Required closure to call Level 6 complete
 
 Wire delegation through the API and persistence with the same authority
-revalidation the capture path already does; walk the full ancestor chain in
-`authority_under_delegation` (every ancestor must currently grant, not just the
-immediate parent); and add the mission-continuity-across-real-time strand. Until
-then this is Level 6's authority core: real, tested, demonstrable, and
+revalidation the capture path already does (storing a delegation chain and
+re-checking it on every delegated action); and add the
+mission-continuity-across-real-time strand. The full ancestor-chain walk is now
+built (`authority_under_chain`); what remains is exposing and persisting it.
+Until then this is Level 6's authority core: real, tested, demonstrable, and
 architecturally the piece the rest of Level 6 builds on.
