@@ -1,3 +1,5 @@
+[English](README.md) · [Español](README.es.md) · **[Technical README](TECHNICAL_README.md)**
+
 # KRAKADYL
 
 **An active-investigation agent for forensic work under time pressure.**
@@ -8,8 +10,6 @@ step — within a mandate it never silently expands. It does not decide
 what the evidence proves; that stays with the inference engine and the
 human investigator. It helps the investigation arrive at those tools
 better prepared.
-
-> Lee esto en español: [README.es.md](README.es.md)
 
 ![The crocodile keeps the evidence](visual/evidence.png)
 

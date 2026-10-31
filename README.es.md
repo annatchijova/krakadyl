@@ -1,3 +1,5 @@
+[English](README.md) · [Español](README.es.md) · **[Technical README](TECHNICAL_README.md)**
+
 # KRAKADYL
 
 **Un agente de investigación activa para trabajo forense bajo presión de tiempo.**
@@ -8,8 +10,6 @@ verificable — dentro de un mandato que nunca amplía en silencio. No
 decide qué prueba la evidencia; eso sigue siendo del motor de inferencia
 y de la persona investigadora. Ayuda a que la investigación llegue a esas
 herramientas mejor preparada.
-
-> Read this in English: [README.md](README.md)
 
 ![El cocodrilo guarda la evidencia.png](visual/evidence.png)
 
