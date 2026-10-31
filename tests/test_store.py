@@ -369,3 +369,79 @@ def test_acquisition_schema_v1_migrates_additively_to_v7(tmp_path):
     assert columns[5] == "attempt-v1"
     assert {"evaluation_id", "workflow_id", "evaluator_identity", "evaluation_json"} <= columns[6]
     store.close()
+
+
+def test_receipt_head_follows_append_order_not_handler_timestamp(tmp_path):
+    """Red-team RT-CHAIN-01 (live concurrency fork): append_execution_receipt
+    picked the chain head by updated_at, which is a handler-side timestamp
+    computed before the write lock is won. A later-appended receipt carrying an
+    earlier timestamp was therefore invisible as the head, so the next append
+    linked to a stale predecessor and the chain forked. The head must follow
+    append order (rowid), not the timestamp.
+    """
+    from krakadyl.core.receipt import seal
+
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+
+    def relink(receipt, prev_hash):
+        return receipt.model_copy(update={"prev_hash": prev_hash, "hash": seal(receipt.seal_payload, prev_hash)})
+
+    def receipt(obj_id, payload):
+        # prev_hash is a sentinel so append always relinks against the real
+        # head (never equal to it), giving every receipt a genuine sealed hash.
+        return Receipt(
+            id=obj_id, proposed_action_id=obj_id, decision_id=f"d-{obj_id}",
+            executed=True, observed_effect="ok", hash="x" * 64, prev_hash="__force_relink__",
+            created_at=NOW, seal_payload=payload,
+        )
+
+    # r1 appended first, with a LATER timestamp.
+    r1 = store.append_execution_receipt(
+        "case-001", receipt("receipt-1", {"n": 1}), "2026-10-31T00:00:05+00:00", relink)
+    # r2 appended second, with an EARLIER timestamp than r1 (the inversion the
+    # live race produces). It correctly links to r1.
+    r2 = store.append_execution_receipt(
+        "case-001", receipt("receipt-2", {"n": 2}), "2026-10-31T00:00:01+00:00", relink)
+    assert r2.prev_hash == r1.hash
+
+    # r3 must link to r2 (the actually-last-appended receipt), not back to r1
+    # just because r1 has the larger timestamp. Linking to r1 is the fork.
+    r3 = store.append_execution_receipt(
+        "case-001", receipt("receipt-3", {"n": 3}), "2026-10-31T00:00:03+00:00", relink)
+    assert r3.prev_hash == r2.hash, "chain forked: r3 linked to a stale predecessor by timestamp"
+    assert r3.prev_hash != r1.hash
+
+
+def test_replacing_a_denied_receipt_links_to_the_real_head_not_itself(tmp_path):
+    """Red-team RT-CHAIN-02 (replay-race dangling link): when a denied receipt
+    for an action is persisted before the successful one (same obj_id), the
+    successful replacement must link to the real chain head, never to the
+    denied receipt's own transient hash in the row being overwritten.
+    """
+    from krakadyl.core.receipt import seal
+
+    store = KrakadylStore(tmp_path / "krakadyl.db")
+
+    def relink(receipt, prev_hash):
+        return receipt.model_copy(update={"prev_hash": prev_hash, "hash": seal(receipt.seal_payload, prev_hash)})
+
+    def rc(obj_id, payload, executed):
+        return Receipt(
+            id=obj_id, proposed_action_id=obj_id, decision_id=f"d-{obj_id}",
+            executed=executed, observed_effect="x", hash="x" * 64, prev_hash="__force_relink__",
+            created_at=NOW, seal_payload=payload,
+        )
+
+    head = store.append_execution_receipt(
+        "case-x", rc("r-prev", {"n": 0}, True), "2026-10-31T00:00:00+00:00", relink)
+    # A denied receipt for action R appends first, linking to the real head.
+    denied = store.append_execution_receipt(
+        "case-x", rc("r-R", {"n": 1, "denied": True}, False), "2026-10-31T00:00:01+00:00", relink)
+    assert denied.prev_hash == head.hash
+    # The successful receipt for the SAME action R replaces it; it must link to
+    # the real head, not to the denied row it is about to overwrite.
+    winner = store.append_execution_receipt(
+        "case-x", rc("r-R", {"n": 1, "won": True}, True), "2026-10-31T00:00:02+00:00", relink)
+    assert winner.prev_hash == head.hash, "successful replacement linked to a stale/self predecessor"
+    stored = store.get("case-x", "receipt", "r-R", Receipt)
+    assert stored.executed is True and stored.prev_hash == head.hash

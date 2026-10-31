@@ -138,3 +138,19 @@ receipt rooted at the prior head and the other linked to the first persisted
 successor. The runtime-only seal payload is excluded from serialized receipt
 JSON; it exists only to recompute the deterministic seal when the append wins a
 different predecessor.
+
+**Follow-up (2026-10-31) — two further races the above verification did not
+reach, found and fixed; see
+[`red-team-receipt-chain-concurrency-2026-10-31.md`](red-team-receipt-chain-concurrency-2026-10-31.md).**
+The head arbitration above selected the head by `updated_at`, a handler-side
+timestamp computed before the write lock is won, so it was not monotonic with
+append order: under live concurrent HTTP execution a later-appended receipt with
+an earlier timestamp was missed as the head and the chain forked (RT-CHAIN-01).
+Separately, a successful receipt replacing an earlier denied one for the same
+action (a replay race) linked to the row it was about to overwrite, dangling the
+tail (RT-CHAIN-02). Both are now fixed: the head is selected by `rowid`
+(insertion order, authoritative because the append is serialized) excluding the
+candidate's own `obj_id`. Confirmed by induction against a live server
+(`tools/redteam_chain_probes.py`) and regression-locked in `tests/test_store.py`.
+The store-layer and in-process tests did not catch either, because the fork only
+appears when concurrent executions race through the real server path.

@@ -390,10 +390,27 @@ class KrakadylStore:
         with self._write_lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
+                # Head is the LAST-APPENDED receipt, ordered by rowid (insertion
+                # order), never by updated_at. updated_at is a handler-side
+                # timestamp computed before this lock is won, so it is not
+                # monotonic with append order; selecting the head by it let a
+                # later append with an earlier timestamp be missed as the head,
+                # and the next receipt linked to a stale predecessor — forking
+                # the chain under concurrent execution (RT-CHAIN-01). rowid is
+                # monotonic with INSERT and this append is serialized, so it is
+                # the authoritative append order; a replacement UPDATE keeps its
+                # original rowid and so never displaces the real head.
+                #
+                # The candidate's own obj_id is excluded (RT-CHAIN-02): when a
+                # successful receipt replaces an earlier denied one for the same
+                # action (a replay race where the denied append won the lock
+                # first), the row being overwritten must not be read as the
+                # candidate's own predecessor — that would link it to a hash
+                # about to vanish in the UPDATE, dangling the chain tail.
                 latest = self._conn.execute(
-                    "SELECT json FROM objects WHERE case_id=? AND kind='receipt' "
-                    "ORDER BY updated_at DESC, rowid DESC LIMIT 1",
-                    (case_id,),
+                    "SELECT json FROM objects WHERE case_id=? AND kind='receipt' AND obj_id!=? "
+                    "ORDER BY rowid DESC LIMIT 1",
+                    (case_id, obj.id),
                 ).fetchone()
                 current_head = json.loads(latest[0])["hash"] if latest else None
                 candidate = obj if getattr(obj, "prev_hash", None) == current_head else relink(obj, current_head)
