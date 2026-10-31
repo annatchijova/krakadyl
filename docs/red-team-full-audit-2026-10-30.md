@@ -443,6 +443,24 @@ timestamps selected the oldest receipt after the second append. The query now
 orders timestamps and rowids descending, and the three-receipt chain passes.
 `KL-005` is closed.
 
+### RT-RECEIPT-02 — standalone verifier reported empty input as intact
+
+**Severity:** Low integrity-reporting defect  **Epistemic level:**
+**CONFIRMED BY INDUCTION**  **Bucket:** vulnerability, fixed
+
+**Invariant:** the independent verifier must never report a receipt chain as
+verified when it contains no entries, and malformed entries must produce an
+explicit failed result rather than an uncontrolled traceback.
+
+**Induction:** an empty JSON array returned exit code `0` and
+`OK — 0 entries, chain intact, final hash None`. A chain containing `[{}]`
+terminated with a `KeyError` traceback and no structured `BROKEN` result.
+
+**Remediation:** `tools/verify_receipt.py` now rejects empty or non-list input,
+reports malformed entries as `BROKEN at entry <n>`, and returns a nonzero exit
+status. The two regression tests exercise both boundaries through the actual
+stdlib-only subprocess.
+
 ## Remediation status
 
 The findings in this integrated round were repaired after the induction probes:
@@ -469,6 +487,8 @@ The findings in this integrated round were repaired after the induction probes:
 - **RT-RECEIPT-01:** API receipt chaining is fixed for sequential and forced
   concurrent append interleavings; the durable append arbitration is covered by
   regression tests.
+- **RT-RECEIPT-02:** the standalone verifier rejects empty and malformed chains
+  with explicit nonzero failures.
 
 The store rollback tests, acquisition/core tests, compile check, frontend build,
 and lint pass. The local sandbox still has an AnyIO worker-thread limitation,

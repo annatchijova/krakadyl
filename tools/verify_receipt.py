@@ -50,17 +50,26 @@ def seal(payload, prev_hash):
 def main(path: str) -> int:
     with open(path) as f:
         chain = json.load(f)
+    if not isinstance(chain, list) or not chain:
+        print("BROKEN: receipt chain must contain at least one entry")
+        return 1
 
     prev = None
     for i, entry in enumerate(chain):
-        expected = seal(entry["payload"], prev)
-        if expected != entry["hash"]:
-            print(f"BROKEN at entry {i}: expected {expected}, got {entry['hash']}")
+        try:
+            expected = seal(entry["payload"], prev)
+            entry_hash = entry["hash"]
+            entry_prev_hash = entry.get("prev_hash")
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            print(f"BROKEN at entry {i}: malformed receipt entry ({exc})")
             return 1
-        if entry.get("prev_hash") != prev:
+        if expected != entry_hash:
+            print(f"BROKEN at entry {i}: expected {expected}, got {entry_hash}")
+            return 1
+        if entry_prev_hash != prev:
             print(f"BROKEN at entry {i}: prev_hash link does not match")
             return 1
-        prev = entry["hash"]
+        prev = entry_hash
 
     print(f"OK — {len(chain)} entries, chain intact, final hash {prev}")
     return 0
