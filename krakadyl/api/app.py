@@ -238,6 +238,56 @@ def _current_mandate(case_id: str) -> Mandate:
     return mandate
 
 
+def _case_members(case_id: str) -> set[str]:
+    """Every operator identity recorded as participating in this case.
+
+    Read access is granted to a case's participants, not to any configured
+    operator (RT-API-01, docs/red-team-api-authority-2026-10-31.md). Level 4
+    deliberately puts more than one investigator on a case, so membership is
+    the union of everyone the case's own recorded state names: the mandate
+    principal, every TaskResponsibility participant on its requirements, every
+    team-record actor, and every shift-handoff actor. This is a need-to-know
+    gate among configured operators; it is not a defense against a malicious
+    insider operator, who could make themselves a participant by recording a
+    claim — itself an audited mutation, and out of this threat model.
+    """
+    members: set[str] = set()
+    mandate = store.get(case_id, "mandate", "mandate-001", Mandate)
+    if mandate is not None:
+        members.add(mandate.principal)
+    for requirement in _load_requirements(case_id):
+        resp = requirement.responsibility
+        if resp is not None:
+            for field in (resp.owner, resp.accepted_by, resp.reported_done_by, resp.verified_by):
+                if field:
+                    members.add(field)
+    for record in list_team_records(store, case_id):
+        members.add(record.actor)
+    for event in list_shift_events(store, case_id):
+        members.add(event.actor)
+        if event.to_actor:
+            members.add(event.to_actor)
+    return members
+
+
+def _authorize_case_access(case_id: str, authorization: Optional[str]) -> str:
+    """Operator authentication plus per-case membership, for read endpoints.
+
+    `_operator` proves the caller is a configured operator; this adds the
+    check that the operator is a participant in THIS case, so a valid operator
+    with no relationship to the case is refused (403) instead of reading its
+    full overview. Writes already authorize per mandate (see
+    `_authenticated_principal`); this closes the read-side asymmetry recorded
+    as RT-API-01. A 403 here matches the write path, which already reveals a
+    case's existence to any operator, so this adds no new existence oracle.
+    """
+    identity, _ = _operator(authorization)
+    _case_or_404(case_id)
+    if identity not in _case_members(case_id):
+        raise HTTPException(403, "operator is not a participant in this case")
+    return identity
+
+
 def _observation_files(case_id: str, observations: list[Observation]) -> dict[str, Path]:
     return {o.id: observation_file_path(DATA_DIR, case_id, o.id) for o in observations}
 
@@ -446,8 +496,7 @@ class RevokeMandateRequest(BaseModel):
 
 @app.get("/api/cases/{case_id}", response_model=CaseOverview)
 def get_case(case_id: str, authorization: Optional[str] = Header(default=None)) -> CaseOverview:
-    _operator(authorization)
-    _case_or_404(case_id)
+    _authorize_case_access(case_id, authorization)
     mission = store.get(case_id, "mission", case_id, Mission)
     mandate = _current_mandate(case_id)
     observations = _load_observations(case_id)
@@ -535,8 +584,7 @@ def invalidate_case_observation(
 
 @app.get("/api/cases/{case_id}/activity")
 def get_activity(case_id: str, authorization: Optional[str] = Header(default=None)) -> list[dict]:
-    _operator(authorization)
-    _case_or_404(case_id)
+    _authorize_case_access(case_id, authorization)
     return store.list_events(case_id)
 
 
@@ -544,8 +592,7 @@ def get_activity(case_id: str, authorization: Optional[str] = Header(default=Non
 def get_prepared(
     case_id: str, prepared_action_id: str, authorization: Optional[str] = Header(default=None),
 ) -> PrepareResponse:
-    _operator(authorization)
-    _case_or_404(case_id)
+    _authorize_case_access(case_id, authorization)
     prepared = store.get(case_id, "prepared_action", prepared_action_id, PreparedAction)
     if prepared is None:
         raise HTTPException(404, "no such prepared action")
@@ -1000,8 +1047,7 @@ class AnnotationView(BaseModel):
 def get_acquisition(
     case_id: str, authorization: Optional[str] = Header(default=None),
 ) -> AcquisitionOverview:
-    _operator(authorization)
-    _case_or_404(case_id)
+    _authorize_case_access(case_id, authorization)
     requirements = _load_requirements(case_id)
     hypotheses = _load_hypotheses(case_id)
     capture_mandate = _capture_mandate(case_id)
@@ -1209,7 +1255,7 @@ def _history_or_404(case_id: str, workflow_id: str) -> AcquisitionRecordView:
 def get_acquired_observation(
     case_id: str, workflow_id: str, authorization: Optional[str] = Header(default=None),
 ) -> Response:
-    _operator(authorization)
+    _authorize_case_access(case_id, authorization)
     runtime = _require_acquisition()
     item = _history_or_404(case_id, workflow_id)
     if item.observation is None:
@@ -1226,7 +1272,7 @@ def get_acquired_observation(
 def get_acquired_annotation(
     case_id: str, workflow_id: str, authorization: Optional[str] = Header(default=None),
 ) -> AnnotationView:
-    _operator(authorization)
+    _authorize_case_access(case_id, authorization)
     runtime = _require_acquisition()
     item = _history_or_404(case_id, workflow_id)
     if item.annotation is None:
@@ -1452,8 +1498,7 @@ def _current_handoff(case_id: str) -> ShiftHandoff:
 
 @app.get("/api/cases/{case_id}/team", response_model=TeamOverview)
 def get_team(case_id: str, authorization: Optional[str] = Header(default=None)) -> TeamOverview:
-    _operator(authorization)
-    _case_or_404(case_id)
+    _authorize_case_access(case_id, authorization)
     return _team_overview(case_id)
 
 
@@ -1490,8 +1535,7 @@ def _handoff_view(case_id: str) -> HandoffView:
 
 @app.get("/api/cases/{case_id}/handoff", response_model=HandoffView)
 def get_handoff(case_id: str, authorization: Optional[str] = Header(default=None)) -> HandoffView:
-    _operator(authorization)
-    _case_or_404(case_id)
+    _authorize_case_access(case_id, authorization)
     return _handoff_view(case_id)
 
 
@@ -1571,8 +1615,7 @@ def _counterfactual_views(case_id: str) -> list[CounterfactualView]:
 def get_counterfactuals(
     case_id: str, authorization: Optional[str] = Header(default=None),
 ) -> list[CounterfactualView]:
-    _operator(authorization)
-    _case_or_404(case_id)
+    _authorize_case_access(case_id, authorization)
     return _counterfactual_views(case_id)
 
 

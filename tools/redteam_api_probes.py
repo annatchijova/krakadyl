@@ -14,12 +14,16 @@ Probes:
   P4  A's token but body claims principal=C      -> expect 403
   P5  execute the same prepared action twice     -> expect 2nd NOT executed
   P6  read an unknown case                        -> expect 404
-  P7  valid operator C reads A's case overview   -> OBSERVE (read-authorization
-                                                    granularity; see
-                                                    docs/red-team-api-authority-2026-10-31.md)
+  P7  non-participant operator D reads A's case   -> expect 403 (RT-API-01 closed)
+  P8  participant C (verifier) reads A's case     -> expect 200 (collaboration kept)
+  P9  participant A (principal) reads A's case    -> expect 200
 
-Exit code 0 if every HOLDS/BROKEN assertion matched its prediction; P7 is
-observational and never fails the run. Stdlib only; uses sys.executable.
+RT-API-01 (see docs/red-team-api-authority-2026-10-31.md) was the read-side
+asymmetry: any configured operator could read any case. Reads now authorize
+per-case membership, so P7 is refused while P8/P9 still succeed.
+
+Exit code 0 if every HOLDS/BROKEN assertion matched its prediction. Stdlib
+only; uses sys.executable.
 
 Run: python tools/redteam_api_probes.py
 """
@@ -69,16 +73,20 @@ def _req(method, url, token=None, body=None):
 
 
 def main() -> int:
-    tok_a = secrets.token_urlsafe(32)
-    tok_c = secrets.token_urlsafe(32)
+    tok_a = secrets.token_urlsafe(32)   # mandate principal + owner on case-001
+    tok_c = secrets.token_urlsafe(32)   # independent verifier on case-001 (a participant)
+    tok_d = secrets.token_urlsafe(32)   # a configured operator with NO relationship to case-001
     hash_a = hashlib.sha256(tok_a.encode()).hexdigest()
     hash_c = hashlib.sha256(tok_c.encode()).hexdigest()
+    hash_d = hashlib.sha256(tok_d.encode()).hexdigest()
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     tmp = tempfile.mkdtemp(prefix="krakadyl-redteam-")
 
     env = dict(os.environ)
-    env["KRAKADYL_OPERATOR_TOKENS"] = f"investigator-A={hash_a};investigator-C={hash_c}"
+    env["KRAKADYL_OPERATOR_TOKENS"] = (
+        f"investigator-A={hash_a};investigator-C={hash_c};investigator-D={hash_d}"
+    )
     env["KRAKADYL_DATA_DIR"] = tmp
     env["KRAKADYL_ENABLE_DEV_ROUTES"] = "0"
 
@@ -140,12 +148,18 @@ def main() -> int:
         check("P5 replay-execute", "2nd NOT executed", f"exec1={exec1} exec2={exec2}",
               exec1 is True and exec2 is not True)
 
-        # P7 is observational: it records read-authorization granularity, it
-        # does not assert a pass/fail. 200 means any configured operator can
-        # read any case overview; writes stay per-mandate (P3).
+        # RT-API-01, now closed. Reads are authorized per-case: a configured
+        # operator with no relationship to the case is refused, while the
+        # case's participants (the mandate principal A and the independent
+        # verifier C) still read it — so Level 4 collaboration is preserved.
+        st, _ = _req("GET", f"{base}/api/cases/case-001", tok_d)
+        check("P7 D-reads-A-case (non-participant)", "403", st, st == 403)
+
         st, _ = _req("GET", f"{base}/api/cases/case-001", tok_c)
-        print(f"[P7 C-reads-A-case] OBSERVE | observed {st} "
-              f"({'any operator reads any case' if st == 200 else 'read is case-scoped'})")
+        check("P8 C-reads-A-case (participant/verifier)", "200", st, st == 200)
+
+        st, _ = _req("GET", f"{base}/api/cases/case-001", tok_a)
+        check("P9 A-reads-A-case (participant/principal)", "200", st, st == 200)
 
         print("\n=== SUMMARY ===")
         print("  all authority assertions HOLD" if not failures else f"  BROKEN: {failures}")

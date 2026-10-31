@@ -60,9 +60,18 @@ exercises.
 
 ### RT-API-01 — read endpoints authorize the operator, not the case
 
-**Severity:** Low. **Epistemic level:** CODE FACT + CONFIRMED BY INDUCTION.
-**Bucket:** threat-model assumption (not a bypass, not a confirmed
-vulnerability).
+**Severity:** Low. **Status:** CLOSED 2026-10-31 (fix confirmed by induction;
+see Resolution). **Epistemic level:** CODE FACT + CONFIRMED BY INDUCTION.
+**Bucket:** authorization-granularity gap (not a bypass; writes were always
+scoped).
+
+**Framing correction (fallibilism).** The first probe demonstrated the gap
+with operator C reading A's case. That was imprecise: the seed records C as
+`verified_by` on obs-a1, so C is a legitimate *participant* — C reading the
+case is correct collaboration, not the violation. The real gap is a configured
+operator with **no** relationship to the case. Re-probed with investigator-D (a
+configured operator who is not a participant): D read the full case overview.
+That is the honest demonstration; C was a false witness for it.
 
 **Observation (P7, confirmed live):** operator C, who is a valid configured
 operator but is not `case-001`'s mandate principal, issued
@@ -86,14 +95,44 @@ need-to-know standard. Whether that asymmetry is acceptable is a product
 decision, and the honest-degradation rule says it must be stated, not left
 silent.
 
-**Open product question (for the maintainer, not resolved here):** is
-cross-operator read of a case intended (multi-investigator collaboration), or
-should reads also be checked against the case's mandate/assignment? If
-intended, document it as an explicit non-guarantee (a `known-limitations`
-entry). If not, reads need the same principal/assignment check the write path
-already applies — with care, because Level 4 deliberately allows multiple
-investigators on one case, so the check would be against case assignment, not
-a single mandate principal.
+**Product decision (maintainer, 2026-10-31):** close it — reads must be
+authorized per case.
+
+## Resolution — RT-API-01 (CONFIRMED BY INDUCTION)
+
+Read endpoints now authorize per-case membership, not merely "a valid
+operator." `krakadyl/api/app.py` gained `_case_members(case_id)` — the union
+of identities the case's own recorded state names (mandate principal, every
+`TaskResponsibility` participant on its requirements, every team-record actor,
+every shift-handoff actor) — and `_authorize_case_access(case_id,
+authorization)`, which all nine `GET /api/cases/...` endpoints now call in
+place of a bare `_operator(...)`. A non-participant operator is refused 403;
+participants are unaffected. Membership is deliberately derived from
+participation rather than a single mandate principal, because Level 4 puts
+several investigators on one case — scoping reads to the principal alone would
+have broken the independent verifier's own access.
+
+**Honest boundary kept, not hidden.** This is a need-to-know gate among
+configured operators. It is not a defense against a malicious insider
+operator, who can make themselves a participant by recording a claim — itself
+an audited mutation, and out of this round's threat model. The docstring on
+`_case_members` states this at the code.
+
+**Prediction stated before the run:** a configured non-participant (D) → 403;
+the principal (A) and the independent verifier (C) → 200.
+
+**Induction (live server, `tools/redteam_api_probes.py`):**
+
+```
+[P7 D-reads-A-case (non-participant)]      predict 403 | observed 403 | HOLDS
+[P8 C-reads-A-case (participant/verifier)] predict 200 | observed 200 | HOLDS
+[P9 A-reads-A-case (participant/principal)] predict 200 | observed 200 | HOLDS
+```
+
+Regression-locked without a network in
+`tests/test_api.py::test_reads_require_case_membership_not_just_an_operator_token`
+(D 403; A and C 200; the gate covers `/team`, `/handoff`, `/activity`, not only
+the overview). Full suite 423 passed.
 
 ## Discarded / confirmed-safe vectors
 
@@ -108,7 +147,10 @@ a single mandate principal.
 ## Result
 
 Six authority defenses confirmed by induction against the live server; one
-read-authorization-granularity gap recorded as a threat-model-dependent
-finding, correctly bucketed rather than inflated to a bypass. No change to
-code is made by this round; RT-API-01's disposition waits on the product
-decision above.
+read-authorization-granularity gap (RT-API-01) found, its framing corrected
+once (C was a participant, not a witness for the gap), and then closed on the
+maintainer's decision — reads now authorize per-case membership, confirmed by
+induction (D 403; A and C 200) and regression-locked in the suite (423
+passed). The finding was kept correctly bucketed throughout: an
+authorization-granularity gap among trusted operators, never inflated to a
+bypass.

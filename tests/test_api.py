@@ -938,3 +938,48 @@ def test_state_survives_reloading_the_app_against_the_same_data_dir(tmp_path, mo
         f"/api/cases/case-001/prepared/{prep['prepared']['id']}"
     ).json()
     assert fetched["prepared"]["id"] == prep["prepared"]["id"]
+
+
+def test_reads_require_case_membership_not_just_an_operator_token(tmp_path, monkeypatch):
+    """RT-API-01: a configured operator with no relationship to the case must
+    not read it, while the case's participants (principal A, independent
+    verifier C) still can. Closes the read-side authorization asymmetry
+    without breaking Level 4's multi-investigator collaboration.
+    """
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "0")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        ";".join(
+            [
+                f"investigator-A={hash_token('token-a')}",
+                f"investigator-C={hash_token('token-c')}",
+                f"investigator-D={hash_token('token-d')}",
+            ]
+        ),
+    )
+    monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
+    import krakadyl.api.app as app_module
+
+    importlib.reload(app_module)
+    client = TestClient(app_module.app)
+
+    # D is a valid configured operator (so this is 403 authorization, not 401
+    # authentication) but has no recorded relationship to case-001.
+    forbidden = client.get("/api/cases/case-001", headers={"Authorization": "Bearer token-d"})
+    assert forbidden.status_code == 403
+
+    # The participants the seed records still read: the mandate principal (A)
+    # and the independent verifier (C, verified_by on obs-a1).
+    for token in ("token-a", "token-c"):
+        allowed = client.get("/api/cases/case-001", headers={"Authorization": f"Bearer {token}"})
+        assert allowed.status_code == 200, token
+
+    # The gate covers the other case read endpoints, not only the overview.
+    for path in (
+        "/api/cases/case-001/team",
+        "/api/cases/case-001/handoff",
+        "/api/cases/case-001/activity",
+    ):
+        assert client.get(path, headers={"Authorization": "Bearer token-d"}).status_code == 403, path
+        assert client.get(path, headers={"Authorization": "Bearer token-a"}).status_code == 200, path
