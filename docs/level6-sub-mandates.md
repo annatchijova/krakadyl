@@ -57,6 +57,27 @@ are still fine. A chain with a missing ancestor or a cycle is a
 `DelegationRejected`, never a silent allow; the broadest failing authority is
 reported first (a revoked root over an out-of-scope leaf reads as the root).
 
+**Wired to the API and persistence.** Delegation is reachable over HTTP, with
+the same membership gate the read endpoints use (RT-API-01/02):
+
+- `POST /api/cases/{case_id}/mandates/{parent_id}/delegations` — only the
+  parent mandate's principal may delegate (`identity != parent.principal` is
+  403); the body's scope is run through `derive_sub_mandate` (a widening or
+  out-of-window delegation is 409); the sub-mandate is persisted as an ordinary
+  `mandate` object with its `parent_id`.
+- `GET /api/cases/{case_id}/delegations` — lists every sub-mandate with its
+  resolved chain and whether it is currently live.
+- `POST /api/cases/{case_id}/delegations/{sub_id}/authority-check` — decides a
+  triple under the sub-mandate against the chain re-resolved from *current*
+  persisted mandates, so revoking any ancestor (e.g. through the dev
+  revoke-mandate route) flips a previously-granted delegation to denied without
+  touching the child. Delegating to someone also makes them a case member
+  (`_case_members` now counts every mandate principal), so they can read the
+  case and delegate further down.
+
+`tests/test_api.py::test_sub_mandate_delegation_over_http` exercises the whole
+HTTP flow, including the revoke-kills-the-delegation re-check.
+
 **Evidence of the invariant, not assertion of it.** `tests/test_delegation.py`
 (21 cases) states each property as a falsifiable check: widening any of the
 three scope dimensions, starting before the parent, outliving or going
@@ -87,11 +108,14 @@ one `check_mandate` is reused rather than re-deriving scope logic.
 
 ## What is deliberately not built yet (stated, not approximated)
 
-- **No API/persistence wiring for sub-mandates.** This is the deterministic
-  core and its composition, with tests and a demo — the same shape every earlier
-  level started from (Level 1's "core skeleton" before the workspace, Level 3's
-  contracts before the case wiring). Exposing delegation over HTTP, persisting a
-  delegation chain, and showing it in the workspace are the next increments.
+- **No execution under a sub-mandate yet.** Delegation is created, persisted,
+  listed, and its live authority is re-checked over HTTP (see "Wired to the API"
+  below), but `prepare`/`execute` still act under the case's root mandate, not a
+  delegatee's sub-mandate. Threading a sub-mandate through the prepare/execute
+  authority linearization points — so a junior actually assembles a package
+  under their delegated slice, chain re-checked at prepare and execute — is the
+  next increment, and must carry the same revalidation those paths already do.
+  The workspace UI for delegation is also still to come.
 - **The other two Level 6 strands — persistent missions across real gaps and
   long-gap re-orientation — are not in this piece.** Missions already persist
   (SQLite) and `next_move`/the shift-handoff already answer "what do I pick up";
@@ -100,10 +124,12 @@ one `check_mandate` is reused rather than re-deriving scope logic.
 
 ## Required closure to call Level 6 complete
 
-Wire delegation through the API and persistence with the same authority
-revalidation the capture path already does (storing a delegation chain and
-re-checking it on every delegated action); and add the
-mission-continuity-across-real-time strand. The full ancestor-chain walk is now
-built (`authority_under_chain`); what remains is exposing and persisting it.
-Until then this is Level 6's authority core: real, tested, demonstrable, and
-architecturally the piece the rest of Level 6 builds on.
+Thread a sub-mandate through `prepare`/`execute` so a delegatee assembles a
+package under their delegated slice, with the chain re-checked at prepare and at
+execute exactly as those paths already revalidate the root mandate; add the
+delegation workspace UI; and add the mission-continuity-across-real-time strand.
+The authority core, the full ancestor-chain walk, and the HTTP/persistence
+wiring are built; what remains is letting a delegated action actually run, and
+the time-spanning strand. Until then this is Level 6's authority core and its
+delegation surface: real, tested, demonstrable over HTTP, and architecturally
+the piece the rest of Level 6 builds on.

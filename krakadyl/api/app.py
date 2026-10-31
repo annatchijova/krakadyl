@@ -77,6 +77,12 @@ from krakadyl.core.executor import (
     propose_recovery_route,
     verify_observation_integrity,
 )
+from krakadyl.core.delegation import (
+    DelegationRejected,
+    authority_under_chain,
+    derive_sub_mandate,
+    resolve_delegation_chain,
+)
 from krakadyl.core.counterfactual import (
     CaseInputs,
     Counterfactual,
@@ -252,8 +258,9 @@ def _case_members(case_id: str) -> set[str]:
     claim — itself an audited mutation, and out of this threat model.
     """
     members: set[str] = set()
-    mandate = store.get(case_id, "mandate", "mandate-001", Mandate)
-    if mandate is not None:
+    # Every mandate principal — the root, the capture mandate, and any Level 6
+    # sub-mandate — so delegating authority to someone makes them a participant.
+    for mandate in store.list(case_id, "mandate", Mandate):
         members.add(mandate.principal)
     for requirement in _load_requirements(case_id):
         resp = requirement.responsibility
@@ -1650,6 +1657,132 @@ def post_counterfactual(
 # this router" without the code actually providing a gate to use.
 # Setting KRAKADYL_ENABLE_DEV_ROUTES=0 is that gate now. It is never a
 # path an investigator would use on a real case.
+
+# --- Level 6: sub-mandate delegation over HTTP ---------------------------
+#
+# Delegation is persisted as ordinary `mandate` objects (each sub-mandate has
+# its own id and a parent_id), so the whole chain lives in the same store and
+# the authority check re-resolves it against CURRENT state every time. A parent
+# revoked through /api/dev/.../revoke-mandate (or any future revocation path)
+# therefore kills every delegation beneath it without touching the children —
+# the same composition closure the core enforces, now reachable over HTTP.
+# Executing *under* a sub-mandate (threading it through prepare/execute) is the
+# next increment; see docs/level6-sub-mandates.md.
+
+
+class DelegateRequest(BaseModel):
+    principal: str = Field(min_length=1, max_length=128)
+    resources: list[str] = Field(min_length=1, max_length=64)
+    operations: list[str] = Field(min_length=1, max_length=64)
+    destinations: list[str] = Field(min_length=1, max_length=64)
+    valid_until: Optional[datetime] = None
+    valid_from: Optional[datetime] = None
+
+
+class DelegatedAuthorityCheckRequest(BaseModel):
+    resource: str = Field(min_length=1, max_length=256)
+    operation: str = Field(min_length=1, max_length=128)
+    destination: str = Field(min_length=1, max_length=256)
+
+
+class DelegationView(BaseModel):
+    mandate: Mandate
+    chain: list[str]  # mandate ids, leaf -> root
+    live: bool
+    status: str
+
+
+def _all_case_mandates(case_id: str) -> dict[str, Mandate]:
+    return {m.id: m for m in store.list(case_id, "mandate", Mandate)}
+
+
+def _delegation_view(case_id: str, sub: Mandate, at: datetime,
+                     mandates: Optional[dict[str, Mandate]] = None) -> DelegationView:
+    mandates = mandates if mandates is not None else _all_case_mandates(case_id)
+    try:
+        chain_ids = [m.id for m in resolve_delegation_chain(sub, mandates)]
+        # The sub-mandate's own first (resource, operation, destination) is
+        # within every ancestor by construction, so a denial of it can only
+        # come from an ancestor revoked/expired now — i.e. it reports liveness.
+        check = authority_under_chain(
+            sub, mandates, resource=sub.resources[0], operation=sub.operations[0],
+            destination=sub.destinations[0], now=at,
+        )
+        return DelegationView(
+            mandate=sub, chain=chain_ids,
+            live=check.authority_state == AuthorityState.GRANTED,
+            status="; ".join(check.reasons),
+        )
+    except DelegationRejected as exc:
+        return DelegationView(mandate=sub, chain=[sub.id], live=False, status=str(exc))
+
+
+@app.post("/api/cases/{case_id}/mandates/{parent_id}/delegations", response_model=DelegationView)
+def delegate_mandate(
+    case_id: str, parent_id: str, body: DelegateRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> DelegationView:
+    identity = _authorize_case_access(case_id, authorization)
+    mandates = _all_case_mandates(case_id)
+    parent = mandates.get(parent_id)
+    if parent is None:
+        raise HTTPException(404, "no such mandate")
+    # Only the holder of a mandate may delegate a slice of it — you cannot hand
+    # out authority that is not yours.
+    if identity != parent.principal:
+        raise HTTPException(403, f"only the mandate's principal '{parent.principal}' can delegate from it")
+    at = now()
+    try:
+        sub = derive_sub_mandate(
+            parent, id=f"submandate-{uuid.uuid4().hex[:12]}", principal=body.principal,
+            resources=body.resources, operations=body.operations, destinations=body.destinations,
+            valid_from=body.valid_from or at, valid_until=body.valid_until, now=at,
+        )
+    except DelegationRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+    store.put_and_log_event(
+        case_id, "mandate", sub, "mandate_delegated",
+        f"{identity} delegated a sub-mandate to {body.principal} (parent {parent_id})",
+        {"sub_mandate_id": sub.id, "parent_id": parent_id}, at.isoformat(),
+    )
+    mandates[sub.id] = sub
+    return _delegation_view(case_id, sub, at, mandates)
+
+
+@app.get("/api/cases/{case_id}/delegations", response_model=list[DelegationView])
+def list_delegations(case_id: str, authorization: Optional[str] = Header(default=None)) -> list[DelegationView]:
+    _authorize_case_access(case_id, authorization)
+    at = now()
+    mandates = _all_case_mandates(case_id)
+    return [
+        _delegation_view(case_id, m, at, mandates)
+        for m in mandates.values() if m.parent_id is not None
+    ]
+
+
+@app.post("/api/cases/{case_id}/delegations/{sub_id}/authority-check")
+def check_delegated_authority(
+    case_id: str, sub_id: str, body: DelegatedAuthorityCheckRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> dict:
+    _authorize_case_access(case_id, authorization)
+    mandates = _all_case_mandates(case_id)
+    sub = mandates.get(sub_id)
+    if sub is None or sub.parent_id is None:
+        raise HTTPException(404, "no such sub-mandate")
+    try:
+        check = authority_under_chain(
+            sub, mandates, resource=body.resource, operation=body.operation,
+            destination=body.destination, now=now(),
+        )
+    except DelegationRejected as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {
+        "authority_state": check.authority_state.value,
+        "outside_scope": check.outside_scope,
+        "reasons": check.reasons,
+    }
+
 
 dev_router = APIRouter()
 

@@ -1028,3 +1028,75 @@ def test_case_state_posts_require_membership_not_just_an_operator(tmp_path, monk
     assert client.post(
         "/api/cases/case-001/requirements/req-device-a-clock/acquisition-proposals", headers=A, json=acq
     ).status_code != 403
+
+
+def test_sub_mandate_delegation_over_http(tmp_path, monkeypatch):
+    """Level 6 delegation wired to the API: only a mandate's principal can
+    delegate a strictly narrower sub-mandate; it persists; a widening is
+    refused; a non-member cannot see or create delegations; and revoking the
+    parent kills the delegated authority live, re-checked against current
+    state, without touching the child.
+    """
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "1")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        ";".join([
+            f"investigator-A={hash_token('token-a')}",
+            f"investigator-C={hash_token('token-c')}",
+            f"investigator-D={hash_token('token-d')}",
+        ]),
+    )
+    monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
+    import krakadyl.api.app as app_module
+
+    importlib.reload(app_module)
+    client = TestClient(app_module.app)
+    A = {"Authorization": "Bearer token-a"}   # mandate-001 principal (member)
+    C = {"Authorization": "Bearer token-c"}   # a case member, not the principal
+    D = {"Authorization": "Bearer token-d"}   # a configured operator, not a member
+
+    parent_until = client.get("/api/cases/case-001", headers=A).json()["mandate"]["valid_until"]
+    narrow = {
+        "principal": "investigator-J",
+        "resources": ["case-001/device-A"],
+        "operations": ["package_export"],
+        "destinations": ["reviewer-authorized"],
+        "valid_until": parent_until,
+    }
+
+    # A (the principal) delegates a narrower sub-mandate.
+    created = client.post("/api/cases/case-001/mandates/mandate-001/delegations", headers=A, json=narrow)
+    assert created.status_code == 200, created.text
+    view = created.json()
+    assert view["live"] is True
+    assert view["mandate"]["parent_id"] == "mandate-001"
+    assert view["chain"][-1] == "mandate-001"
+    sub_id = view["mandate"]["id"]
+
+    # Delegating to J made J a member: J can now read the case.
+    assert client.get("/api/cases/case-001", headers={"Authorization": "Bearer %s" % "token-a"}).status_code == 200
+
+    # A member who is not the principal cannot delegate someone else's authority.
+    assert client.post("/api/cases/case-001/mandates/mandate-001/delegations", headers=C, json=narrow).status_code == 403
+
+    # A non-member can neither list nor create delegations.
+    assert client.get("/api/cases/case-001/delegations", headers=D).status_code == 403
+    assert client.post("/api/cases/case-001/mandates/mandate-001/delegations", headers=D, json=narrow).status_code == 403
+
+    # A sub-mandate cannot widen the parent.
+    widen = {**narrow, "resources": ["case-001/device-C"]}
+    assert client.post("/api/cases/case-001/mandates/mandate-001/delegations", headers=A, json=widen).status_code == 409
+
+    triple = {"resource": "case-001/device-A", "operation": "package_export", "destination": "reviewer-authorized"}
+    granted = client.post(f"/api/cases/case-001/delegations/{sub_id}/authority-check", headers=A, json=triple)
+    assert granted.json()["authority_state"] == "granted"
+
+    # Revoke the parent; the delegated authority dies, re-checked against current
+    # state, and the listing shows it is no longer live.
+    assert client.post("/api/dev/cases/case-001/revoke-mandate", headers=A, json={"reason": "reassigned"}).status_code == 200
+    denied = client.post(f"/api/cases/case-001/delegations/{sub_id}/authority-check", headers=A, json=triple)
+    assert denied.json()["authority_state"] == "denied"
+    assert any("parent mandate" in r or "root mandate" in r for r in denied.json()["reasons"])
+    listed = client.get("/api/cases/case-001/delegations", headers=A).json()
+    assert listed and all(d["live"] is False for d in listed)

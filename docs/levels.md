@@ -826,10 +826,16 @@ any more distant ancestor — revoked or expired after derivation revokes
 everything delegated beneath it; a broken or cyclic chain is refused, never
 silently allowed. `demo/run_case_003_level6.py` walks it end to end. This
 carries invariant 1 (authority outside the model) into delegation and
-reuses the one `check_mandate`. **Deliberately not built yet** (documented,
-not approximated — see [level6-sub-mandates.md](level6-sub-mandates.md)):
-API/persistence wiring for delegation (storing a chain and re-checking it on
-every delegated action), and the mission-continuity-across-real-time strand.
+reuses the one `check_mandate`. Delegation is wired to the API and
+persistence: `POST .../mandates/{id}/delegations` (principal-gated,
+`derive_sub_mandate`), `GET .../delegations` (live chain status), and
+`POST .../delegations/{id}/authority-check` (re-resolves the chain against
+current persisted mandates, so revoking an ancestor flips a delegation to
+denied), all membership-gated, with `test_sub_mandate_delegation_over_http`
+covering the flow. **Deliberately not built yet** (documented, not
+approximated — see [level6-sub-mandates.md](level6-sub-mandates.md)):
+execution *under* a sub-mandate (threading it through prepare/execute), the
+delegation workspace UI, and the mission-continuity-across-real-time strand.
 Missions already persist and `next_move`/the shift-handoff already answer
 "what do I pick up"; the time-spanning re-orientation on top of them is
 future Level 6 work.
