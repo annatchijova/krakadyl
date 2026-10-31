@@ -983,3 +983,48 @@ def test_reads_require_case_membership_not_just_an_operator_token(tmp_path, monk
     ):
         assert client.get(path, headers={"Authorization": "Bearer token-d"}).status_code == 403, path
         assert client.get(path, headers={"Authorization": "Bearer token-a"}).status_code == 200, path
+
+
+def test_case_state_posts_require_membership_not_just_an_operator(tmp_path, monkeypatch):
+    """RT-API-02 (beyond-the-fix on RT-API-01): POST endpoints that echo real
+    case state must also require case membership, not merely a valid operator
+    token, or they are read side-channels around the GET read gate. A
+    non-participant operator (D) is refused (403) on POST /counterfactuals,
+    POST /acquisition-proposals, and POST /abstain; a participant (A) is not.
+    """
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "0")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')};investigator-D={hash_token('token-d')}",
+    )
+    monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
+    import krakadyl.api.app as app_module
+
+    importlib.reload(app_module)
+    client = TestClient(app_module.app)
+    D = {"Authorization": "Bearer token-d"}
+    A = {"Authorization": "Bearer token-a"}
+
+    cf = {
+        "question": {"operation": "package_export", "allowed_device": "device-B", "destination": "reviewer-authorized"},
+        "deltas": [{"kind": "grant_resource", "value": "case-001/device-B"}],
+    }
+    acq = {"capture_instructions": "photograph the clock"}
+    ab = {"expected_requirement_revision": "0", "reason": "not obtainable"}
+
+    # Non-member D is refused on each (authorization precedes the body/work).
+    assert client.post("/api/cases/case-001/counterfactuals", headers=D, json=cf).status_code == 403
+    assert client.post(
+        "/api/cases/case-001/requirements/req-device-a-clock/acquisition-proposals", headers=D, json=acq
+    ).status_code == 403
+    assert client.post(
+        "/api/cases/case-001/requirements/req-device-a-clock/abstain", headers=D, json=ab
+    ).status_code == 403
+
+    # Member A is not refused on authorization (counterfactual is a clean 200;
+    # the acquisition proposal reaches acquisition handling, never a 403).
+    assert client.post("/api/cases/case-001/counterfactuals", headers=A, json=cf).status_code == 200
+    assert client.post(
+        "/api/cases/case-001/requirements/req-device-a-clock/acquisition-proposals", headers=A, json=acq
+    ).status_code != 403

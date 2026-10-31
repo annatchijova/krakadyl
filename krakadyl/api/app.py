@@ -1088,8 +1088,10 @@ def propose_acquisition(
     case_id: str, requirement_id: str, body: ProposeAcquisitionRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> StoredAcquisitionProposal:
-    identity, _ = _operator(authorization)
-    _case_or_404(case_id)
+    # Proposing a capture reads the requirement and returns its derived
+    # content, so it requires case membership (RT-API-02), not merely a valid
+    # operator token.
+    identity = _authorize_case_access(case_id, authorization)
     runtime = _require_acquisition()
     requirement = _requirement_or_404(case_id, requirement_id)
     try:
@@ -1324,8 +1326,9 @@ def abstain(
     case_id: str, requirement_id: str, body: AbstainRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> EvidenceRequirement:
-    identity, _ = _operator(authorization)
-    _case_or_404(case_id)
+    # Abstaining mutates a requirement and returns it, so it requires case
+    # membership (RT-API-02), not merely a valid operator token.
+    identity = _authorize_case_access(case_id, authorization)
     _requirement_or_404(case_id, requirement_id)
     try:
         return abstain_requirement(
@@ -1623,8 +1626,12 @@ def get_counterfactuals(
 def post_counterfactual(
     case_id: str, body: CounterfactualRequest, authorization: Optional[str] = Header(default=None),
 ) -> CounterfactualView:
-    identity, _ = _operator(authorization)
-    _case_or_404(case_id)
+    # Case-scoped read: a counterfactual echoes the case's REAL outcome
+    # (verdict, evidence/authority state, which observations would be
+    # included), so it requires case membership, not merely a valid operator
+    # token — otherwise it is a read side-channel around the GET read gate
+    # (RT-API-02, docs/red-team-level5-counterfactuals-2026-10-31.md).
+    identity = _authorize_case_access(case_id, authorization)
     try:
         counterfactual = evaluate_counterfactual(
             _case_inputs(case_id), body.question, tuple(body.deltas), created_by=identity, now=now(),
