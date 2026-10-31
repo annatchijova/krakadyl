@@ -77,17 +77,15 @@ with a throwaway token and data directory, drives the three calls, asserts the
 receipt, and tears everything down. This is the live equivalent of acceptance
 gate 3 and the "one real API request" work-order item above.
 
-**Honest caveat, not yet closed.** This verification ran in the local `.venv`
-(Python 3.12), which is not the locked Python 3.11 environment the committed
-`uv.lock` and the CI workflow pin. CI builds and runs the suite under locked
-3.11 but exercises the API only through `TestClient`, never a live uvicorn
-server. So what is proven is that the live server serves the full narrative in
-this environment; what is not yet proven is that the locked 3.11 environment
-does too. Closure: run `tools/api_smoke.py` once under `uv run` on the locked
-environment (or add it as a CI step with a hard timeout, so a regression of the
-original hang fails the job instead of hanging it) before trusting a locked
-runner for a live demo. Record the demo in an environment where
-`tools/api_smoke.py` has passed.
+**Caveat, closed 2026-10-31 in CI.** The first live verification ran in the
+local `.venv` (Python 3.12), which is not the locked Python 3.11 environment the
+committed `uv.lock` and the CI workflow pin. That gap is now closed: the CI
+python job runs `tools/api_smoke.py` under locked 3.11 on a clean runner,
+wrapped in an OS-level `timeout 90` so a regression of the original hang fails
+the job (exit 124) instead of hanging it. The run on commit `440fd09` passed
+the `Live-server API smoke check` step, so the live GET + prepare + execute
+narrative is proven under the locked environment, not only under the local 3.12
+venv. Record the demo in an environment where `tools/api_smoke.py` has passed.
 
 The freeze tags `freeze-mvp-auth-20261030-173844` and
 `freeze-before-redteam-remediation-20261030-175604` are published remotely;
