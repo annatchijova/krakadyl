@@ -151,3 +151,17 @@ button:disabled {
   font-size: 0.85rem;
   font-weight: 600;
 }
+
+/* Level 6 panels: compact lists for resume + delegation summaries. */
+.tight-list {
+  list-style: none;
+  margin: 0.35rem 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+}
+.tight-list li {
+  line-height: 1.35;
+}

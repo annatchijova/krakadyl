@@ -17,6 +17,8 @@ import { LayaNotePanel } from "./components/LayaNotePanel";
 import { AcquisitionPanel } from "./components/AcquisitionPanel";
 import { TeamPanel } from "./components/TeamPanel";
 import { WhatIfPanel } from "./components/WhatIfPanel";
+import { DelegationPanel } from "./components/DelegationPanel";
+import { ResumePanel } from "./components/ResumePanel";
 import { Logo } from "./components/Logo";
 
 const CASE_ID = "case-001";
@@ -179,6 +181,15 @@ function App() {
               <WhatIfPanel caseId={CASE_ID} caseVersion={activity.length} token={operatorToken} />
             </div>
             <div className="section-gap">
+              <DelegationPanel
+                caseId={CASE_ID}
+                caseVersion={activity.length}
+                token={operatorToken}
+                rootMandate={overview.mandate}
+                onChanged={refresh}
+              />
+            </div>
+            <div className="section-gap">
               <LayaNotePanel busy={busy} onAnalyze={(noteText) => api.analyzeNote(CASE_ID, noteText)} />
             </div>
             <div className="section-gap">
@@ -192,6 +203,7 @@ function App() {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <ResumePanel caseId={CASE_ID} caseVersion={activity.length} />
             <NextMovePanel
               decision={decision}
               prepared={prepared}

@@ -260,3 +260,74 @@ export const counterfactualApi = {
       body: JSON.stringify(body),
     }),
 };
+
+// Level 6 — sub-mandate delegation and mission continuity. Hand-typed (like
+// ActivityEvent above) rather than regenerated, so the UI does not depend on
+// re-running the OpenAPI codegen against a live backend.
+export type DelegationMandate = {
+  id: string;
+  principal: string;
+  issuer: string;
+  resources: string[];
+  operations: string[];
+  destinations: string[];
+  valid_from: string;
+  valid_until: string | null;
+  revoked: boolean;
+  revision: string;
+  parent_id: string | null;
+};
+
+export type DelegationView = {
+  mandate: DelegationMandate;
+  chain: string[]; // mandate ids, leaf -> root
+  live: boolean;
+  status: string;
+};
+
+export type DelegateBody = {
+  principal: string;
+  resources: string[];
+  operations: string[];
+  destinations: string[];
+  valid_until?: string | null;
+  valid_from?: string | null;
+};
+
+export type ResumeGapItem = {
+  requirement_id: string;
+  what_is_lost_if_missed: string;
+  at: string | null;
+};
+
+export type ResumeBriefing = {
+  gap_seconds: number;
+  gap_human: string;
+  mandates_expired_while_away: string[];
+  delegations_expired_while_away: string[];
+  recovery_closed_while_away: ResumeGapItem[];
+  recovery_still_open: ResumeGapItem[];
+  conditional_or_unknown_watch: string[];
+  headline: string;
+};
+
+export const delegationApi = {
+  list: (caseId: string) => request<DelegationView[]>(`/api/cases/${caseId}/delegations`),
+  delegate: (caseId: string, parentId: string, token: string, body: DelegateBody) =>
+    request<DelegationView>(`/api/cases/${caseId}/mandates/${parentId}/delegations`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify(body),
+    }),
+  authorityCheck: (
+    caseId: string,
+    subId: string,
+    token: string,
+    triple: { resource: string; operation: string; destination: string },
+  ) =>
+    request<{ authority_state: string; outside_scope: boolean; reasons: string[] }>(
+      `/api/cases/${caseId}/delegations/${subId}/authority-check`,
+      { method: "POST", headers: bearer(token), body: JSON.stringify(triple) },
+    ),
+  resume: (caseId: string) => request<ResumeBriefing>(`/api/cases/${caseId}/resume`),
+};
