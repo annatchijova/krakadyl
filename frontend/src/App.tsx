@@ -156,11 +156,27 @@ function App() {
           </section>
         </main>
       ) : overview ? (
-        <div className="workspace">
-          <CaseSidebar overview={overview} />
-          <div>
-            <EvidencePanel evidence={overview.evidence} />
-            <div className="section-gap">
+        <div className="workspace-shell">
+          <div className="workspace-intro">
+            <div>
+              <p className="workspace-eyebrow">INVESTIGATION WORKSPACE / {CASE_ID}</p>
+              <h1>From evidence to your next move.</h1>
+              <p>Trace the case, preserve what can still be recovered, and keep authority explicit.</p>
+            </div>
+            <nav className="workspace-nav" aria-label="Case sections">
+              <a href="#evidence">Evidence</a>
+              <a href="#acquisition">Acquisition</a>
+              <a href="#handoff">Handoff</a>
+              <a href="#tools">Tools</a>
+            </nav>
+          </div>
+          <div className="workspace">
+          <aside className="workspace-case" aria-label="Case context">
+            <CaseSidebar overview={overview} />
+          </aside>
+          <main className="workspace-main">
+            <div id="evidence"><EvidencePanel evidence={overview.evidence} /></div>
+            <div className="section-gap" id="acquisition">
               <AcquisitionPanel
                 caseId={CASE_ID}
                 caseVersion={activity.length}
@@ -168,7 +184,7 @@ function App() {
                 token={operatorToken}
               />
             </div>
-            <div className="section-gap">
+            <div className="section-gap" id="handoff">
               <TeamPanel
                 caseId={CASE_ID}
                 caseVersion={activity.length}
@@ -177,33 +193,45 @@ function App() {
                 onChanged={refresh}
               />
             </div>
-            <div className="section-gap">
-              <WhatIfPanel caseId={CASE_ID} caseVersion={activity.length} token={operatorToken} />
-            </div>
-            <div className="section-gap">
-              <DelegationPanel
-                caseId={CASE_ID}
-                caseVersion={activity.length}
-                token={operatorToken}
-                rootMandate={overview.mandate}
-                onChanged={refresh}
-              />
-            </div>
-            <div className="section-gap">
-              <LayaNotePanel busy={busy} onAnalyze={(noteText) => api.analyzeNote(CASE_ID, noteText)} />
-            </div>
-            <div className="section-gap">
-              <DevPanel
-                busy={busy}
-                onTamper={handleTamper}
-                onRevokeMandate={handleRevokeMandate}
-                onUnresolveHypothesis={handleUnresolveHypothesis}
-                onReset={handleReset}
-              />
-            </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <ResumePanel caseId={CASE_ID} caseVersion={activity.length} />
+            <section className="workspace-tools" id="tools" aria-label="Additional case tools">
+              <div className="tools-heading">
+                <div>
+                  <h2>Additional tools</h2>
+                  <p>Open the workspace you need without losing the case overview.</p>
+                </div>
+                <span className="tools-count">4 modules</span>
+              </div>
+              <details className="tool-disclosure">
+                <summary><span><strong>What if…</strong><small>Compare assumptions against the real case. Hypothetical only.</small></span></summary>
+                <WhatIfPanel caseId={CASE_ID} caseVersion={activity.length} token={operatorToken} />
+              </details>
+              <details className="tool-disclosure">
+                <summary><span><strong>Delegation</strong><small>Inspect authority chains and assign narrower scopes.</small></span></summary>
+                <DelegationPanel
+                  caseId={CASE_ID}
+                  caseVersion={activity.length}
+                  token={operatorToken}
+                  rootMandate={overview.mandate}
+                  onChanged={refresh}
+                />
+              </details>
+              <details className="tool-disclosure">
+                <summary><span><strong>Laya handoff note</strong><small>Analyze typed signals, never certify a claim.</small></span></summary>
+                <LayaNotePanel busy={busy} onAnalyze={(noteText) => api.analyzeNote(CASE_ID, noteText)} />
+              </details>
+              <details className="tool-disclosure tool-disclosure-dev">
+                <summary><span><strong>Simulation · dev only</strong><small>Mutates demo state; not a real investigative action.</small></span></summary>
+                <DevPanel
+                  busy={busy}
+                  onTamper={handleTamper}
+                  onRevokeMandate={handleRevokeMandate}
+                  onUnresolveHypothesis={handleUnresolveHypothesis}
+                  onReset={handleReset}
+                />
+              </details>
+            </section>
+          </main>
+          <aside className="workspace-rail" aria-label="Next action and case activity">
             <NextMovePanel
               decision={decision}
               prepared={prepared}
@@ -216,7 +244,10 @@ function App() {
               onExecute={handleExecute}
               onRecover={handleRecover}
             />
+            <ResumePanel caseId={CASE_ID} caseVersion={activity.length} />
+
             <ActivityFeed events={activity} />
+          </aside>
           </div>
         </div>
       ) : (

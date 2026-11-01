@@ -165,3 +165,24 @@ button:disabled {
 .tight-list li {
   line-height: 1.35;
 }
+
+/* Accessible interaction polish */
+body { line-height: 1.5; }
+.panel { border-radius: 12px; padding: 1.15rem 1.2rem; box-shadow: 0 1px 0 rgba(255,255,255,0.025) inset; }
+.panel h2 { margin-bottom: 0.85rem; font-size: 0.9rem; letter-spacing: 0.045em; }
+.panel p { overflow-wrap: anywhere; }
+button { min-height: 36px; transition: background-color 120ms ease, border-color 120ms ease; }
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--signal); outline-offset: 3px;
+}
+input, select, textarea { min-width: 0; max-width: 100%; accent-color: var(--signal); }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea { background-color: var(--panel-raised); color: var(--text); border-color: #32635d; }
+input::placeholder, textarea::placeholder { color: #abc1bb; opacity: 0.85; }
+select option { background: #123c38; color: #effaf5; }
+.badge { font-size: 0.79rem; line-height: 1.4; }
+.reason-text { font-size: 0.88rem; line-height: 1.5; }
+.evidence-main .obs-meta { font-size: 0.83rem; }
+.activity-item { font-size: 0.85rem; }
+.button-primary { padding: 0.62em 1.1em; }
+.button-secondary { border-color: #38645e; }
+@media (prefers-reduced-motion: reduce) { button { transition: none; } }
