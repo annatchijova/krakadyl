@@ -15,9 +15,15 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-from krakadyl.core.models import EvidenceRequirement, EvidenceState, RecoveryWindowKind, TaskStatus
+from krakadyl.core.models import (
+    EvidenceRequirement,
+    EvidenceState,
+    Mandate,
+    RecoveryWindowKind,
+    TaskStatus,
+)
 
 
 def evidence_state_from_requirement(req: EvidenceRequirement) -> EvidenceState:
@@ -222,4 +228,120 @@ def next_move(requirements: list[EvidenceRequirement]) -> NextMove:
         blocked=blocked,
         conditional_watch=conditional_watch,
         dependents_count=dependents_count,
+    )
+
+
+# --- Level 6: re-orientation after a long real-time gap ------------------
+#
+# next_move answers "what now" from the current requirement set, but it ranks
+# windows by absolute `until` and does not know how much real time has passed —
+# a window that closed while the investigator was away would still be ranked as
+# if it were open. resume_after_gap is the long-gap companion: given the moment
+# of the last recorded activity and now, it reports what crossed a threshold
+# *while away* purely because time passed — mandates (and delegations) that
+# expired, recovery windows that closed — so a case picked up after days or
+# weeks is not silently treated as if nothing moved. It is a pure read: no
+# authority changes, nothing is mutated, and no float enters (durations are
+# integer seconds).
+
+
+class GapItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    requirement_id: str
+    what_is_lost_if_missed: str
+    at: Optional[datetime] = None  # the window's `until` (closed, or still-open deadline)
+
+
+class ResumeBriefing(BaseModel):
+    """What changed on a case between the last recorded activity and now, due to
+    elapsed time alone. The forward-looking "what now" stays with next_move;
+    this is strictly the then->now diff a returning investigator would otherwise
+    have to reconstruct by hand."""
+
+    model_config = ConfigDict(frozen=True)
+
+    gap_seconds: int
+    gap_human: str
+    mandates_expired_while_away: tuple[str, ...] = ()
+    delegations_expired_while_away: tuple[str, ...] = ()
+    recovery_closed_while_away: tuple[GapItem, ...] = ()
+    recovery_still_open: tuple[GapItem, ...] = ()
+    conditional_or_unknown_watch: tuple[str, ...] = ()
+    headline: str
+
+
+def _humanize_gap(seconds: int) -> str:
+    """Integer-only human duration — no float reaches any sealed or decision
+    path, and this string is cosmetic regardless."""
+    if seconds < 60:
+        return f"{seconds} second{'s' if seconds != 1 else ''}"
+    parts = []
+    for label, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        count, seconds = divmod(seconds, size)
+        if count:
+            parts.append(f"{count} {label}{'s' if count != 1 else ''}")
+    return ", ".join(parts) if parts else "under a minute"
+
+
+def resume_after_gap(
+    *,
+    requirements: list[EvidenceRequirement],
+    mandates: list[Mandate],
+    since: datetime,
+    now: datetime,
+) -> ResumeBriefing:
+    """Re-orientation for a case picked up after a real-time gap. `since` is the
+    last recorded activity; `now` is the moment of return. Reports what expired
+    or closed in the half-open interval (since, now] and what recovery windows
+    are still open, ranked soonest first. Does not rank by a fabricated urgency
+    horizon and does not touch authority — a window still open is reported with
+    its deadline, not a verdict."""
+    gap_seconds = max(int((now - since).total_seconds()), 0)
+
+    expired: list[str] = []
+    delegations_expired: list[str] = []
+    for m in mandates:
+        if m.valid_until is not None and since < m.valid_until <= now:
+            expired.append(m.id)
+            if m.parent_id is not None:
+                delegations_expired.append(m.id)
+
+    closed: list[GapItem] = []
+    still_open: list[GapItem] = []
+    watch: list[str] = []
+    for r in requirements:
+        if r.resolved or r.unresolvable or r.blocked_by_authority:
+            continue
+        rw = r.recovery_window
+        if rw is None or rw.kind in (RecoveryWindowKind.CONDITIONAL, RecoveryWindowKind.UNKNOWN):
+            watch.append(r.id)
+            continue
+        if rw.until is None:
+            watch.append(r.id)
+            continue
+        item = GapItem(requirement_id=r.id, what_is_lost_if_missed=rw.what_is_lost_if_missed, at=rw.until)
+        if rw.until <= now:
+            # Closed. Only count it as "while away" if it was still open at the
+            # last activity — a window already closed before the gap is old news.
+            if rw.until > since:
+                closed.append(item)
+        else:
+            still_open.append(item)
+
+    still_open.sort(key=lambda i: i.at)  # soonest deadline first
+    headline = (
+        f"Picked up after {_humanize_gap(gap_seconds)}: "
+        f"{len(expired)} mandate(s) expired and {len(closed)} recovery window(s) closed while away; "
+        f"{len(still_open)} still open, {len(watch)} on conditional/unknown watch."
+    )
+    return ResumeBriefing(
+        gap_seconds=gap_seconds,
+        gap_human=_humanize_gap(gap_seconds),
+        mandates_expired_while_away=tuple(expired),
+        delegations_expired_while_away=tuple(delegations_expired),
+        recovery_closed_while_away=tuple(closed),
+        recovery_still_open=tuple(still_open),
+        conditional_or_unknown_watch=tuple(watch),
+        headline=headline,
     )

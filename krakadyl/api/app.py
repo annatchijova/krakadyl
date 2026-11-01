@@ -68,7 +68,12 @@ from krakadyl.core.evaluation import (
     acquisition_history,
     record_evaluation,
 )
-from krakadyl.core.continuity import evidence_state_from_requirement, next_move
+from krakadyl.core.continuity import (
+    ResumeBriefing,
+    evidence_state_from_requirement,
+    next_move,
+    resume_after_gap,
+)
 from krakadyl.core.executor import (
     DEFAULT_PREPARED_ACTION_TTL,
     check_mandate,
@@ -1712,6 +1717,30 @@ def get_counterfactuals(
 ) -> list[CounterfactualView]:
     _authorize_case_access(case_id, authorization)
     return _counterfactual_views(case_id)
+
+
+@app.get("/api/cases/{case_id}/resume", response_model=ResumeBriefing)
+def resume_case(case_id: str, authorization: Optional[str] = Header(default=None)) -> ResumeBriefing:
+    """Level 6 re-orientation: what changed on this case between the last
+    recorded activity and now, purely because time passed — mandates and
+    delegations that expired, recovery windows that closed — so a case picked up
+    after a real-time gap is not silently treated as if nothing moved. A pure
+    read; `since` is the timestamp of the last recorded event (or the mission's
+    creation if none), never a value the caller supplies."""
+    _authorize_case_access(case_id, authorization)
+    current = now()
+    events = store.list_events(case_id)
+    if events:
+        since = datetime.fromisoformat(events[-1]["ts"])
+    else:
+        mission = store.get(case_id, "mission", case_id, Mission)
+        since = mission.created_at if mission is not None else current
+    return resume_after_gap(
+        requirements=_load_requirements(case_id),
+        mandates=store.list(case_id, "mandate", Mandate),
+        since=since,
+        now=current,
+    )
 
 
 @app.post("/api/cases/{case_id}/counterfactuals", response_model=CounterfactualView)

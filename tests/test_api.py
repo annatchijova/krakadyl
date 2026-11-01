@@ -1160,3 +1160,32 @@ def test_execute_under_a_delegated_sub_mandate(tmp_path, monkeypatch):
         "destination": "reviewer-authorized", "sub_mandate_id": sub_id})
     assert refused.status_code == 409
     assert "parent mandate" in refused.json()["detail"] or "root mandate" in refused.json()["detail"]
+
+
+def test_resume_briefing_is_membership_gated_and_well_formed(tmp_path, monkeypatch):
+    """Level 6 mission continuity over HTTP: GET /resume returns a time-gap
+    re-orientation to a case member and refuses a non-member. The then->now
+    diff itself is unit-tested in tests/test_continuity_gap.py; here we confirm
+    the endpoint is wired, gated, and shaped."""
+    monkeypatch.setenv("KRAKADYL_DATA_DIR", str(tmp_path / "api"))
+    monkeypatch.setenv("KRAKADYL_ENABLE_DEV_ROUTES", "0")
+    monkeypatch.setenv(
+        "KRAKADYL_OPERATOR_TOKENS",
+        f"investigator-A={hash_token('token-a')};investigator-D={hash_token('token-d')}",
+    )
+    monkeypatch.delenv("KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE", raising=False)
+    import krakadyl.api.app as app_module
+
+    importlib.reload(app_module)
+    client = TestClient(app_module.app)
+
+    assert client.get("/api/cases/case-001/resume", headers={"Authorization": "Bearer token-d"}).status_code == 403
+
+    resp = client.get("/api/cases/case-001/resume", headers={"Authorization": "Bearer token-a"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["gap_seconds"], int) and body["gap_seconds"] >= 0
+    assert body["headline"].startswith("Picked up after")
+    for key in ("mandates_expired_while_away", "recovery_closed_while_away",
+                "recovery_still_open", "conditional_or_unknown_watch"):
+        assert key in body

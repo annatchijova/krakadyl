@@ -837,10 +837,21 @@ the full chain at prepare and at the execute linearization point and binding
 the prepared action to the mandate it was prepared under (`mandate_id_checked`),
 while the root path stays byte-for-byte unchanged.
 `test_sub_mandate_delegation_over_http` and
-`test_execute_under_a_delegated_sub_mandate` cover the flow. **Deliberately
-not built yet** (documented, not approximated — see
-[level6-sub-mandates.md](level6-sub-mandates.md)): the delegation workspace UI,
-and the mission-continuity-across-real-time strand.
+`test_execute_under_a_delegated_sub_mandate` cover the flow.
+
+The second Level 6 strand — **mission continuity across a real-time gap** — is
+also built (`krakadyl/core/continuity.py::resume_after_gap`,
+`GET /api/cases/{id}/resume`, see
+[level6-mission-continuity.md](level6-mission-continuity.md)): given the last
+recorded activity and now, it reports what expired or closed purely because time
+passed — mandates and delegations that lapsed, recovery windows that shut —
+separated from what is still open (ranked soonest first), so a case picked up
+after days is not treated as if nothing moved. 6 cases in
+`tests/test_continuity_gap.py` plus a gated/shaped API test.
+
+**Deliberately not built yet** (documented, not approximated): the delegation and
+resume-briefing **workspace UI** — the remaining Level 6 interface work; the
+authority and continuity mechanisms beneath it are complete and tested.
 Missions already persist and `next_move`/the shift-handoff already answer
 "what do I pick up"; the time-spanning re-orientation on top of them is
 future Level 6 work.
