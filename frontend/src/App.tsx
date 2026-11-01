@@ -167,6 +167,7 @@ function App() {
               <a href="#evidence">Evidence</a>
               <a href="#acquisition">Acquisition</a>
               <a href="#handoff">Handoff</a>
+              <a href="#delegation">Delegation</a>
               <a href="#tools">Tools</a>
             </nav>
           </div>
@@ -193,27 +194,26 @@ function App() {
                 onChanged={refresh}
               />
             </div>
+            <div className="section-gap" id="delegation">
+              <DelegationPanel
+                caseId={CASE_ID}
+                caseVersion={activity.length}
+                token={operatorToken}
+                rootMandate={overview.mandate}
+                onChanged={refresh}
+              />
+            </div>
             <section className="workspace-tools" id="tools" aria-label="Additional case tools">
               <div className="tools-heading">
                 <div>
                   <h2>Additional tools</h2>
                   <p>Open the workspace you need without losing the case overview.</p>
                 </div>
-                <span className="tools-count">4 modules</span>
+                <span className="tools-count">3 modules</span>
               </div>
               <details className="tool-disclosure">
                 <summary><span><strong>What if…</strong><small>Compare assumptions against the real case. Hypothetical only.</small></span></summary>
                 <WhatIfPanel caseId={CASE_ID} caseVersion={activity.length} token={operatorToken} />
-              </details>
-              <details className="tool-disclosure">
-                <summary><span><strong>Delegation</strong><small>Inspect authority chains and assign narrower scopes.</small></span></summary>
-                <DelegationPanel
-                  caseId={CASE_ID}
-                  caseVersion={activity.length}
-                  token={operatorToken}
-                  rootMandate={overview.mandate}
-                  onChanged={refresh}
-                />
               </details>
               <details className="tool-disclosure">
                 <summary><span><strong>Laya handoff note</strong><small>Analyze typed signals, never certify a claim.</small></span></summary>
