@@ -10,3 +10,4 @@ node_modules/
 *.egg-info/
 .pytest_cache/
 out/
+landing/.vercel
