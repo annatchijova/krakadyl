@@ -186,3 +186,41 @@ select option { background: #123c38; color: #effaf5; }
 .button-primary { padding: 0.62em 1.1em; }
 .button-secondary { border-color: #38645e; }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+
+/* Forensic situation strip: the case's decisive states, at a glance. Colour
+   reinforces the number and label; it never carries meaning alone. */
+.situation-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 0.7rem;
+  margin: 1.2rem 0 0.4rem;
+}
+.situation-tile {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 0.8rem 0.9rem;
+}
+.situation-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.situation-label {
+  margin-top: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+.situation-tile.tone-ok { border-left-color: var(--jade); }
+.situation-tile.tone-ok .situation-value { color: #8fe6c9; }
+.situation-tile.tone-warn { border-left-color: var(--attention); }
+.situation-tile.tone-warn .situation-value { color: #ffbf8a; }
+.situation-tile.tone-error { border-left-color: var(--exception); background: rgba(173, 61, 54, 0.08); }
+.situation-tile.tone-error .situation-value { color: #ff9d96; }

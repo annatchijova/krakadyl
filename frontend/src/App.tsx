@@ -20,6 +20,7 @@ import { WhatIfPanel } from "./components/WhatIfPanel";
 import { DelegationPanel } from "./components/DelegationPanel";
 import { ResumePanel } from "./components/ResumePanel";
 import { Logo } from "./components/Logo";
+import { SituationStrip } from "./components/SituationStrip";
 
 const CASE_ID = "case-001";
 
@@ -176,6 +177,7 @@ function App() {
             <CaseSidebar overview={overview} />
           </aside>
           <main className="workspace-main">
+            <SituationStrip caseId={CASE_ID} caseVersion={activity.length} overview={overview} />
             <div id="evidence"><EvidencePanel evidence={overview.evidence} /></div>
             <div className="section-gap" id="acquisition">
               <AcquisitionPanel
