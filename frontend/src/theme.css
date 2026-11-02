@@ -224,3 +224,5 @@ select option { background: #123c38; color: #effaf5; }
 .situation-tile.tone-warn .situation-value { color: #ffbf8a; }
 .situation-tile.tone-error { border-left-color: var(--exception); background: rgba(173, 61, 54, 0.08); }
 .situation-tile.tone-error .situation-value { color: #ff9d96; }
+.situation-value.quiet { color: var(--text-muted); }
+.situation-tile { transition: border-color 120ms ease; }

@@ -20,15 +20,15 @@ const fieldStyle: React.CSSProperties = {
 };
 
 const KINDS: { kind: DeltaKind; label: string; needs: "value" | "requirement" | "until" | null }[] = [
-  { kind: "grant_resource", label: "the mandate also covered resource…", needs: "value" },
-  { kind: "grant_operation", label: "the mandate also allowed operation…", needs: "value" },
-  { kind: "grant_destination", label: "the mandate also allowed destination…", needs: "value" },
-  { kind: "extend_mandate_until", label: "the mandate were valid until…", needs: "until" },
-  { kind: "mandate_not_revoked", label: "the mandate were not revoked", needs: null },
-  { kind: "requirement_verified", label: "this requirement were independently verified", needs: "requirement" },
-  { kind: "requirement_unresolvable", label: "this requirement were closed as unresolvable", needs: "requirement" },
-  { kind: "conflict_resolved", label: "the team conflict on this requirement were resolved", needs: "requirement" },
-  { kind: "source_available", label: "an authorized source existed for this requirement", needs: "requirement" },
+  { kind: "grant_resource", label: "el mandato también cubriera el recurso…", needs: "value" },
+  { kind: "grant_operation", label: "el mandato también permitiera la operación…", needs: "value" },
+  { kind: "grant_destination", label: "el mandato también permitiera el destino…", needs: "value" },
+  { kind: "extend_mandate_until", label: "el mandato fuera válido hasta…", needs: "until" },
+  { kind: "mandate_not_revoked", label: "el mandato no estuviera revocado", needs: null },
+  { kind: "requirement_verified", label: "este requisito estuviera verificado de forma independiente", needs: "requirement" },
+  { kind: "requirement_unresolvable", label: "este requisito estuviera cerrado como irresoluble", needs: "requirement" },
+  { kind: "conflict_resolved", label: "el conflicto de equipo sobre este requisito estuviera resuelto", needs: "requirement" },
+  { kind: "source_available", label: "existiera una fuente autorizada para este requisito", needs: "requirement" },
 ];
 
 function OutcomeBox({ title, outcome, hypothetical }: { title: string; outcome: CounterfactualOutcome; hypothetical: boolean }) {
@@ -47,9 +47,9 @@ function OutcomeBox({ title, outcome, hypothetical }: { title: string; outcome: 
       <div className="reason-text" style={{ fontWeight: 600, color: hypothetical ? "#c3b6ff" : undefined }}>{title}</div>
       <span className={`badge ${kind}`}>{outcome.verdict}</span>{" "}
       <span className="reason-text">
-        evidence {outcome.evidence_state} · authority {outcome.authority_state}
+        evidencia {outcome.evidence_state} · autoridad {outcome.authority_state}
       </span>
-      {outcome.would_include.length > 0 && <div className="reason-text">would include {outcome.would_include.join(", ")}</div>}
+      {outcome.would_include.length > 0 && <div className="reason-text">incluiría {outcome.would_include.join(", ")}</div>}
       <ul style={{ margin: "0.3rem 0 0 1rem", padding: 0, fontSize: "0.78rem" }}>
         {outcome.reasons.map((r, i) => (
           <li key={i}>{r}</li>
@@ -122,10 +122,10 @@ export function WhatIfPanel({
 
   return (
     <section className="panel" style={{ borderStyle: "dashed", borderColor: "var(--inquiry)" }}>
-      <h2 style={{ color: "#c3b6ff" }}>What if… (hypothetical)</h2>
+      <h2 style={{ color: "#c3b6ff" }}>¿Qué pasaría si…? (hipotético)</h2>
       <p className="reason-text" style={{ marginTop: 0 }}>
-        Runs the same checks on a copy of the case under assumptions you choose. Never changes the case, never produces
-        anything executable. Each assumption is a limit someone would have to change for real.
+        Corre los mismos chequeos sobre una copia del caso bajo los supuestos que elijas. Nunca cambia el caso, nunca
+        produce nada ejecutable. Cada supuesto es un límite que alguien tendría que cambiar de verdad.
       </p>
       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
         <input style={fieldStyle} value={device} onChange={(e) => setDevice(e.target.value)} aria-label="device" />
@@ -135,14 +135,14 @@ export function WhatIfPanel({
         <select style={fieldStyle} value={kind} onChange={(e) => setKind(e.target.value as DeltaKind)} aria-label="assumption">
           {KINDS.map((k) => (
             <option key={k.kind} value={k.kind}>
-              if {k.label}
+              si {k.label}
             </option>
           ))}
         </select>
-        {needs === "value" && <input style={fieldStyle} value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. case-001/device-B" />}
+        {needs === "value" && <input style={fieldStyle} value={value} onChange={(e) => setValue(e.target.value)} placeholder="ej. case-001/device-B" />}
         {needs === "requirement" && (
           <select style={fieldStyle} value={requirementId} onChange={(e) => setRequirementId(e.target.value)}>
-            <option value="">requirement…</option>
+            <option value="">requisito…</option>
             {requirements.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.id}
@@ -152,7 +152,7 @@ export function WhatIfPanel({
         )}
         {needs === "until" && <input type="datetime-local" style={fieldStyle} value={until} onChange={(e) => setUntil(e.target.value)} />}
         <button className="button-secondary" disabled={incomplete || deltas.length >= 8} onClick={addDelta}>
-          Add assumption
+          Agregar supuesto
         </button>
       </div>
       {deltas.length > 0 && (
@@ -166,7 +166,7 @@ export function WhatIfPanel({
       )}
       <div className="action-row">
         <button className="button-secondary" disabled={busy || !token || deltas.length === 0} onClick={evaluate}>
-          Compare with the real case
+          Comparar con el caso real
         </button>
       </div>
       {localError && <p className="reason-text" style={{ color: "#ff9d96" }}>{localError}</p>}
@@ -175,27 +175,27 @@ export function WhatIfPanel({
         <div className="section-gap">
           {latest.stale && (
             <p className="reason-text" style={{ color: "#ffbf8a" }}>
-              The case changed after this was computed — it no longer describes the case. Run it again.
+              El caso cambió después de calcular esto — ya no lo describe. Volvé a correrlo.
             </p>
           )}
           <p className="reason-text" style={{ margin: "0 0 0.3rem 0" }}>
-            package_export of {latest.counterfactual.question.allowed_device} to {latest.counterfactual.question.destination} ·
-            by {latest.counterfactual.created_by}
+            package_export de {latest.counterfactual.question.allowed_device} a {latest.counterfactual.question.destination} ·
+            por {latest.counterfactual.created_by}
           </p>
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-            <OutcomeBox title="Real case, now" outcome={latest.counterfactual.real} hypothetical={false} />
-            <OutcomeBox title="HYPOTHETICAL — not the case" outcome={latest.counterfactual.hypothetical_outcome} hypothetical />
+            <OutcomeBox title="Caso real, ahora" outcome={latest.counterfactual.real} hypothetical={false} />
+            <OutcomeBox title="HIPOTÉTICO — no es el caso" outcome={latest.counterfactual.hypothetical_outcome} hypothetical />
           </div>
           <div className="section-gap">
             {latest.counterfactual.effects.map((e, i) => (
               <div key={i} className="activity-item">
-                <strong>if {label(e.delta)}</strong> —{" "}
-                {e.necessary ? "necessary for this hypothetical outcome" : "not needed for it"}
-                {e.sufficient_alone ? "; changes the real verdict on its own" : ""}
+                <strong>si {label(e.delta)}</strong> —{" "}
+                {e.necessary ? "necesario para este resultado hipotético" : "no hace falta para eso"}
+                {e.sufficient_alone ? "; cambia el veredicto real por sí solo" : ""}
               </div>
             ))}
           </div>
-          {views.length > 1 && <p className="reason-text">{views.length - 1} earlier hypothetical(s) kept in the activity log.</p>}
+          {views.length > 1 && <p className="reason-text">{views.length - 1} hipotético(s) anterior(es) guardado(s) en la actividad.</p>}
         </div>
       )}
     </section>

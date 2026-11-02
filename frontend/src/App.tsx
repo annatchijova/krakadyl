@@ -128,7 +128,7 @@ function App() {
       <header className="app-header">
         <Logo />
         <strong style={{ letterSpacing: "0.02em" }}>KRAKADYL</strong>
-        <span className="tagline">From evidence to your next move.</span>
+        {!operatorToken && <span className="tagline">De la evidencia a tu próximo paso.</span>}
       </header>
 
       {error && <div className="error-banner">{error}</div>}
@@ -136,22 +136,22 @@ function App() {
       {!operatorToken ? (
         <main style={{ maxWidth: 560, margin: "3rem auto", padding: "0 1.4rem" }}>
           <section className="panel">
-            <h2>Operator authentication</h2>
+            <h2>Autenticación de operador</h2>
             <p className="reason-text">
-              Enter the bearer token configured for this deployment. It stays in this tab's memory and is never persisted.
+              Ingresá el token configurado para este despliegue. Queda en la memoria de esta pestaña y nunca se guarda.
             </p>
             <form onSubmit={authenticate}>
               <input
                 type="password"
                 autoFocus
                 autoComplete="off"
-                placeholder="Operator token"
+                placeholder="Token de operador"
                 value={pendingOperatorToken}
                 onChange={(e) => setPendingOperatorToken(e.target.value)}
                 style={{ width: "100%", boxSizing: "border-box", padding: "0.55rem" }}
               />
               <button className="button-primary" type="submit" style={{ marginTop: "0.6rem" }}>
-                Authenticate
+                Ingresar
               </button>
             </form>
           </section>
@@ -160,20 +160,20 @@ function App() {
         <div className="workspace-shell">
           <div className="workspace-intro">
             <div>
-              <p className="workspace-eyebrow">INVESTIGATION WORKSPACE / {CASE_ID}</p>
-              <h1>From evidence to your next move.</h1>
-              <p>Trace the case, preserve what can still be recovered, and keep authority explicit.</p>
+              <p className="workspace-eyebrow">ESPACIO DE INVESTIGACIÓN / {CASE_ID}</p>
+              <h1>De la evidencia a tu próximo paso.</h1>
+              <p>Seguí el caso, preservá lo que todavía se puede recuperar y mantené la autoridad explícita.</p>
             </div>
-            <nav className="workspace-nav" aria-label="Case sections">
-              <a href="#evidence">Evidence</a>
-              <a href="#acquisition">Acquisition</a>
-              <a href="#handoff">Handoff</a>
-              <a href="#delegation">Delegation</a>
-              <a href="#tools">Tools</a>
+            <nav className="workspace-nav" aria-label="Secciones del caso">
+              <a href="#evidence">Evidencia</a>
+              <a href="#acquisition">Adquisición</a>
+              <a href="#handoff">Traspaso</a>
+              <a href="#delegation">Delegación</a>
+              <a href="#tools">Herramientas</a>
             </nav>
           </div>
           <div className="workspace">
-          <aside className="workspace-case" aria-label="Case context">
+          <aside className="workspace-case" aria-label="Contexto del caso">
             <CaseSidebar overview={overview} />
           </aside>
           <main className="workspace-main">
@@ -205,24 +205,24 @@ function App() {
                 onChanged={refresh}
               />
             </div>
-            <section className="workspace-tools" id="tools" aria-label="Additional case tools">
+            <section className="workspace-tools" id="tools" aria-label="Herramientas adicionales del caso">
               <div className="tools-heading">
                 <div>
-                  <h2>Additional tools</h2>
-                  <p>Open the workspace you need without losing the case overview.</p>
+                  <h2>Herramientas adicionales</h2>
+                  <p>Abrí la herramienta que necesites sin perder la vista del caso.</p>
                 </div>
-                <span className="tools-count">3 modules</span>
+                <span className="tools-count">3 módulos</span>
               </div>
               <details className="tool-disclosure">
-                <summary><span><strong>What if…</strong><small>Compare assumptions against the real case. Hypothetical only.</small></span></summary>
+                <summary><span><strong>¿Qué pasaría si…?</strong><small>Compará supuestos contra el caso real. Solo hipotético.</small></span></summary>
                 <WhatIfPanel caseId={CASE_ID} caseVersion={activity.length} token={operatorToken} />
               </details>
               <details className="tool-disclosure">
-                <summary><span><strong>Laya handoff note</strong><small>Analyze typed signals, never certify a claim.</small></span></summary>
+                <summary><span><strong>Nota de traspaso (Laya)</strong><small>Analiza señales tipadas; nunca certifica una afirmación.</small></span></summary>
                 <LayaNotePanel busy={busy} onAnalyze={(noteText) => api.analyzeNote(CASE_ID, noteText)} />
               </details>
               <details className="tool-disclosure tool-disclosure-dev">
-                <summary><span><strong>Simulation · dev only</strong><small>Mutates demo state; not a real investigative action.</small></span></summary>
+                <summary><span><strong>Simulación · solo dev</strong><small>Muta el estado de demo; no es una acción investigativa real.</small></span></summary>
                 <DevPanel
                   busy={busy}
                   onTamper={handleTamper}
@@ -233,7 +233,7 @@ function App() {
               </details>
             </section>
           </main>
-          <aside className="workspace-rail" aria-label="Next action and case activity">
+          <aside className="workspace-rail" aria-label="Próxima acción y actividad del caso">
             <NextMovePanel
               decision={decision}
               prepared={prepared}
@@ -253,7 +253,7 @@ function App() {
           </div>
         </div>
       ) : (
-        <p style={{ padding: "1.4rem" }}>Loading case…</p>
+        <p style={{ padding: "1.4rem" }}>Cargando caso…</p>
       )}
     </>
   );

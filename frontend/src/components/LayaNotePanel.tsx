@@ -44,14 +44,14 @@ export function LayaNotePanel({
 
   return (
     <section className="panel">
-      <h2>Handoff note (Laya)</h2>
+      <h2>Nota de traspaso (Laya)</h2>
       <p className="reason-text" style={{ marginTop: 0 }}>
-        Typed signals only — Laya never marks anything verified. It flags what a human should check.
+        Solo señales tipadas — Laya nunca marca nada como verificado. Señala lo que un humano debería revisar.
       </p>
       <textarea
         value={noteText}
         onChange={(e) => setNoteText(e.target.value)}
-        placeholder="Paste a handoff note or chat message, e.g. 'obs-a1 done, nobody else looked at it yet'"
+        placeholder="Pegá una nota de traspaso o mensaje, ej. 'obs-a1 hecho, nadie más lo miró todavía'"
         rows={3}
         style={{
           width: "100%",
@@ -71,18 +71,18 @@ export function LayaNotePanel({
           onClick={handleAnalyze}
           disabled={busy || noteText.trim().length === 0}
         >
-          Analyze with Laya
+          Analizar con Laya
         </button>
       </div>
       {localError && <p className="reason-text" style={{ color: "#ff9d96" }}>{localError}</p>}
       {signals && (
         <div className="section-gap">
-          <SignalBar label="claims independent verification" value={signals.claims_independent_verification} />
-          <SignalBar label="claims task complete" value={signals.claims_task_complete} />
-          <SignalBar label="urgency" value={signals.urgency} />
+          <SignalBar label="afirma verificación independiente" value={signals.claims_independent_verification} />
+          <SignalBar label="afirma tarea completa" value={signals.claims_task_complete} />
+          <SignalBar label="urgencia" value={signals.urgency} />
           {signals.claims_task_complete > 0.5 && signals.claims_independent_verification < 0.4 && (
             <p className="reason-text" style={{ color: "#ffbf8a" }}>
-              Reads like a self-report with no independent check mentioned — worth verifying before trusting it.
+              Se lee como un auto-reporte sin verificación independiente mencionada — conviene verificar antes de confiar.
             </p>
           )}
         </div>

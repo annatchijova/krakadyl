@@ -37,39 +37,39 @@ export function SituationStrip({
   const revoked = Boolean(overview.mandate.revoked);
 
   const tiles: Tile[] = [
-    { label: "Verified", value: verified, tone: "ok", hint: "evidence independently verified" },
+    { label: "Verificado", value: verified, tone: "ok", hint: "evidencia verificada de forma independiente" },
     {
-      label: "Claimed, not verified",
+      label: "Declarado, sin verificar",
       value: claimed,
       tone: claimed > 0 ? "warn" : "neutral",
-      hint: "reported done, with no independent check — the coordination gap this tool exists to close",
+      hint: "reportado como hecho, sin verificación independiente — el agujero de coordinación que esta herramienta existe para cerrar",
     },
-    { label: "Open", value: open, tone: "neutral", hint: "requirements still open" },
+    { label: "Abierto", value: open, tone: "neutral", hint: "requisitos todavía abiertos" },
     {
-      label: "At risk",
+      label: "En riesgo",
       value: atRisk,
       tone: atRisk > 0 ? "warn" : "neutral",
-      hint: "recovery windows still open — recoverable, for now",
+      hint: "ventanas de recuperación todavía abiertas — recuperable, por ahora",
     },
     {
-      label: "Unresolved conflict",
+      label: "Conflicto sin resolver",
       value: conflicts,
       tone: conflicts > 0 ? "error" : "neutral",
-      hint: "team members disagree on a requirement; surfaced loudly, never overwritten",
+      hint: "el equipo está en desacuerdo sobre un requisito; se muestra con claridad, nunca se sobrescribe",
     },
     {
-      label: "Authority",
-      value: revoked ? "Revoked" : "Active",
+      label: "Autoridad",
+      value: revoked ? "Revocada" : "Activa",
       tone: revoked ? "error" : "ok",
-      hint: revoked ? "the case mandate has been revoked" : "the case mandate is in force",
+      hint: revoked ? "el mandato del caso fue revocado" : "el mandato del caso está vigente",
     },
   ];
 
   return (
-    <section className="situation-strip" aria-label="Case situation at a glance">
+    <section className="situation-strip" aria-label="Situación del caso de un vistazo">
       {tiles.map((t) => (
         <div key={t.label} className={`situation-tile tone-${t.tone}`} title={t.hint}>
-          <div className="situation-value">{t.value}</div>
+          <div className={`situation-value${t.tone === "neutral" && t.value === 0 ? " quiet" : ""}`}>{t.value}</div>
           <div className="situation-label">{t.label}</div>
         </div>
       ))}

@@ -108,7 +108,7 @@ export function DelegationPanel({
   // form offers exactly the parent's own resources/operations/destinations.
   const parents = useMemo<ParentScope[]>(() => {
     const live = views.filter((v) => v.live).map((v) => scopeOf(v.mandate, `${v.mandate.id} — to ${v.mandate.principal}`));
-    return [scopeOf(rootMandate as DelegationMandate, `${rootMandate.id} (case root)`), ...live];
+    return [scopeOf(rootMandate as DelegationMandate, `${rootMandate.id} (raíz del caso)`), ...live];
   }, [views, rootMandate]);
 
   const parent = parents.find((p) => p.id === parentId) ?? parents[0];
@@ -167,14 +167,14 @@ export function DelegationPanel({
 
   return (
     <section className="panel">
-      <h2>Delegation — who may act, and how far</h2>
+      <h2>Delegación — quién puede actuar, y hasta dónde</h2>
       <p className="reason-text" style={{ marginTop: 0 }}>
-        A sub-mandate hands a strictly narrower slice of authority to another investigator. It can never be wider than
-        its parent, and it dies the instant any mandate above it is revoked or expires.
+        Un sub-mandato entrega una porción estrictamente más chica de autoridad a otro investigador. Nunca puede ser
+        más amplio que su padre, y muere apenas cualquier mandato por encima se revoca o expira.
       </p>
 
       {views.length === 0 ? (
-        <p className="reason-text" style={{ color: "var(--text-muted)" }}>No delegations yet.</p>
+        <p className="reason-text" style={{ color: "var(--text-muted)" }}>Todavía no hay delegaciones.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
           {views.map((v) => (
@@ -188,8 +188,8 @@ export function DelegationPanel({
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-                <strong style={{ fontSize: "0.85rem" }}>to {v.mandate.principal}</strong>
-                <span className={`badge ${v.live ? "ok" : "error"}`}>{v.live ? "live" : "not in force"}</span>
+                <strong style={{ fontSize: "0.85rem" }}>a {v.mandate.principal}</strong>
+                <span className={`badge ${v.live ? "ok" : "error"}`}>{v.live ? "vigente" : "sin vigencia"}</span>
               </div>
               <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.25rem 0.6rem" }}>
                 <Chips items={v.mandate.resources} />
@@ -208,10 +208,10 @@ export function DelegationPanel({
       )}
 
       <div className="section-gap" style={{ borderTop: "1px solid var(--border)", paddingTop: "0.7rem" }}>
-        <div className="reason-text" style={{ fontWeight: 600, marginBottom: "0.4rem" }}>Delegate a narrower slice</div>
+        <div className="reason-text" style={{ fontWeight: 600, marginBottom: "0.4rem" }}>Delegar una porción más chica</div>
         <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
           <label className="reason-text" style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-            from mandate
+            desde el mandato
             <select style={field} value={parentId} onChange={(e) => selectParent(e.target.value)}>
               {parents.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -221,27 +221,27 @@ export function DelegationPanel({
             </select>
           </label>
           <label className="reason-text" style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-            to investigator
-            <input style={field} value={principal} onChange={(e) => setPrincipal(e.target.value)} placeholder="e.g. investigator-J" />
+            a investigador
+            <input style={field} value={principal} onChange={(e) => setPrincipal(e.target.value)} placeholder="ej. investigador-J" />
           </label>
           <label className="reason-text" style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-            valid until
+            válido hasta
             <input type="datetime-local" style={field} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
           </label>
         </div>
         {parent && (
           <div style={{ display: "flex", gap: "1.2rem", flexWrap: "wrap" }}>
-            <ScopePicker label="resources" options={parent.resources} selected={resources} onToggle={(v) => toggle(setResources, v)} />
-            <ScopePicker label="operations" options={parent.operations} selected={operations} onToggle={(v) => toggle(setOperations, v)} />
-            <ScopePicker label="destinations" options={parent.destinations} selected={destinations} onToggle={(v) => toggle(setDestinations, v)} />
+            <ScopePicker label="recursos" options={parent.resources} selected={resources} onToggle={(v) => toggle(setResources, v)} />
+            <ScopePicker label="operaciones" options={parent.operations} selected={operations} onToggle={(v) => toggle(setOperations, v)} />
+            <ScopePicker label="destinos" options={parent.destinations} selected={destinations} onToggle={(v) => toggle(setDestinations, v)} />
           </div>
         )}
         <div className="action-row">
           <button className="button-secondary" disabled={busy || !canDelegate} onClick={delegate}>
-            Delegate
+            Delegar
           </button>
           <span className="reason-text" style={{ color: "var(--text-muted)" }}>
-            Only {rootMandate.principal} (the mandate holder) can delegate from the root.
+            Solo {rootMandate.principal} (quien tiene el mandato) puede delegar desde la raíz.
           </span>
         </div>
         {localError && (
