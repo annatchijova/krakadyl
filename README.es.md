@@ -2,7 +2,7 @@
 
 # KRAKADYL
 
-**Un agente de investigación activa para trabajo forense bajo presión de tiempo.**
+**Un sistema de investigación activa para evidencia, autoridad y continuidad — implementado primero en DFIR.**
 
 KRAKADYL mantiene un caso organizado, identifica qué evidencia falta
 *mientras todavía se puede recuperar*, y coordina el siguiente paso
@@ -192,22 +192,30 @@ registrada como afirmación; solo una evaluación independiente resuelve
 el requisito. Falta la corrida de cierre con SAM en vivo. Ver
 [docs/level3-case-wiring.md](docs/level3-case-wiring.md).
 
-## No es solo para forense
+## Construido en forense. Diseñado para ir más allá.
 
-KRAKADYL se publica bajo licencia abierta específicamente para que no
-quede atado a un solo dominio de investigación. El mecanismo central —
-registrar qué se desconoce, resolver lo que todavía se puede resolver,
-actuar solo dentro de un mandato verificado, cerrar honestamente cuando
-algo ya no se puede recuperar — se generaliza a cualquier investigación
-bajo presión de tiempo e información incompleta: respuesta a incidentes e
-investigaciones de ciberseguridad (las personas con las que Anna trabaja
-en forense e infosec son las primeras que de verdad usarían esto),
-periodismo, y — un dominio que Anna considera directamente relevante —
-**investigaciones de AI safety**, donde "qué sabemos realmente, qué sigue
-faltando, y qué ya no se puede verificar" es la misma pregunta con otro
-expediente. El dominio forense DFIR es la primera experiencia completa y
-demostrable porque es donde Anna tiene criterio propio real y
-verificable — no porque la arquitectura sea específica de forense.
+KRAKADYL comenzó en forense digital y respuesta a incidentes, donde la
+integridad de la evidencia, la autorización, la adquisición sensible al tiempo
+y la continuidad de una investigación no son opcionales. DFIR se eligió como el
+primer dominio porque es donde el proyecto tiene experiencia concreta y criterios
+falsables — no porque la arquitectura esté limitada a evidencia forense.
+
+Las preguntas subyacentes son más amplias:
+
+- ¿Qué se sabe realmente y qué solo fue reportado?
+- ¿Qué falta, está obsoleto, se contradice o ya no se puede recuperar?
+- ¿Quién está autorizado a actuar y esa autoridad sigue vigente?
+- ¿Qué sobrevive a un relevo, una interrupción o un cambio de investigador?
+
+KRAKADYL aborda esas preguntas separando el estado de la evidencia, la
+autoridad, la verificación y la continuidad de las propuestas generadas por IA.
+Las mismas preguntas arquitectónicas aparecen en periodismo de investigación,
+investigaciones de seguridad de IA, investigaciones institucionales, auditorías
+y otros trabajos guiados por evidencia.
+
+Esas son aplicaciones potenciales, no afirmaciones de validación completada en
+esos campos. **Forense digital es el primer dominio implementado y probado. El
+dominio es específico. El problema no.**
 
 ## Alcance y honestidad sobre en qué punto está esto
 
@@ -222,6 +230,30 @@ prior art (reconocido explícitamente, no disimulado).
 **Este proyecto sigue después del hackathon, gane o no.** Se construyó
 para usarse — por Anna, y por la gente de forense y ciberseguridad de su
 propia red — no para abandonarse apenas termine el judging.
+
+## Validación mediante ataques adversariales
+
+Que las pruebas ordinarias pasaran no se trató como evidencia suficiente de
+corrección. El proyecto documenta intentos de hacer fallar las garantías
+implementadas: cada ronda de red team establece un modelo de amenaza, formula un
+bypass falsable, ejecuta la predicción contra el sistema en vivo y registra si
+el vector fue confirmado o falsado. Cuando una sonda expuso un defecto, se lo
+corrigió y se lo conservó como prueba de regresión antes de la siguiente ronda.
+
+El registro de auditoría incluye la
+[ronda integrada completa](docs/red-team-full-audit-2026-10-30.md), las
+[sondas en vivo de autoridad de API](docs/red-team-api-authority-2026-10-31.md),
+la [revisión de composición del grafo de verificación](docs/red-team-verification-graph-composition-2026-10-30.md)
+y las [limitaciones conocidas](docs/known-limitations.md). Estos registros
+establecen qué se atacó y qué se observó dentro de sus modelos de amenaza
+declarados; no establecen corrección frente a toda entrada, comportamiento de
+modelo o entorno de despliegue.
+
+Esto es deliberadamente coherente con el producto: la evidencia no pasa a estar
+verificada porque alguien diga que está lista, y un sistema no pasa a ser
+confiable solo porque su camino feliz haya pasado. La evidencia pertinente es el
+intento documentado de falsar una garantía, el resultado, la corrección cuando
+fue necesaria y la regresión que la preserva.
 
 ## La metodología detrás de cómo se construye esto
 

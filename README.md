@@ -2,7 +2,7 @@
 
 # KRAKADYL
 
-**An active-investigation agent for forensic work under time pressure.**
+**An active-investigation system for evidence, authority, and continuity — first implemented in DFIR.**
 
 **Live showcase → [krakadyl-live.vercel.app](https://krakadyl-live.vercel.app)** — the reproduced real Muse Spark and SAM 3.1 calls, the research map, the jury deck, and demo videos.
 
@@ -239,21 +239,29 @@ synthetic captures: one empty SAM result and one convincing clock localization;
 both were independently judged non-discriminating and left the requirement open.
 See [docs/level3-case-wiring.md](docs/level3-case-wiring.md).
 
-## Not just forensics
+## Built in forensics. Designed beyond it.
 
-KRAKADYL is released under an open license specifically so it is not
-locked to one investigative domain. The core mechanism — track what's
-unknown, resolve what's still resolvable, act only within a verified
-mandate, close honestly when something can't be recovered — generalizes
-to any investigation under time pressure and incomplete information:
-incident response and cybersecurity investigations (the people Anna works
-with in forensics and infosec are the first people who'd actually use
-this), journalism, and — a domain Anna considers directly relevant — **AI
-safety investigations**, where "what do we actually know, what's still
-missing, and what can we no longer verify" is the same question wearing
-a different case file. Forensic DFIR is the first complete, demonstrable
-experience because it's the domain Anna has real, verifiable criteria
-in — not because the architecture is forensics-specific.
+KRAKADYL began in digital forensics and incident response, where evidence
+integrity, authorization, time-sensitive acquisition, and investigative
+continuity are not optional. DFIR was chosen as the first domain because it is
+where the project has concrete expertise and falsifiable criteria — not because
+the architecture is limited to forensic evidence.
+
+The underlying questions are broader:
+
+- What is actually known, and what has only been reported?
+- What is missing, stale, contradictory, or no longer recoverable?
+- Who is authorized to act, and does that authority still hold?
+- What survives a handoff, interruption, or change of investigator?
+
+KRAKADYL addresses those questions by separating evidence state, authority,
+verification, and continuity from AI-generated proposals. The same architectural
+questions arise in investigative journalism, AI-safety investigations,
+institutional inquiries, audits, and other evidence-driven work.
+
+Those are potential applications, not claims of completed validation in those
+fields. **Digital forensics is the first implemented and tested application
+domain. The domain is specific. The problem is not.**
 
 ## Scope and honesty about where this stands
 
@@ -267,6 +275,30 @@ versus what's prior art (acknowledged explicitly, not glossed over).
 **This project continues after the hackathon regardless of outcome.** It
 was built to be used — by Anna, and by the forensic and cybersecurity
 people in her own network — not to be abandoned once judging ends.
+
+## Validation under adversarial attack
+
+Passing ordinary tests was not treated as sufficient evidence of correctness.
+The project documents attempts to make the implemented guarantees fail: each
+red-team round states a threat model, formulates a falsifiable bypass, runs the
+prediction against the live system, and records whether the vector was confirmed
+or falsified. When a probe exposed a defect, the defect was corrected and kept
+as a regression test before the next round.
+
+The audit record includes the
+[full integrated round](docs/red-team-full-audit-2026-10-30.md),
+[live API authority probes](docs/red-team-api-authority-2026-10-31.md),
+[verification-graph composition review](docs/red-team-verification-graph-composition-2026-10-30.md),
+and [known limitations](docs/known-limitations.md). These records establish
+what was attacked and what was observed within their stated threat models; they
+do not establish correctness against every input, model behavior, or deployment
+environment.
+
+This is deliberately consistent with the product itself: evidence does not
+become verified because someone says it is ready, and a system does not become
+trustworthy merely because its happy path passed. The relevant evidence is the
+documented attempt to falsify a guarantee, the result, the correction where one
+was needed, and the regression that preserves it.
 
 ## The methodology behind how this gets built
 
