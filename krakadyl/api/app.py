@@ -162,6 +162,26 @@ def _muse_rate_limit_from_environment() -> int:
     return limit
 
 
+_DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+
+
+def _cors_origins_from_environment() -> list[str]:
+    """Browser origins allowed to call this API.
+
+    `KRAKADYL_CORS_ORIGINS` is a comma-separated allowlist for deployed
+    frontends (e.g. a Vercel URL); unset or blank keeps the local-dev
+    origins only. A `*` entry is refused loudly at startup: a demo that
+    accepts Bearer [REDACTED] must name its origins, never wildcard them.
+    """
+    raw = os.environ.get("KRAKADYL_CORS_ORIGINS", "")
+    origins = [part.strip() for part in raw.split(",") if part.strip()]
+    if not origins:
+        return list(_DEFAULT_CORS_ORIGINS)
+    if "*" in origins:
+        raise RuntimeError("KRAKADYL_CORS_ORIGINS must not contain '*'")
+    return origins
+
+
 class _MuseRateLimiter:
     def __init__(
         self,
@@ -209,7 +229,7 @@ _muse_rate_limiter = _MuseRateLimiter(_muse_rate_limit_from_environment())
 app = FastAPI(title="KRAKADYL API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins_from_environment(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

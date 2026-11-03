@@ -1189,3 +1189,40 @@ def test_resume_briefing_is_membership_gated_and_well_formed(tmp_path, monkeypat
     for key in ("mandates_expired_while_away", "recovery_closed_while_away",
                 "recovery_still_open", "conditional_or_unknown_watch"):
         assert key in body
+
+
+def test_cors_origins_default_to_local_dev_and_accept_a_deployed_allowlist(monkeypatch):
+    """Deployed frontends (e.g. a Vercel demo URL) are named explicitly via
+    KRAKADYL_CORS_ORIGINS; unset or blank keeps the local-dev origins only."""
+    import krakadyl.api.app as app_module
+
+    monkeypatch.delenv("KRAKADYL_CORS_ORIGINS", raising=False)
+    assert app_module._cors_origins_from_environment() == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+    monkeypatch.setenv("KRAKADYL_CORS_ORIGINS", "  ")
+    assert app_module._cors_origins_from_environment() == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+    monkeypatch.setenv(
+        "KRAKADYL_CORS_ORIGINS",
+        "https://krakadyl-demo.vercel.app, http://localhost:5173",
+    )
+    assert app_module._cors_origins_from_environment() == [
+        "https://krakadyl-demo.vercel.app",
+        "http://localhost:5173",
+    ]
+
+
+def test_cors_origins_refuse_a_wildcard_loudly(monkeypatch):
+    """A demo that accepts Bearer [REDACTED] must name its origins: `*` fails
+    at startup instead of silently opening the API to every browser origin."""
+    import krakadyl.api.app as app_module
+
+    monkeypatch.setenv("KRAKADYL_CORS_ORIGINS", "https://krakadyl-demo.vercel.app, *")
+    with pytest.raises(RuntimeError, match=r"must not contain '\*'"):
+        app_module._cors_origins_from_environment()
