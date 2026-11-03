@@ -3,7 +3,7 @@ import type { ActivityEvent } from "../api";
 export function ActivityFeed({ events }: { events: ActivityEvent[] }) {
   return (
     <section className="panel">
-      <h2>Actividad</h2>
+      <h2>Activity</h2>
       <div className="activity-list">
         {[...events].reverse().map((e, i) => (
           <div key={i} className="activity-item">
@@ -13,7 +13,7 @@ export function ActivityFeed({ events }: { events: ActivityEvent[] }) {
             <div>{e.summary}</div>
           </div>
         ))}
-        {events.length === 0 && <p className="reason-text">Todavía no hay actividad.</p>}
+        {events.length === 0 && <p className="reason-text">No activity yet.</p>}
       </div>
     </section>
   );

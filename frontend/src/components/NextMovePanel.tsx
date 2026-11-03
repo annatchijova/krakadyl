@@ -2,8 +2,7 @@ import type { Decision, ExecuteResponse, PreparedAction, RecoverResponse } from 
 
 function verdictBadge(verdict: Decision["verdict"]) {
   const kind = verdict === "allowed" ? "ok" : verdict === "forbidden" ? "error" : "warn";
-  const es: Record<string, string> = { allowed: "permitido", forbidden: "prohibido", confirm: "confirmar", gather_evidence: "reunir evidencia" };
-  return <span className={`badge ${kind}`}>{es[verdict] ?? verdict}</span>;
+  return <span className={`badge ${kind}`}>{verdict}</span>;
 }
 
 export function NextMovePanel({
@@ -35,28 +34,28 @@ export function NextMovePanel({
 
   return (
     <section className="panel">
-      <h2>Próximo paso</h2>
+      <h2>Next move</h2>
 
       <div className="action-row">
         <button className="button-primary" onClick={onPrepare} disabled={busy}>
-          Preparar package_export
+          Prepare package_export
         </button>
-        <button className="button-secondary" onClick={onAskMuse} disabled={busy} title="Llamada real a Muse Spark — cuesta unos centavos">
-          Preguntar a Muse
+        <button className="button-secondary" onClick={onAskMuse} disabled={busy} title="Real Muse Spark call — costs a few cents">
+          Ask Muse
         </button>
         {canExecute && (
           <button className="button-secondary" onClick={() => onExecute(prepared!.id)} disabled={busy}>
-            {isRecoveryReview ? "Ejecutar esta recuperación" : "Ejecutar"}
+            {isRecoveryReview ? "Execute this recovery" : "Execute"}
           </button>
         )}
       </div>
 
       {museReasoning && (
         <div className="recovery-card" style={{ borderColor: "var(--signal)", background: "rgba(214,255,127,0.06)" }}>
-          <h3 style={{ color: "var(--signal)" }}>Muse dice (no es autoridad)</h3>
+          <h3 style={{ color: "var(--signal)" }}>Muse says (not authoritative)</h3>
           <p style={{ margin: 0, fontSize: "0.85rem" }}>{museReasoning}</p>
           <p className="reason-text">
-            Igual se chequea contra el mandato y la evidencia reales de abajo — es una propuesta, no una decisión.
+            Still checked against the real mandate and evidence below — this is a proposal, not a decision.
           </p>
         </div>
       )}
@@ -76,17 +75,17 @@ export function NextMovePanel({
 
       {prepared && (
         <div className="section-gap mono" style={{ fontSize: "0.78rem" }}>
-          <div>recursos: {prepared.resources_touched.join(", ") || "(ninguno)"}</div>
-          <div>destino: {prepared.destination}</div>
-          <div>expira: {new Date(prepared.expires_at).toLocaleTimeString()}</div>
+          <div>resources: {prepared.resources_touched.join(", ") || "(none)"}</div>
+          <div>destination: {prepared.destination}</div>
+          <div>expires: {new Date(prepared.expires_at).toLocaleTimeString()}</div>
         </div>
       )}
 
       {isRecoveryReview && recoverInfo && (
         <div className="recovery-card">
-          <h3>Propuesta de recuperación — revisá antes de ejecutar</h3>
+          <h3>Recovery proposal — review before executing</h3>
           <p style={{ margin: "0 0 0.4rem 0", fontSize: "0.85rem" }}>
-            Excluye exactamente: <strong>{recoverInfo.excluded_resources.join(", ")}</strong>
+            Excludes exactly: <strong>{recoverInfo.excluded_resources.join(", ")}</strong>
           </p>
           {prepared?.excluded_resource_reasons.map((e) => (
             <p key={e.resource_id} className="reason-text">
@@ -94,25 +93,25 @@ export function NextMovePanel({
             </p>
           ))}
           <p className="reason-text">
-            Cobertura restante: {prepared?.resources_touched.length} recurso(s) — el paquete tendrá cobertura reducida
-            del objetivo original si se ejecuta.
+            Remaining coverage: {prepared?.resources_touched.length} resource(s) — package will have reduced
+            coverage of the original objective if executed.
           </p>
         </div>
       )}
 
       {recoverInfo && !recoverInfo.prepared && (
         <div className="recovery-card" style={{ borderColor: "var(--exception)" }}>
-          <h3 style={{ color: "#ff9d96" }}>Recuperación cerrada — no se encontró nada legítimo</h3>
+          <h3 style={{ color: "#ff9d96" }}>Recovery closed — nothing legitimate found</h3>
           <p className="reason-text">{recoverInfo.closed_reason}</p>
         </div>
       )}
 
       {executionFailed && (
         <div className="recovery-card" style={{ borderColor: "var(--exception)" }}>
-          <h3 style={{ color: "#ff9d96" }}>Ejecución bloqueada</h3>
+          <h3 style={{ color: "#ff9d96" }}>Execution blocked</h3>
           <p className="reason-text">{executeResult.receipt.observed_effect}</p>
           <button className="button-secondary" onClick={onRecover} disabled={busy}>
-            Proponer una ruta de recuperación
+            Propose a recovery route
           </button>
         </div>
       )}
@@ -120,11 +119,11 @@ export function NextMovePanel({
       {executeResult?.receipt.executed && (
         <div className="manifest-box">
           <div className="mono" style={{ marginBottom: "0.4rem" }}>
-            recibo {executeResult.receipt.hash.slice(0, 16)}…
+            receipt {executeResult.receipt.hash.slice(0, 16)}…
           </div>
           {executeResult.manifest && executeResult.manifest.excluded_resources.length > 0 && (
             <p className="reason-text" style={{ color: "#ffbf8a" }}>
-              Cobertura reducida — excluido: {executeResult.manifest.excluded_resources.map((e) => e.resource_id).join(", ")}
+              Reduced coverage — excluded: {executeResult.manifest.excluded_resources.map((e) => e.resource_id).join(", ")}
             </p>
           )}
           {executeResult.manifest && (
@@ -136,7 +135,7 @@ export function NextMovePanel({
       )}
 
       {!decision && !prepared && (
-        <p className="reason-text section-gap">No hay acción pendiente — tocá Preparar para proponer una.</p>
+        <p className="reason-text section-gap">No pending action — click Prepare to propose one.</p>
       )}
     </section>
   );

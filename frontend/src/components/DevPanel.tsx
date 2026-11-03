@@ -17,22 +17,22 @@ export function DevPanel({
 }) {
   return (
     <div className="dev-panel">
-      <h2>Simular (solo dev)</h2>
+      <h2>Simulate (dev only)</h2>
       <p className="reason-text" style={{ marginTop: 0 }}>
-        Estas mutan el caso para demostrar la detección de obsolescencia — nunca una acción investigativa real.
+        These mutate the case to demonstrate staleness detection — never a real investigative action.
       </p>
       <div className="buttons">
         <button className="button-secondary" onClick={onTamper} disabled={busy}>
-          Alterar el archivo de obs-a1
+          Tamper obs-a1's file
         </button>
         <button className="button-secondary" onClick={onRevokeMandate} disabled={busy}>
-          Revocar el mandato
+          Revoke the mandate
         </button>
         <button className="button-secondary" onClick={onUnresolveHypothesis} disabled={busy}>
-          Marcar el requisito de timestamp como irresoluble
+          Make timestamp requirement unresolvable
         </button>
         <button className="button-danger" onClick={onReset} disabled={busy}>
-          Reiniciar caso
+          Reset case
         </button>
       </div>
     </div>

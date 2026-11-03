@@ -21,18 +21,18 @@ const fieldStyle: React.CSSProperties = {
 };
 
 const OUTCOMES: { value: EvaluationOutcome; label: string }[] = [
-  { value: "supports_requirement", label: "respalda el requisito" },
-  { value: "contradicts_requirement", label: "contradice el requisito" },
-  { value: "no_discriminating_change", label: "válido, pero no discrimina" },
-  { value: "insufficient_or_invalid", label: "insuficiente o inválido" },
+  { value: "supports_requirement", label: "supports the requirement" },
+  { value: "contradicts_requirement", label: "contradicts the requirement" },
+  { value: "no_discriminating_change", label: "valid, but does not discriminate" },
+  { value: "insufficient_or_invalid", label: "insufficient or invalid" },
 ];
 
 function requirementBadge(route: RouteView) {
   const r = route.requirement;
-  if (r.resolved) return <span className="badge ok">resuelto · verificado</span>;
-  if (r.unresolvable) return <span className="badge neutral">cerrado como irresoluble</span>;
-  if (r.responsibility.status === "reported_done") return <span className="badge pending">declarado, sin verificar</span>;
-  return <span className="badge warn">abierto</span>;
+  if (r.resolved) return <span className="badge ok">resolved · verified</span>;
+  if (r.unresolvable) return <span className="badge neutral">closed as unresolvable</span>;
+  if (r.responsibility.status === "reported_done") return <span className="badge pending">claimed, not verified</span>;
+  return <span className="badge warn">open</span>;
 }
 
 function usd(micros: number) {
@@ -68,7 +68,7 @@ function CaptureWithBoxes({ caseId, record, token }: { caseId: string; record: A
   }, [caseId, workflowId, hasAnnotation, token]);
 
   if (!token) {
-    return <p className="reason-text">Ingresá un token de operador para ver la captura.</p>;
+    return <p className="reason-text">Enter an operator token to view the capture.</p>;
   }
 
   return (
@@ -102,12 +102,12 @@ function CaptureWithBoxes({ caseId, record, token }: { caseId: string; record: A
         )}
       </div>
       <div className="obs-meta mono reason-text" style={{ marginTop: 4 }}>
-        observación sha256:{record.observation?.digest.slice(0, 16)}… · capturada por {record.observation?.actor}
+        observation sha256:{record.observation?.digest.slice(0, 16)}… · captured by {record.observation?.actor}
       </div>
       {hasAnnotation && (
         <p className="reason-text" style={{ margin: "0.3rem 0", color: "#ffbf8a" }}>
-          Candidato SAM ({annotation ? `${annotation.sidecar_status}, ${annotation.boxes.length} región(es)` : "cargando"}) —{" "}
-          {annotation?.trust ?? "salida de modelo no confiable"}
+          SAM candidate ({annotation ? `${annotation.sidecar_status}, ${annotation.boxes.length} region(s)` : "loading"}) —{" "}
+          {annotation?.trust ?? "untrusted model output"}
         </p>
       )}
       {loadError && <p className="reason-text" style={{ color: "#ff9d96" }}>{loadError}</p>}
@@ -140,14 +140,14 @@ function HistoryItem({
   return (
     <div className="recovery-card">
       <h3>
-        Adquisición {record.workflow.workflow_id.slice(-8)} ·{" "}
+        Acquisition {record.workflow.workflow_id.slice(-8)} ·{" "}
         <span className={`badge ${record.state === "completed" ? "ok" : record.state === "unknown" ? "error" : "neutral"}`}>
           {record.state}
         </span>
       </h3>
       <p className="reason-text" style={{ margin: "0 0 0.4rem 0" }}>
-        autorizada por {record.workflow.actor_identity} · intentos:{" "}
-        {record.attempts.map((a) => `${a.attempt.phase} ${a.state}`).join(", ")} · gastado{" "}
+        authorized by {record.workflow.actor_identity} · attempts:{" "}
+        {record.attempts.map((a) => `${a.attempt.phase} ${a.state}`).join(", ")} · spent{" "}
         {usd(record.workflow.actual_usage.usd_micros)}
       </p>
       {record.observation && <CaptureWithBoxes caseId={caseId} record={record} token={token} />}
@@ -164,14 +164,14 @@ function HistoryItem({
       {unknown.map((a) => (
         <div key={a.attempt.attempt_id} className="section-gap">
           <p className="reason-text" style={{ color: "#ff9d96", margin: 0 }}>
-            El resultado de {a.attempt.phase} es DESCONOCIDO ({a.attempt.outcome_reason}). Nada reintenta ni reembolsa hasta
-            que una persona lo reconcilie.
+            {a.attempt.phase} outcome is UNKNOWN ({a.attempt.outcome_reason}). Nothing retries or refunds until a person
+            reconciles it.
           </p>
           <input
             style={fieldStyle}
             value={reconcileNote}
             onChange={(e) => setReconcileNote(e.target.value)}
-            placeholder="¿Qué chequeaste? (consola del proveedor, logs…)"
+            placeholder="What did you check? (provider console, logs…)"
           />
           <div className="action-row">
             <button
@@ -181,7 +181,7 @@ function HistoryItem({
                 run(() => acquisitionApi.reconcile(caseId, a.attempt.attempt_id, token, "accepted_as_unknown", reconcileNote))
               }
             >
-              Aceptar como desconocido
+              Accept as unknown
             </button>
             <button
               className="button-secondary"
@@ -190,7 +190,7 @@ function HistoryItem({
                 run(() => acquisitionApi.reconcile(caseId, a.attempt.attempt_id, token, "confirmed_not_dispatched", reconcileNote))
               }
             >
-              Confirmado: nunca se despachó
+              Confirmed never dispatched
             </button>
           </div>
         </div>
@@ -199,8 +199,8 @@ function HistoryItem({
       {(record.state === "completed" || record.state === "failed") && record.observation && open && (
         <div className="section-gap">
           <p className="reason-text" style={{ margin: "0 0 0.3rem 0" }}>
-            Evaluar contra: “{route.requirement.discriminating_question}”. Solo un evaluador distinto de{" "}
-            {record.workflow.actor_identity} puede verificarlo; una autoevaluación se registra como afirmación.
+            Evaluate against: “{route.requirement.discriminating_question}”. Only an evaluator other than{" "}
+            {record.workflow.actor_identity} can verify it; a self-evaluation is recorded as a claim.
           </p>
           <select style={fieldStyle} value={outcome} onChange={(e) => setOutcome(e.target.value as EvaluationOutcome)}>
             {OUTCOMES.map((o) => (
@@ -215,7 +215,7 @@ function HistoryItem({
             rows={2}
             value={rationale}
             onChange={(e) => setRationale(e.target.value)}
-            placeholder="Qué viste en la captura, en tus palabras"
+            placeholder="What you saw in the capture, in your own words"
           />
           <div className="action-row">
             <button
@@ -233,7 +233,7 @@ function HistoryItem({
                 )
               }
             >
-              Registrar evaluación
+              Record evaluation
             </button>
           </div>
         </div>
@@ -260,7 +260,7 @@ function RequirementCard({
   loadedAtMs: number;
 }) {
   const requirement = route.requirement;
-  const [instructions, setInstructions] = useState(`Fotografiar para: ${requirement.discriminating_question ?? ""}`);
+  const [instructions, setInstructions] = useState(`Photograph for: ${requirement.discriminating_question ?? ""}`);
   const [useSam, setUseSam] = useState(false);
   const [samPrompt, setSamPrompt] = useState("clock display");
   const [file, setFile] = useState<File | null>(null);
@@ -294,20 +294,20 @@ function RequirementCard({
           </span>
         ))}
       </div>
-      {route.refusal && <p className="reason-text">Sin ruta de adquisición: {route.refusal}</p>}
+      {route.refusal && <p className="reason-text">No acquisition route: {route.refusal}</p>}
       {requirement.unresolvable && <p className="reason-text">{requirement.unresolvable_reason}</p>}
 
       {route.route && !anyInFlight && (
         <div className="section-gap">
           <p className="reason-text" style={{ margin: "0 0 0.3rem 0" }}>
-            Ruta: {route.route.source_id} bajo {route.route.mandate_id} (rev {route.route.mandate_revision}) — discrimina{" "}
+            Route: {route.route.source_id} under {route.route.mandate_id} (rev {route.route.mandate_revision}) — discriminates{" "}
             {route.route.hypothesis_ids.join(", ")}.
           </p>
           <textarea style={fieldStyle} rows={2} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
           {overview.sam_enabled && (
             <label className="reason-text" style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginTop: 4 }}>
               <input type="checkbox" checked={useSam} onChange={(e) => setUseSam(e.target.checked)} />
-              derivar regiones con SAM 3.1 (facturado, ≤ {usd(2500)} por imagen)
+              derive regions with SAM 3.1 (billed, ≤ {usd(2500)} per image)
             </label>
           )}
           {useSam && (
@@ -321,7 +321,7 @@ function RequirementCard({
                 run(() => acquisitionApi.propose(caseId, requirement.id, token, instructions, useSam ? samPrompt : null))
               }
             >
-              Proponer captura
+              Propose capture
             </button>
           </div>
         </div>
@@ -329,16 +329,16 @@ function RequirementCard({
 
       {pendingProposals.map((p) => (
         <div key={p.id} className="recovery-card">
-          <h3>Propuesta esperando una decisión humana</h3>
+          <h3>Proposal awaiting a human decision</h3>
           <p className="reason-text" style={{ margin: 0 }}>
-            digest {p.proposal_digest.slice(0, 16)}… · propuesta por {p.proposed_by} · fuente {p.proposal.source_id} · los
-            datos van a <span className="mono">{p.proposal.retention.destination}</span> · procesamiento:{" "}
-            {p.proposal.processing_plan ? `SAM “${p.proposal.processing_plan.prompt}”` : "ninguno"} · tope de costo{" "}
+            digest {p.proposal_digest.slice(0, 16)}… · proposed by {p.proposed_by} · source {p.proposal.source_id} · data
+            goes to <span className="mono">{p.proposal.retention.destination}</span> · processing:{" "}
+            {p.proposal.processing_plan ? `SAM “${p.proposal.processing_plan.prompt}”` : "none"} · cost ceiling{" "}
             {usd(p.proposal.source_usage_ceiling.usd_micros + (p.proposal.processing_plan?.usage_ceiling.usd_micros ?? 0))}
           </p>
           <div className="action-row">
             <button className="button-primary" disabled={busy || !token} onClick={() => run(() => acquisitionApi.authorize(caseId, p.id, token))}>
-              Autorizar exactamente esto (un solo uso, 15 min)
+              Authorize exactly this (single use, 15 min)
             </button>
           </div>
         </div>
@@ -346,10 +346,10 @@ function RequirementCard({
 
       {usableGrants.map((a) => (
         <div key={a.id} className="recovery-card">
-          <h3>Autorizado — sacá la foto y enviala</h3>
+          <h3>Authorized — take the photograph and submit it</h3>
           <p className="reason-text" style={{ margin: "0 0 0.3rem 0" }}>
-            {a.authorization.authorizer_identity} · expira {new Date(a.authorization.expires_at).toLocaleTimeString()} · solo
-            el token del operador que autorizó puede despacharla
+            {a.authorization.authorizer_identity} · expires {new Date(a.authorization.expires_at).toLocaleTimeString()} · only
+            the authorizing operator's token can dispatch it
           </p>
           <input type="file" accept="image/png,image/jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           <div className="action-row">
@@ -358,7 +358,7 @@ function RequirementCard({
               disabled={busy || !token || !file}
               onClick={() => file && run(() => acquisitionApi.capture(caseId, a.id, token, file))}
             >
-              Enviar captura
+              Submit capture
             </button>
           </div>
         </div>
@@ -374,7 +374,7 @@ function RequirementCard({
             style={fieldStyle}
             value={abstainReason}
             onChange={(e) => setAbstainReason(e.target.value)}
-            placeholder="Por qué esta evidencia ya no se puede obtener"
+            placeholder="Why this evidence is no longer obtainable"
           />
           <div className="action-row">
             <button
@@ -384,7 +384,7 @@ function RequirementCard({
                 run(() => acquisitionApi.abstain(caseId, requirement.id, token, route.requirement_revision, abstainReason))
               }
             >
-              Cerrar honestamente como irresoluble
+              Close honestly as unresolvable
             </button>
           </div>
         </div>
@@ -436,14 +436,14 @@ export function AcquisitionPanel({
 
   return (
     <section className="panel">
-      <h2>Adquisición</h2>
+      <h2>Acquisition</h2>
       <p className="reason-text" style={{ marginTop: 0 }}>
-        Evidencia nueva solo a través de una pregunta planteada, una autorización humana y un evaluador identificado. Una
-        captura o una región de SAM nunca resuelve nada por sí sola.
+        New evidence only through a stated question, a human authorization, and an identified evaluator. A capture or a SAM
+        region never resolves anything by itself.
       </p>
       {!overview.enabled ? (
         <p className="reason-text">
-          Deshabilitado en este despliegue — configurá <span className="mono">KRAKADYL_OPERATOR_TOKENS</span> (ver{" "}
+          Disabled in this deployment — set <span className="mono">KRAKADYL_OPERATOR_TOKENS</span> (see{" "}
           <span className="mono">tools/operator_token.py</span>).
         </p>
       ) : null}

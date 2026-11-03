@@ -23,11 +23,11 @@ const fieldStyle: React.CSSProperties = {
 };
 
 const KINDS: { value: ClaimKind; label: string }[] = [
-  { value: "acknowledged", label: "Me hago responsable (dueño)" },
-  { value: "reported_done", label: "Lo hice" },
-  { value: "blocked", label: "Estoy bloqueado" },
-  { value: "verified", label: "Chequeé de forma independiente lo que otro afirmó" },
-  { value: "disputed", label: "Esto no es lo que dice el registro" },
+  { value: "acknowledged", label: "I take responsibility for it (owner)" },
+  { value: "reported_done", label: "I did it" },
+  { value: "blocked", label: "I'm blocked" },
+  { value: "verified", label: "I independently checked someone's claim" },
+  { value: "disputed", label: "This is not what the record says" },
 ];
 
 function Section({ title, items, kind }: { title: string; items: HandoffItem[]; kind: string }) {
@@ -65,29 +65,29 @@ function ConflictCard({
   return (
     <div className="recovery-card" style={{ borderColor: "var(--exception)", background: "rgba(173,61,54,0.12)" }}>
       <h3 style={{ color: "#ffd6d2" }}>
-        Conflicto · {conflict.kind.replaceAll("_", " ")} · <span className="mono">{conflict.requirement_id}</span>
+        Conflict · {conflict.kind.replaceAll("_", " ")} · <span className="mono">{conflict.requirement_id}</span>
       </h3>
       <p style={{ margin: 0, fontSize: "0.84rem" }}>{conflict.description}</p>
       <p className="reason-text" style={{ margin: "0.3rem 0" }}>
-        registros {conflict.record_ids.join(", ")} · involucrados: {conflict.parties.join(", ")} — lo resuelve otra persona.
+        records {conflict.record_ids.join(", ")} · involved: {conflict.parties.join(", ")} — resolved by someone else.
       </p>
       {requirement && (
         <>
-          <input style={fieldStyle} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Qué chequeaste para resolverlo" />
+          <input style={fieldStyle} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="What you checked to settle it" />
           <div className="action-row">
             <button
               className="button-secondary"
               disabled={busy || !canAct || !why.trim() || conflict.kind === "evidence_mismatch"}
               onClick={() => onResolve(conflict, requirement.requirement_revision, "keep_current_state", why)}
             >
-              Mantener el estado actual
+              Keep the current state
             </button>
             <button
               className="button-danger"
               disabled={busy || !canAct || !why.trim()}
               onClick={() => onResolve(conflict, requirement.requirement_revision, "reopen_requirement", why)}
             >
-              Reabrir el requisito
+              Reopen the requirement
             </button>
           </div>
         </>
@@ -184,10 +184,10 @@ export function TeamPanel({
 
   return (
     <section className="panel">
-      <h2>Equipo y traspaso de turno</h2>
+      <h2>Team &amp; shift handoff</h2>
       <p className="reason-text" style={{ marginTop: 0 }}>
-        Lo que hay que saber para retomar este caso, solo desde el estado registrado. El “hecho” de un compañero es una afirmación hasta que otro lo chequea;
-        los desacuerdos aparecen acá en vez de sobrescribirse.
+        What to know to pick this case up, from recorded state only. A teammate's “done” is a claim until someone else checks it;
+        disagreements show up here instead of being overwritten.
       </p>
       {localError && <p className="reason-text" style={{ color: "#ff9d96" }}>{localError}</p>}
 
@@ -196,13 +196,13 @@ export function TeamPanel({
           const event = view.events.find((e) => e.event_id === id);
           return (
             <div key={id} className="recovery-card">
-              <h3>Traspaso esperando a {who}</h3>
+              <h3>Handoff waiting for {who}</h3>
               <p style={{ margin: 0, fontSize: "0.84rem" }}>
-                de {event?.actor}: {event?.note || "(sin nota)"} · {event?.transfer.length ?? 0} requisito(s) para tomar
+                from {event?.actor}: {event?.note || "(no note)"} · {event?.transfer.length ?? 0} requirement(s) to take over
               </p>
               <div className="action-row">
                 <button className="button-primary" disabled={busy || !canAct} onClick={() => run(() => teamApi.accept(caseId, id, token))}>
-                  Aceptar (con tu token)
+                  Accept (with your token)
                 </button>
               </div>
             </div>
@@ -220,32 +220,32 @@ export function TeamPanel({
           onResolve={resolve}
         />
       ))}
-      <Section title="Declarado, sin verificar — ventana cerrándose" items={h.urgent_unverified} kind="error" />
-      <Section title="Declarado, sin verificar" items={h.claimed_unverified} kind="pending" />
-      <Section title="Asignado, sin reconocer" items={h.not_acknowledged} kind="warn" />
-      <Section title="Bloqueado" items={h.blocked} kind="warn" />
-      <Section title="Estado desconocido" items={h.uncertain_status} kind="neutral" />
+      <Section title="Claimed, not verified — window closing" items={h.urgent_unverified} kind="error" />
+      <Section title="Claimed, not verified" items={h.claimed_unverified} kind="pending" />
+      <Section title="Assigned, not acknowledged" items={h.not_acknowledged} kind="warn" />
+      <Section title="Blocked" items={h.blocked} kind="warn" />
+      <Section title="Status unknown" items={h.uncertain_status} kind="neutral" />
       {h.acquisitions_in_flight.length > 0 && (
         <p className="reason-text">
-          Adquisiciones sin resolver: {h.acquisitions_in_flight.map((a) => `${a.requirement_id} (${a.state})`).join(", ")}
+          Acquisitions not settled: {h.acquisitions_in_flight.map((a) => `${a.requirement_id} (${a.state})`).join(", ")}
         </p>
       )}
       {h.hypotheses_needing_review.length > 0 && (
-        <p className="reason-text">Hipótesis para revisar: {h.hypotheses_needing_review.map(([id]) => id).join(", ")}</p>
+        <p className="reason-text">Hypotheses to re-review: {h.hypotheses_needing_review.map(([id]) => id).join(", ")}</p>
       )}
       <p className="reason-text">
-        Verificados: {h.verified.length} · cerrados como irresolubles: {h.closed_unresolvable.length} · próximo paso:{" "}
-        {h.next_move.primary ?? (h.next_move.uncertain ? "sin una prioridad defendible única" : "ninguno")}
+        Verified: {h.verified.length} · closed as unresolvable: {h.closed_unresolvable.length} · next move:{" "}
+        {h.next_move.primary ?? (h.next_move.uncertain ? "no single defensible priority" : "none")}
       </p>
 
       <div className="section-gap" style={{ borderTop: "1px solid var(--border)", paddingTop: "0.7rem" }}>
-        <div className="reason-text" style={{ fontWeight: 600 }}>Registrar una declaración</div>
+        <div className="reason-text" style={{ fontWeight: 600 }}>Record a statement</div>
         <select style={fieldStyle} value={requirementId} onChange={(e) => setRequirementId(e.target.value)}>
-          <option value="">Elegí un requisito…</option>
+          <option value="">Choose a requirement…</option>
           {team.requirements.map((r) => (
             <option key={r.requirement.id} value={r.requirement.id}>
               {r.requirement.id} — {r.requirement.responsibility.status}
-              {r.open_conflicts.length ? " — CONFLICTO" : ""}
+              {r.open_conflicts.length ? " — CONFLICT" : ""}
             </option>
           ))}
         </select>
@@ -263,26 +263,26 @@ export function TeamPanel({
               rows={2}
               value={statement}
               onChange={(e) => setStatement(e.target.value)}
-              placeholder="En tus palabras"
+              placeholder="In your own words"
             />
             {(kind === "reported_done" || kind === "verified") && (
               <select style={{ ...fieldStyle, marginTop: 4 }} value={evidenceId} onChange={(e) => setEvidenceId(e.target.value)}>
-                <option value="">Sin evidencia adjunta</option>
+                <option value="">No evidence attached</option>
                 {evidence.map((e) => (
                   <option key={e.observation.id} value={e.observation.id}>
-                    adjuntar {e.observation.id} (sha256 {e.observation.digest.slice(0, 12)}…)
+                    attach {e.observation.id} (sha256 {e.observation.digest.slice(0, 12)}…)
                   </option>
                 ))}
               </select>
             )}
             {(kind === "verified" || kind === "disputed") && (
               <select style={{ ...fieldStyle, marginTop: 4 }} value={refersTo} onChange={(e) => setRefersTo(e.target.value)}>
-                <option value="">{kind === "disputed" ? "El estado registrado actual" : "Elegí la afirmación que chequeaste…"}</option>
+                <option value="">{kind === "disputed" ? "The current recorded state" : "Choose the claim you checked…"}</option>
                 {recordsForSelected
                   .filter((r) => r.kind === "reported_done" || (kind === "disputed" && r.kind === "verified"))
                   .map((r) => (
                     <option key={r.record_id} value={r.record_id}>
-                      {r.kind} por {r.actor}: {r.statement.slice(0, 60)}
+                      {r.kind} by {r.actor}: {r.statement.slice(0, 60)}
                     </option>
                   ))}
               </select>
@@ -292,7 +292,7 @@ export function TeamPanel({
                 style={{ ...fieldStyle, marginTop: 4 }}
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
-                placeholder="Cómo lo chequeaste (ej. re-hasheé la copia compartida)"
+                placeholder="How you checked it (e.g. re-hashed the share copy)"
               />
             )}
             <div className="action-row">
@@ -301,7 +301,7 @@ export function TeamPanel({
                 disabled={busy || !canAct || !statement.trim() || (kind === "verified" && (!method.trim() || !refersTo))}
                 onClick={submitStatement}
               >
-                Registrar (como dueño del token)
+                Record (as the token's owner)
               </button>
             </div>
           </>
@@ -309,9 +309,9 @@ export function TeamPanel({
       </div>
 
       <div className="section-gap" style={{ borderTop: "1px solid var(--border)", paddingTop: "0.7rem" }}>
-        <div className="reason-text" style={{ fontWeight: 600 }}>Traspasar este turno</div>
+        <div className="reason-text" style={{ fontWeight: 600 }}>Hand off this shift</div>
         <select style={fieldStyle} value={toActor} onChange={(e) => setToActor(e.target.value)}>
-          <option value="">A…</option>
+          <option value="">To…</option>
           {team.operators.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -329,7 +329,7 @@ export function TeamPanel({
                   setTransfer(e.target.checked ? [...transfer, r.requirement.id] : transfer.filter((x) => x !== r.requirement.id))
                 }
               />
-              traspasar {r.requirement.id} (dueño {r.requirement.responsibility.owner})
+              hand over {r.requirement.id} (owner {r.requirement.responsibility.owner})
             </label>
           ))}
         <textarea
@@ -337,11 +337,11 @@ export function TeamPanel({
           rows={2}
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Algo que la próxima persona necesite y no esté registrado arriba"
+          placeholder="Anything the next person needs that isn't recorded above"
         />
         <p className="reason-text" style={{ margin: "0.3rem 0" }}>
-          Se ata exactamente a la vista de arriba (estado {h.state_digest.slice(0, 12)}…). La responsabilidad se mueve; la
-          autoridad de captura y export no.
+          Binds to exactly the view above (state {h.state_digest.slice(0, 12)}…). Responsibility moves; capture and export
+          authority does not.
         </p>
         <div className="action-row">
           <button
@@ -363,7 +363,7 @@ export function TeamPanel({
               )
             }
           >
-            Traspasar
+            Hand off
           </button>
         </div>
       </div>
