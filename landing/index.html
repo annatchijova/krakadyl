@@ -75,6 +75,12 @@ pre{margin:.3rem 0 0;background:#0a2b28;border:1px solid var(--border);border-ra
 .captions{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;margin-top:1rem}
 .captions div{font-size:.85rem;color:var(--muted);border-left:2px solid var(--jade);padding-left:.7rem}
 .captions strong{color:var(--text);display:block;font-size:.82rem;margin-bottom:.15rem}
+/* screenshot gallery */
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.gallery figure{margin:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel)}
+.gallery img{width:100%;display:block;border-bottom:1px solid var(--border)}
+.gallery figcaption{padding:.7rem .9rem;font-size:.85rem;color:var(--muted)}
+.gallery figcaption b{color:var(--text);display:block;font-size:.84rem;margin-bottom:.12rem}
 /* slides */
 .slides-link{display:block;border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--panel);text-decoration:none;color:inherit;transition:border-color .15s}
 .slides-link:hover{border-color:var(--signal)}
@@ -96,9 +102,9 @@ footer a{font-weight:700}
 /* phones: the wide banner becomes a thin strip, so crop it to a portrait
    that features the crocodile head — the header and h1 already carry the name */
 @media(max-width:560px){
-  .hero-banner img{aspect-ratio:3/4;object-fit:cover;object-position:70% 42%}
   .endimg .cap{padding:1.1rem .9rem .9rem}
   .endimg .cap small{font-size:.8rem}
+  .gallery{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -111,8 +117,11 @@ footer a{font-weight:700}
   </header>
 
   <div class="hero-banner">
-    <img src="img/logo.png" width="2172" height="724"
-      alt="KRAKADYL — forensic investigation continuity. Keep the evidence. Keep the thread." />
+    <picture>
+      <source media="(max-width:560px)" srcset="img/logo-mobile.jpg" />
+      <img src="img/logo.png" width="2172" height="724"
+        alt="KRAKADYL — forensic investigation continuity. Keep the evidence. Keep the thread." />
+    </picture>
   </div>
 
   <div class="hero">
@@ -137,14 +146,42 @@ footer a{font-weight:700}
     <div class="shot">
       <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
         <span class="addr">localhost:5173 &#183; case-001</span></div>
-      <video src="img/krakadyl-run.mp4" poster="img/ui-workspace.jpg" autoplay muted loop playsinline
+      <video src="img/krakadyl-run.mp4" poster="img/gallery-overview.jpg" autoplay muted loop playsinline
         width="1568" height="750" style="width:100%;display:block"
         aria-label="A real KRAKADYL run: preparing package_export is ALLOWED and sealed into a receipt with its manifest, then after the mandate is revoked the same action is FORBIDDEN and sealed too."></video>
     </div>
     <div class="captions">
       <div><strong>Allowed, then sealed</strong>The engine clears <span class="mono">package_export</span> within mandate scope and seals a receipt whose manifest excludes device-B because the mandate says so.</div>
-      <div><strong>Revoke, and it refuses</strong>Revoke the mandate and the same action turns <span class="mono">prohibido</span> &mdash; the refusal is sealed as faithfully as an execution.</div>
+      <div><strong>Revoke, and it refuses</strong>Revoke the mandate and the same action turns <span class="mono">forbidden</span> &mdash; the refusal is sealed as faithfully as an execution.</div>
       <div><strong>Authority stays explicit</strong>The situation board flips to Revoked in real time; the model never had a path to authority, only the deterministic engine did.</div>
+    </div>
+  </section>
+
+  <section id="gallery">
+    <h2>A closer look</h2>
+    <p class="sub">Stills from the same run, in case the video does not autoplay &mdash; the English build of the workspace,
+      against the live backend.</p>
+    <div class="gallery">
+      <figure>
+        <img src="img/gallery-overview.jpg" loading="lazy"
+          alt="KRAKADYL workspace: situation board, evidence panel, next-move panel, and resume briefing on one screen." />
+        <figcaption><b>The whole case on one screen</b>Situation board, evidence, the proposed next move, and what changed while you were away &mdash; no reconstruction by hand.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/gallery-receipt.jpg" loading="lazy"
+          alt="A sealed receipt and its manifest, with device-B excluded by the mandate." />
+        <figcaption><b>Allowed, then sealed</b>The export clears the mandate and seals a receipt; the manifest excludes device-B because the mandate says so.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/gallery-forbidden.jpg" loading="lazy"
+          alt="Authority revoked: the same action is now forbidden and the refusal is sealed." />
+        <figcaption><b>Revoked, then refused</b>Revoke the mandate and the same action turns forbidden &mdash; the refusal is sealed as faithfully as an execution.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/gallery-delegation.jpg" loading="lazy"
+          alt="The delegation panel: a sub-mandate hands a strictly narrower slice of authority." />
+        <figcaption><b>Delegated authority &mdash; Level 6</b>A sub-mandate hands a strictly narrower slice; it can never be wider than its parent, and dies the instant any mandate above it is revoked.</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -267,8 +304,11 @@ META_API_KEY=... python demo/run_case_001_muse_adversarial.py</pre>
   </section>
 
   <div class="endimg">
-    <img src="img/crocodile-evidence.png" width="1699" height="957" loading="lazy"
-      alt="A crocodile guarding a sealed evidence case in a swamp, a broken chain beside it." />
+    <picture>
+      <source media="(max-width:560px)" srcset="img/crocodile-end-mobile.jpg" />
+      <img src="img/crocodile-evidence.png" width="1699" height="957" loading="lazy"
+        alt="A crocodile guarding a sealed evidence case in a swamp, a broken chain beside it." />
+    </picture>
     <div class="cap">It guards the evidence. The chain is broken &mdash; and it still holds.
       <small>Keep the evidence. Keep the thread.</small></div>
   </div>
