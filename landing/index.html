@@ -93,6 +93,13 @@ footer{padding:2.4rem 0 3.2rem;border-top:1px solid var(--border);color:var(--mu
 footer a{font-weight:700}
 .kv{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem}
 @media(max-width:720px){.step{grid-template-columns:1fr}.step .lbl{padding-top:0}.grid2{grid-template-columns:1fr}.captions{grid-template-columns:1fr}}
+/* phones: the wide banner becomes a thin strip, so crop it to a portrait
+   that features the crocodile head — the header and h1 already carry the name */
+@media(max-width:560px){
+  .hero-banner img{aspect-ratio:3/4;object-fit:cover;object-position:70% 42%}
+  .endimg .cap{padding:1.1rem .9rem .9rem}
+  .endimg .cap small{font-size:.8rem}
+}
 </style>
 </head>
 <body>
@@ -234,8 +241,8 @@ not independently verified: obs-b1</pre></div></div>
         <p style="margin:0;color:var(--muted);font-size:.9rem">The full write-up in English &mdash; the thesis, the threat model, and the architecture that follows from it.</p>
       </div></a>
       <a class="card" style="text-decoration:none;color:inherit" href="https://github.com/annatchijova/krakadyl/blob/main/docs/KRAKADYL%20GLOBAL%20RESEARCH%20ES.md"><div class="bd">
-        <h3 style="margin:.1rem 0 .4rem;font-size:1rem">Investigaci&oacute;n &#8599;</h3>
-        <p style="margin:0;color:var(--muted);font-size:.9rem">La misma investigaci&oacute;n en espa&ntilde;ol, en <span class="mono">docs/</span>.</p>
+        <h3 style="margin:.1rem 0 .4rem;font-size:1rem">Research &mdash; Spanish &#8599;</h3>
+        <p style="margin:0;color:var(--muted);font-size:.9rem">The same research in Spanish, in <span class="mono">docs/</span>.</p>
       </a></div>
     </div>
   </section>
