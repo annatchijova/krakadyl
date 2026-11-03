@@ -4,6 +4,8 @@
 
 **An active-investigation agent for forensic work under time pressure.**
 
+**Live showcase → [krakadyl-live.vercel.app](https://krakadyl-live.vercel.app)** — the reproduced real Muse Spark and SAM 3.1 calls, the research map, the jury deck, and demo videos.
+
 KRAKADYL keeps a case organized, identifies what evidence is missing
 *while it can still be recovered*, and coordinates the next verifiable
 step — within a mandate it never silently expands. It does not decide
@@ -332,3 +334,38 @@ projects listed above.
 Apache License 2.0 — see [LICENSE](LICENSE). Public and open from the
 first commit, so anyone can read, adapt, or extend it for their own
 investigative domain.
+
+## The workspace, screen by screen
+
+The full demo walkthrough, captured in the running English workspace. Nothing is
+mocked — every verdict, receipt, and refusal is produced by the deterministic
+engine, with real Muse Spark and SAM 3.1 calls.
+
+### The gather case — a missing piece, recovered
+
+The engine blocks the export until an open clock check is captured and
+**independently verified** — the person who captured the evidence cannot verify
+their own capture — and only then allows it.
+
+![KRAKADYL workspace — gather case, 1](visual/ui/gather-01.png)
+![KRAKADYL workspace — gather case, 2](visual/ui/gather-02.png)
+![KRAKADYL workspace — gather case, 3](visual/ui/gather-03.png)
+![KRAKADYL workspace — gather case, 4](visual/ui/gather-04.png)
+![KRAKADYL workspace — gather case, 5](visual/ui/gather-05.png)
+![KRAKADYL workspace — gather case, 6](visual/ui/gather-06.png)
+![KRAKADYL workspace — gather case, 7](visual/ui/gather-07.png)
+
+### Case-001 — allowed and sealed, and the guardrails
+
+The happy path (allowed → sealed receipt), the What-if explorer that runs the same
+checks on a copy under chosen assumptions, the Laya typed-signal sensor, and the
+simulation that tampers an evidence file or revokes the mandate so the engine
+refuses.
+
+![KRAKADYL workspace — case-001, 1](visual/ui/case1-01.png)
+![KRAKADYL workspace — case-001, 2](visual/ui/case1-02.png)
+![KRAKADYL workspace — case-001, 3](visual/ui/case1-03.png)
+![KRAKADYL workspace — case-001, 4](visual/ui/case1-04.png)
+![KRAKADYL workspace — case-001, 5](visual/ui/case1-05.png)
+![KRAKADYL workspace — case-001, 6](visual/ui/case1-06.png)
+![KRAKADYL workspace — case-001, 7](visual/ui/case1-07.png)
