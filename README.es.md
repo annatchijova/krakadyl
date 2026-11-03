@@ -2,7 +2,11 @@
 
 # KRAKADYL
 
+**Lo reportado no está verificado.**
+
 **Un sistema de investigación activa para evidencia, autoridad y continuidad — implementado primero en DFIR.**
+
+**Showcase en vivo → [krakadyl-live.vercel.app](https://krakadyl-live.vercel.app)** — las llamadas reales reproducidas a Muse Spark y SAM 3.1, el mapa de investigación, el jury deck y los videos del demo.
 
 KRAKADYL mantiene un caso organizado, identifica qué evidencia falta
 *mientras todavía se puede recuperar*, y coordina el siguiente paso
@@ -11,12 +15,23 @@ decide qué prueba la evidencia; eso sigue siendo del motor de inferencia
 y de la persona investigadora. Ayuda a que la investigación llegue a esas
 herramientas mejor preparada.
 
+**La IA propone. El motor verifica. Las personas confirman. La investigación recuerda.**
+
 ![El cocodrilo guarda la evidencia.png](visual/evidence.png)
 
 Construido durante el [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 (building period: 27 oct – 4 nov 2026) por [Anna Tchijova](https://github.com/annatchijova).
 
 ## El escenario para el que existe
+
+47 tornillos faltantes en un estabilizador. Una válvula de seguridad ausente de
+una bomba que se reinició igual. Más de 57.000 mensajes que se creían revisados y
+no lo estaban. Un servidor de ocho que quedó con código viejo. Cuatro fracasos
+sin relación entre sí — Continental Express 2574, Piper Alpha, el caso Liam
+Allan, Knight Capital — con un patrón en común: algo quedó sin terminar, sin
+verificar, desconectado o desconocido para la siguiente persona que lo
+necesitaba. Ningún software puede afirmar con credibilidad que los habría
+evitado. Pero el patrón merece tomarse en serio.
 
 Una investigación no siempre fracasa porque alguien cometió un error. A
 veces fracasa porque todos creyeron que otra persona ya había hecho
