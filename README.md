@@ -2,6 +2,8 @@
 
 # KRAKADYL
 
+**Reported is not verified.**
+
 **An active-investigation system for evidence, authority, and continuity — first implemented in DFIR.**
 
 **Live showcase → [krakadyl-live.vercel.app](https://krakadyl-live.vercel.app)** — the reproduced real Muse Spark and SAM 3.1 calls, the research map, the jury deck, and demo videos.
@@ -13,12 +15,22 @@ what the evidence proves; that stays with the inference engine and the
 human investigator. It helps the investigation arrive at those tools
 better prepared.
 
+**The AI proposes. The engine checks. Humans verify. The investigation remembers.**
+
 ![The crocodile keeps the evidence](visual/evidence.png)
 
 Built during the [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 (building period: Oct 27 – Nov 4, 2026) by [Anna Tchijova](https://github.com/annatchijova).
 
 ## The scenario this exists for
+
+47 screws missing from a stabilizer. A safety valve absent from a pump that was
+restarted anyway. More than 57,000 messages believed reviewed that were not. One
+server out of eight left on outdated code. Four unrelated failures — Continental
+Express 2574, Piper Alpha, the Liam Allan prosecution, Knight Capital — with one
+pattern in common: something was unfinished, unverified, disconnected, or unknown
+to the next person who needed it. No software can credibly claim it would have
+prevented them. But the pattern deserves to be taken seriously.
 
 An investigation doesn't always fail because someone made a mistake.
 Sometimes it fails because everyone assumed someone else had already
