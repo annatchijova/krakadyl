@@ -37,6 +37,11 @@ incomplete information, and handoffs between teams — technical
 expertise doesn't turn human attention and memory into unlimited
 resources.
 
+The [global research](KRAKADYL%20GLOBAL%20RESEARCH%20EN.md) finds documented
+mechanisms and cases for these failures across aviation, medicine, process
+safety, criminal justice, and cybersecurity. It does **not** find a defensible
+global percentage for digital investigations; this project does not invent one.
+
 ## Why this exists
 
 Working with her own forensic/DFIR tooling, Anna kept running into the
@@ -70,6 +75,9 @@ that matters.** A case KRAKADYL cannot complete should close honestly as
 "this evidence is not available," never as a narrative pushed into
 looking complete.
 
+That is an evaluation hypothesis, not a measured result: a coordination and
+continuity benchmark must test it against a baseline before it can be claimed.
+
 This reflects something Anna considers foundational, not incidental:
 **technical competence and executive-function capacity are independent
 variables.** Good tools should account for both — see
@@ -97,6 +105,25 @@ eventually needs to be proven without exposing the underlying evidence.
 Target integrations as the project grows: **Velociraptor** (acquisition),
 **SIFT Workstation**, **i2 Analyst's Notebook**, and VIGÍA itself — each
 as an adapter with its own explicit contract, not a hardcoded assumption.
+
+## From reported work to an analysis-ready case
+
+KRAKADYL sits before acquisition and inference tools. It prevents a status
+claim from quietly becoming a fact, and it preserves an honest route when the
+case cannot proceed.
+
+```mermaid
+flowchart LR
+    R["Work reported complete"] --> V{"Independently verified?"}
+    V -- "no" --> M["Evidence remains missing or conflicting"]
+    M --> N{"Authorized source still available?"}
+    N -- "yes" --> G["Gather the named evidence"]
+    N -- "no" --> C["Close honestly: unresolved"]
+    V -- "yes" --> A{"Mandate valid for this action?"}
+    A -- "no" --> D["Do not act; record why"]
+    A -- "yes" --> P["Prepare a verified evidence package"]
+    P --> I["Inference or analysis tool\nmay conclude or legitimately ABSTAIN"]
+```
 
 ## Architecture, in one paragraph
 
@@ -223,6 +250,17 @@ follows Anna's own engineering skill:
 [destination-driven-construction](https://github.com/annatchijova/SKILLS/tree/main/destination-driven-construction)
 (part of her [SKILLS](https://github.com/annatchijova/SKILLS) collection).
 
+## What this combination contributes
+
+KRAKADYL does not claim to have invented authority-bounded agents, delegated
+credentials, tamper-evident receipts, or handoff practice. Its contribution is
+their investigative combination: evidence reported as preserved is not usable
+until independently verified; authority delegated through a chain is checked
+again at execution; recovery windows say whether a deadline is known or event
+driven; and a return from absence is a reorientation briefing, not a blank
+case file. The [global research](KRAKADYL%20GLOBAL%20RESEARCH%20EN.md) states
+the source basis, prior art, unmeasured outcomes, and claim boundaries.
+
 ## Acknowledgements and prior art
 
 No part of this project is presented as inventing authority-bounded
@@ -246,6 +284,9 @@ README was written:
   permitted actions can combine into a violation (tool-chaining).
 - [Bounded Agents / APC](https://arxiv.org/abs/2608.15888) — delegation
   limits enforced via composition closure across action history.
+- [Zhu and Wang](https://arxiv.org/abs/2609.21284) — a more general treatment
+  of transitive revocation with in-flight effects; KRAKADYL applies the
+  constraint to evidence actions rather than claiming to have originated it.
 - [Rehearsal](https://github.com/dhansxd/rehearsal) — rehearsing outcomes
   before approving an action.
 - [Laya](https://github.com/NandhaKishorM/laya) — the typed semantic

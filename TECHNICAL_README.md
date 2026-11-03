@@ -6,10 +6,17 @@ matters; this document states exactly how it is built, what it guarantees, and
 what it does not. Precision is not sacrificed here for accessibility.
 
 **Status of the claims below.** Levels 1–5 are implemented, tested, and
-red-teamed on `main` as of 2026-10-31 (see `docs/levels.md` for the per-level
-record). Levels 6–7 are roadmap, not built. Test counts and live-run results
-are stated with their date and scope; anything not yet measured is labeled as
-such rather than rounded up.
+red-teamed on `main`, and Level 6's authority and continuity mechanisms are
+built and red-teamed too — sub-mandates with composition closure (delegate,
+act under, and lose it when any ancestor is revoked), wired through the API,
+plus mission continuity across a real-time gap (`resume_after_gap`,
+`GET /resume`); only the Level 6 workspace UI and Level 7 (the ecosystem
+adapters, exportable SDK, published benchmark) remain. A React + TypeScript
+workspace renders the whole thing — including the forensic situation strip,
+delegation, and resume briefing — and re-decides nothing. See `docs/levels.md`
+for the per-level record. Test counts and live-run results are stated with
+their date and scope; anything not yet measured is labeled as such rather than
+rounded up.
 
 **Audience assumption.** You can read Python and TypeScript, you know what a
 hash chain proves and what it does not, and you want the exact rule before the
@@ -18,6 +25,7 @@ rationale. Rationale is included anyway, after the rule.
 ## Contents
 
 - [System architecture](#system-architecture)
+- [Research-grounded positioning](#research-grounded-positioning)
 - [Deterministic core](#deterministic-core)
 - [Canonical sealing and the independent verifier](#canonical-sealing-and-the-independent-verifier)
 - [Domain contracts](#domain-contracts)
@@ -99,6 +107,51 @@ Component responsibilities, each in exactly one place:
 | Adapters | `krakadyl/adapters/{muse,laya,sam,sam_annotation}.py` | Model/sensor I/O, schema validation, bounds |
 | Verifier | `tools/verify_receipt.py` | Stdlib-only independent chain checker |
 | Frontend | `frontend/src/` | React workspace; renders server decisions, re-decides nothing |
+
+### Research-grounded positioning
+
+`KRAKADYL GLOBAL RESEARCH EN.md` distinguishes supported implementation claims
+from market or outcome claims. The research found no defensible global rate for
+digital-investigation failure caused by coordination, continuity, authority,
+preservation, or verification failures; no percentage is inferred here. It
+also found no user study or benchmark showing fewer omissions, handoff errors,
+or faster reorientation. Those are evaluation hypotheses, not product results.
+
+The defensible contribution is the combination, applied before acquisition or
+inference: independently verified evidence state, delegated authority with
+transitive revocation, typed recovery-window uncertainty, and reorientation
+after absence. The research did not find that combination documented in the
+systems it reviewed; that is narrower than a claim to be first or only. The
+report records the reviewed sources, prior art, and its code-version boundary.
+
+### Prepare/execute revalidation
+
+The crucial decision boundary is temporal. A valid decision at preparation is
+not permission to act later; current facts win at execution.
+
+```mermaid
+sequenceDiagram
+    participant U as Operator
+    participant E as Executor
+    participant S as Current case state
+    participant R as Receipt chain
+
+    U->>E: prepare_evidence_package(action)
+    E->>S: Check mandate, evidence, conflicts
+    S-->>E: Current typed facts
+    E-->>U: ALLOWED + frozen PreparedAction, or refusal
+    Note over U,E: Time passes: bytes, requirements, or authority can change
+    U->>E: execute_prepared_action(prepared action)
+    E->>S: Re-check correspondence, nonce, expiry, mandate, revisions, evidence
+    alt Any current check fails
+        E->>R: Seal refusal with reason
+        E-->>U: Nothing is published
+    else Every current check passes
+        E->>E: Copy to temp, verify each digest, atomic rename
+        E->>R: Seal executed receipt
+        E-->>U: Published package
+    end
+```
 
 ## Deterministic core
 
@@ -663,11 +716,12 @@ the LLM is out of the decision path.
 **Reproducible environment:** Python 3.11 with the committed `uv.lock`
 (`uv sync --locked --extra dev --extra api`), frontend via its lockfile on
 Node 22, CI pinned by action SHA. The authoritative external verification is
-CI run `41127587728` on `a80e10e` (full Python suite incl. HTTP tests,
-frontend build + lint, all green). The one known environment caveat is
-recorded, not smoothed over: a later local rerun was blocked by a
-reproducible `TestClient`/AnyIO worker-thread hang even on a minimal app —
-documented as an environment limitation, never presented as a green result.
+CI run `41332750410` on `635c80b` (2026-11-01: full Python suite incl. HTTP
+tests, live-server API smoke under locked 3.11, frontend build + lint, all
+green). The earlier `TestClient`/AnyIO worker-thread hang caveat is
+withdrawn, not smoothed over: it does not reproduce — the full suite runs
+green locally (453 passed, 2026-11-01) and the live-server smoke passes in
+CI — see `docs/presentation-delivery-plan.md` for the withdrawal record.
 
 ## Benchmarks, live evidence, and methodology
 
@@ -681,8 +735,8 @@ re-runnable checks, each with its method attached:
   is the executable form — real evidence for coordination/continuity
   (invariants 4–5), explicitly not for content isolation (invariant 6), a
   correction recorded in `docs/levels.md` itself.
-- **Suite:** 33 test modules (`tests/test_*.py`); last recorded full run
-  344 passed (2026-10-30, optional Laya module excluded). Falsifiability is
+- **Suite:** 35 test modules (`tests/test_*.py`); last recorded full run
+  453 passed (2026-11-01, optional Laya module excluded). Falsifiability is
   enforced per the project's own testing discipline: hypothesis-recovery and
   invalidation tests were also run against temporary verification-bypassing
   mutations and turned red, proving they can fail.
@@ -752,7 +806,12 @@ limiter is process-local; seeded mandates expire 30 days after seeding.
 - **Deciding what evidence proves.** KRAKADYL keeps the case ready for
   evaluation; verdicts stay with the investigator and inference systems
   (VIGÍA or equivalent). Reducing avoidable `ABSTAIN`s while preserving
-  necessary ones is the metric — never pushing a case into looking complete.
+  necessary ones is an evaluation hypothesis, not a measured outcome; a
+  preregistered coordination/continuity benchmark against a baseline is still
+  required. The system must never push a case into looking complete.
+- **Universal or isolated-primitives novelty.** Delegation, receipts, and
+  verification each have prior art. The claim is the documented combination
+  in this investigative workflow, not being first or only.
 - **Production identity.** No IdP, MFA, rotation, or session lifecycle; the
   Bearer [REDACTED] is a local-deployment boundary.
 - **Multi-worker serving.** Single SQLite connection, single worker; hardening
@@ -798,6 +857,7 @@ How named failures surface — each row is code behavior, not aspiration:
 | `KRAKADYL_ENABLE_SAM` | unset | `1` plus `META_API_KEY` enables SAM captures |
 | `META_API_KEY` | unset | Meta Model API key for Muse + SAM; absent → those paths refuse |
 | `KRAKADYL_MUSE_RATE_LIMIT_PER_MINUTE` | `10` | Process-local billed-call limiter |
+| `KRAKADYL_CORS_ORIGINS` | local-dev origins | Comma-separated browser-origin allowlist for a deployed frontend; `*` refused at startup |
 
 **Pinned execution contract.** Python 3.11, `uv.lock` (committed), frontend
 lockfile, Node 22, CI actions pinned by SHA. Backend serves `:8000`,
@@ -930,7 +990,7 @@ krakadyl/
 │   ├── api/                 # FastAPI over the unmodified core + seed
 │   ├── store.py             # SQLite persistence, atomic writes, nonce/receipt append
 │   └── acquisition_runtime.py # Level 3 runtime orchestration
-├── tests/                   # 33 modules: behavioral + regression evidence
+├── tests/                   # 35 modules: behavioral + regression evidence
 ├── demo/                    # runnable cases: deterministic + live (keyed)
 ├── tools/                   # operator tokens, receipt verifier, probes, smoke
 ├── frontend/                # React + TS workspace (generated API types)
@@ -954,7 +1014,9 @@ verification), `docs/level3-acquisition-contracts.md` +
 `docs/muse-adversarial-probe-2026-10-30.md`,
 `docs/sam-3.1-provider-review-2026-10-28.md`,
 `docs/sam-live-smoke-2026-10-29.md`, `docs/red-team-laya-integration.md`
-(adapter evidence), `docs/terminal-first-and-blame.md` (where invariants 4–5
+(adapter evidence), `KRAKADYL GLOBAL RESEARCH EN.md` (source-led landscape,
+prior art, and claim boundaries; Spanish original:
+`docs/KRAKADYL GLOBAL RESEARCH ES.md`), `docs/terminal-first-and-blame.md` (where invariants 4–5
 come from), `docs/presentation-delivery-plan.md` (acceptance gates).
 
 License: Apache-2.0 (`LICENSE`). Public and open from the first commit.
