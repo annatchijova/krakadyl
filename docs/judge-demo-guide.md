@@ -8,7 +8,9 @@ receipted. Nothing on the page is a mock.
 ## The 3-minute path
 
 Log in with the operator token provided (paste it on the auth screen — it
-stays in tab memory only, never persisted). The seeded case `case-001` is a
+stays in tab memory only, never persisted). The workspace seeds four cases,
+selectable at the top: `case-001` (allowed), `case-gather` (gather_evidence),
+and `case-lost` / `case-scope` (both forbidden). Start with `case-001`, a
 two-device synthetic case: `device-A` is in mandate scope, `device-B` is not.
 
 1. **Mission + Evidence.** Read the case state: what is verified, what is
@@ -100,7 +102,7 @@ described.
 
 ## Reset and expiry
 
-- A backend restart reseeds the demo case to a clean state (by design on
+- A backend restart reseeds the demo cases to a clean state (by design on
   ephemeral disks — judges always start from the same case).
 - Seeded mandates are valid 30 days from 2026-10-27 (through judging,
   ~2026-11-26). Past expiry the system is correctly `FORBIDDEN` everywhere

@@ -65,10 +65,12 @@ npm install
 npm run dev
 ```
 
-Opens on `http://localhost:5173`. The case (`case-001`, the same
-two-device synthetic case as `demo/run_case_001.py` and
-`demo/run_case_002_level2.py`) is seeded into `out/api/krakadyl.db` on
-first backend startup, and persists across restarts and page reloads.
+Opens on `http://localhost:5173`. Four cases are seeded into
+`out/api/krakadyl.db` on first backend startup and persist across restarts
+and page reloads: `case-001` (allowed — the same two-device synthetic case as
+`demo/run_case_001.py` and `demo/run_case_002_level2.py`), `case-gather`
+(gather_evidence), and `case-lost` / `case-scope` (both forbidden). The case
+selector at the top of the workspace switches between them.
 
 ### Acquisition panel (Level 3)
 
