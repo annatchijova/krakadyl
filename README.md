@@ -217,6 +217,10 @@ as an execution.
 
 ## Try it
 
+**Reproduce it on your machine → [docs/getting-started.md](docs/getting-started.md)** —
+clone, start the backend and the workspace, and drive all four demo cases step by
+step. Bring your own Meta key to see Muse Spark and SAM 3.1 run live.
+
 `krakadyl/api/` exposes this same, unmodified core over HTTP
 (FastAPI), backed by real persistence (`krakadyl/store.py` — a case
 survives a server restart or a page reload), and `frontend/` is a

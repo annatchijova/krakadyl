@@ -159,6 +159,10 @@ razón" queda tan registrado como "esto se ejecutó".
 
 ## Probalo
 
+**Reproducilo en tu máquina → [docs/getting-started.es.md](docs/getting-started.es.md)** —
+cloná, levantá el backend y el workspace, y recorré los cuatro casos del demo paso a
+paso. Traé tu propia clave de Meta para ver a Muse Spark y SAM 3.1 en vivo.
+
 `krakadyl/api/` expone este mismo núcleo, sin modificar, sobre HTTP
 (FastAPI), con persistencia real (`krakadyl/store.py` — un caso
 sobrevive a un reinicio del servidor o a recargar la página), y
