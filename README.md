@@ -122,7 +122,7 @@ flowchart LR
     V -- "yes" --> A{"Mandate valid for this action?"}
     A -- "no" --> D["Do not act; record why"]
     A -- "yes" --> P["Prepare a verified evidence package"]
-    P --> I["Inference or analysis tool\nmay conclude or legitimately ABSTAIN"]
+    P --> I["Inference or analysis tool<br/>may conclude or legitimately ABSTAIN"]
 ```
 
 ## Architecture, in one paragraph
@@ -146,19 +146,19 @@ verified before this project claimed any novelty.
 
 ```mermaid
 flowchart TD
-    M0["Muse Spark\n(Standard mode)"] --> M1["ProposedActionCandidate\n(schema-validated, untrusted)"]
-    M1 -.->|"reasoning: display-only,\nnever read by the checks below"| A
+    M0["Muse Spark<br/>(Standard mode)"] --> M1["ProposedActionCandidate<br/>(schema-validated, untrusted)"]
+    M1 -.->|"reasoning: display-only,<br/>never read by the checks below"| A
     M1 --> A[ProposedAction]
-    A --> C{"check_mandate\n(scope, validity, revocation)"}
-    A --> D{"check_evidence\n(digest + independent verification)"}
+    A --> C{"check_mandate<br/>(scope, validity, revocation)"}
+    A --> D{"check_evidence<br/>(digest + independent verification)"}
     C --> E{decide}
     D --> E
-    E -- "FORBIDDEN / CONFIRM / GATHER_EVIDENCE" --> F["Decision only\nnothing executed"]
-    E -- ALLOWED --> G["PreparedAction\n(frozen snapshot + nonce)"]
-    G -. "time passes: a mandate can be\nrevoked, a file can change" .-> H[execute_prepared_action]
-    H --> I{"revalidate against CURRENT state:\nmandate · evidence · correspondence · replay"}
-    I -- stale or invalid --> J["Not executed\nreason recorded, nothing published"]
-    I -- still valid --> K["Assemble in temp dir,\nverify each copy's digest,\nrename atomically"]
+    E -- "FORBIDDEN / CONFIRM / GATHER_EVIDENCE" --> F["Decision only<br/>nothing executed"]
+    E -- ALLOWED --> G["PreparedAction<br/>(frozen snapshot + nonce)"]
+    G -. "time passes: a mandate can be<br/>revoked, a file can change" .-> H[execute_prepared_action]
+    H --> I{"revalidate against CURRENT state:<br/>mandate · evidence · correspondence · replay"}
+    I -- stale or invalid --> J["Not executed<br/>reason recorded, nothing published"]
+    I -- still valid --> K["Assemble in temp dir,<br/>verify each copy's digest,<br/>rename atomically"]
     K --> L[Chained Receipt]
     J --> L
 ```

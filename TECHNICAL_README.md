@@ -360,6 +360,17 @@ resolved — a real inconsistency, surfaced, not papered over); everything
 else, including bare `REPORTED_DONE`, → `MISSING`. A claim is never read as a
 fact here.
 
+```mermaid
+flowchart TD
+    Q["EvidenceRequirement<br/>lifecycle state"] --> U{"unresolvable?"}
+    U -- "yes" --> MISS["MISSING"]
+    U -- "no" --> RS{"resolved +<br/>verified responsibility?"}
+    RS -- "yes" --> SUF["SUFFICIENT"]
+    RS -- "no" --> VD{"VERIFIED_DONE<br/>but not resolved?"}
+    VD -- "yes" --> CON["CONFLICTING<br/>(inconsistency surfaced,<br/>never papered over)"]
+    VD -- "no" --> MISS2["MISSING<br/>(incl. bare REPORTED_DONE)"]
+```
+
 **`next_move()` answers without fabricating.** Input: open requirements.
 Output: `primary` (one requirement id) with `alternatives`, or `uncertain`
 with the tied candidates, plus `blocked` (attention-worthy but currently
@@ -505,6 +516,43 @@ the real outcome. Counterfactual accumulation is bounded (an unbounded-growth
 finding from the integrated audit was remediated). Details and review:
 `docs/level5-comparable-routes.md`,
 `docs/red-team-level5-comparable-routes.md`.
+
+## Level 6: delegated authority and resume
+
+Authority that survives being handed down a chain and across a gap in time.
+Delegation (`krakadyl/core/delegation.py`) rests on one rule — composition
+closure: **a sub-mandate can never grant more than its parent, and it dies the
+moment its parent does.** Two enforcement points, static and dynamic:
+
+- `derive_sub_mandate` enforces the subset *at construction*: the child's
+  resources, operations and destinations are subsets of the parent's, its
+  validity window sits inside the parent's, and the parent must be valid right
+  now. Any widening is refused — the sub-mandate cannot be built, so no later
+  check has to remember to catch it.
+- `authority_under_chain` enforces closure *at execution*: it walks the full
+  ancestor chain against the current clock and returns the most restrictive of
+  every link. A parent revoked or expired *after* a child was derived therefore
+  revokes the child transitively. `Mandate.parent_id` alone grants nothing.
+
+```mermaid
+flowchart TD
+    P["Parent mandate<br/>(root or sub)"] --> DER{"derive_sub_mandate<br/>STATIC subset, at construction"}
+    DER -- "widens scope or window,<br/>or parent invalid now" --> REJ["DelegationRejected<br/>— never built"]
+    DER -- "resources/ops/destinations ⊆ parent,<br/>window ⊆ parent window" --> CH["Sub-mandate<br/>(Mandate.parent_id set)"]
+    CH -. "time passes" .-> EX{"authority_under_chain<br/>DYNAMIC, at execution"}
+    EX --> WALK["Walk full ancestor chain<br/>against the current clock"]
+    WALK -- "any ancestor revoked<br/>or expired now" --> NONE["No authority<br/>(transitive revocation)"]
+    WALK -- "every ancestor valid" --> OK["Authority = most restrictive<br/>link in the chain"]
+```
+
+Mission continuity closes the other gap — absence, not delegation. After a
+real-time interval away, `resume_after_gap` (`krakadyl/core/continuity.py`)
+diffs the case between *then* and *now* and returns a `ResumeBriefing`: what
+changed, what recovery windows are still open, and what is newly at risk —
+served over `GET /api/cases/{id}/resume`. A return from absence is a
+reorientation, not a blank case file. The workspace renders both the
+delegation tree and the resume briefing and re-decides nothing. Details:
+`docs/levels.md`.
 
 ## HTTP API
 

@@ -128,19 +128,19 @@ verificado antes de que este proyecto reclamara cualquier novedad.
 
 ```mermaid
 flowchart TD
-    M0["Muse Spark\n(Standard mode)"] --> M1["ProposedActionCandidate\n(validado por schema, sin confianza)"]
-    M1 -.->|"reasoning: solo para mostrar,\nnunca lo leen los chequeos de abajo"| A
+    M0["Muse Spark<br/>(Standard mode)"] --> M1["ProposedActionCandidate<br/>(validado por schema, sin confianza)"]
+    M1 -.->|"reasoning: solo para mostrar,<br/>nunca lo leen los chequeos de abajo"| A
     M1 --> A[ProposedAction]
-    A --> C{"check_mandate\n(alcance, vigencia, revocación)"}
-    A --> D{"check_evidence\n(digest + verificación independiente)"}
+    A --> C{"check_mandate<br/>(alcance, vigencia, revocación)"}
+    A --> D{"check_evidence<br/>(digest + verificación independiente)"}
     C --> E{decide}
     D --> E
-    E -- "FORBIDDEN / CONFIRM / GATHER_EVIDENCE" --> F["Solo Decision\nnada se ejecuta"]
-    E -- ALLOWED --> G["PreparedAction\n(snapshot congelado + nonce)"]
-    G -. "pasa el tiempo: un mandato puede\nrevocarse, un archivo puede cambiar" .-> H[execute_prepared_action]
-    H --> I{"revalidar contra el estado ACTUAL:\nmandato · evidencia · correspondencia · replay"}
-    I -- "obsoleto o inválido" --> J["No se ejecuta\nrazón registrada, nada se publica"]
-    I -- "sigue vigente" --> K["Se arma en un directorio temporal,\nse verifica el digest de cada copia,\nse renombra atómicamente"]
+    E -- "FORBIDDEN / CONFIRM / GATHER_EVIDENCE" --> F["Solo Decision<br/>nada se ejecuta"]
+    E -- ALLOWED --> G["PreparedAction<br/>(snapshot congelado + nonce)"]
+    G -. "pasa el tiempo: un mandato puede<br/>revocarse, un archivo puede cambiar" .-> H[execute_prepared_action]
+    H --> I{"revalidar contra el estado ACTUAL:<br/>mandato · evidencia · correspondencia · replay"}
+    I -- "obsoleto o inválido" --> J["No se ejecuta<br/>razón registrada, nada se publica"]
+    I -- "sigue vigente" --> K["Se arma en un directorio temporal,<br/>se verifica el digest de cada copia,<br/>se renombra atómicamente"]
     K --> L[Receipt encadenado]
     J --> L
 ```
