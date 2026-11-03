@@ -175,6 +175,32 @@ checking it again immediately before acting. A receipt is produced
 either way, so "this was refused, and here's exactly why" is as
 permanent a record as "this executed."
 
+## See it running
+
+The same deterministic engine, in the React workspace — real Muse Spark and
+SAM 3.1 calls, held out of the decision path.
+
+**A real capture, under a human authorization.** SAM 3.1 segments the photo into
+regions and Muse proposes the next step — but neither is evidence until an
+identified evaluator, *not the person who captured it*, verifies it. Here the
+verdict is `gather_evidence`: a device-A clock check is still open, but an
+authorized source can still resolve it.
+
+![KRAKADYL workspace: a captured photo with two SAM 3.1 regions, Muse's non-authoritative proposal, and a gather_evidence verdict](visual/ui/workspace-gather-capture.png)
+
+**Verified and in scope → allowed, and sealed.** The engine clears the export and
+seals a receipt whose manifest excludes device-B because the mandate says so —
+recorded in the seal, not scripted into the demo.
+
+![KRAKADYL workspace: an allowed verdict and a sealed receipt whose manifest excludes device-B](visual/ui/workspace-allowed-receipt.png)
+
+**Tamper or revoke, and the next check catches it.** Alter an evidence file and
+its digest no longer matches; revoke the mandate and authority is denied. Either
+way the verdict is `forbidden` — and the refusal is as permanent a sealed record
+as an execution.
+
+![KRAKADYL workspace: integrity failed on obs-a1 and the mandate revoked, producing a forbidden verdict](visual/ui/workspace-forbidden-tamper.png)
+
 ## Try it
 
 `krakadyl/api/` exposes this same, unmodified core over HTTP
