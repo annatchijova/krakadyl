@@ -71,7 +71,7 @@ pre{margin:.3rem 0 0;background:#0a2b28;border:1px solid var(--border);border-ra
 .shot .bar{display:flex;align-items:center;gap:.45rem;padding:.55rem .8rem;border-bottom:1px solid var(--border)}
 .shot .bar .dot{width:11px;height:11px;border-radius:50%;background:#2a5c56}
 .shot .bar .addr{margin-left:.6rem;font:500 .74rem "IBM Plex Mono",monospace;color:var(--muted)}
-.shot img{width:100%;display:block}
+.shot img,.shot video{width:100%;height:auto;display:block}
 .captions{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;margin-top:1rem}
 .captions div{font-size:.85rem;color:var(--muted);border-left:2px solid var(--jade);padding-left:.7rem}
 .captions strong{color:var(--text);display:block;font-size:.82rem;margin-bottom:.15rem}
@@ -125,24 +125,26 @@ footer a{font-weight:700}
     <div class="cta">
       <a class="btn btn-p" href="https://github.com/annatchijova/krakadyl">View the repository</a>
       <a class="btn btn-s" href="KRAKADYL_Jury_Deck.pdf">Jury deck (PDF)</a>
-      <a class="btn btn-s" href="#product">See the real app &#8595;</a>
+      <a class="btn btn-s" href="#product">Watch a real run &#8595;</a>
     </div>
   </div>
 
   <section id="product">
-    <h2>The actual workspace &mdash; not a diagram</h2>
-    <p class="sub">This is the running React app against the live deterministic backend, in Spanish because the investigator
-      uses it herself. Every number on the board is read from a sealed receipt; nothing here is mocked for the screenshot.</p>
+    <h2>A real run &mdash; not a diagram</h2>
+    <p class="sub">Recorded in the running React app against the live deterministic backend, in Spanish because the
+      investigator uses it herself. One real case, start to finish: the engine allows the export and seals the receipt,
+      then the mandate is revoked and the same action is refused and sealed too. Nothing here is mocked.</p>
     <div class="shot">
       <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
         <span class="addr">localhost:5173 &#183; case-001</span></div>
-      <img src="img/ui-workspace.jpg" width="1568" height="778" loading="lazy"
-        alt="KRAKADYL case workspace in Spanish: situation board (2 verified, 1 open, authority active), evidence panel, acquisition flow, and the next-move panel proposing package_export." />
+      <video src="img/krakadyl-run.mp4" poster="img/ui-workspace.jpg" autoplay muted loop playsinline
+        width="1568" height="750" style="width:100%;display:block"
+        aria-label="A real KRAKADYL run: preparing package_export is ALLOWED and sealed into a receipt with its manifest, then after the mandate is revoked the same action is FORBIDDEN and sealed too."></video>
     </div>
     <div class="captions">
-      <div><strong>Situation board</strong>Verified, claimed-but-unverified, open, at-risk, unresolved-conflict and authority &mdash; the states that decide readiness, not buried badges.</div>
-      <div><strong>Next move, not next answer</strong>The engine prepares <span class="mono">package_export</span> and seals the verdict; Muse only explains it. Authority stays explicit.</div>
-      <div><strong>Resume where you left off</strong>What changed while you were away &mdash; and what is still recoverable &mdash; surfaced so nothing is lost in silence.</div>
+      <div><strong>Allowed, then sealed</strong>The engine clears <span class="mono">package_export</span> within mandate scope and seals a receipt whose manifest excludes device-B because the mandate says so.</div>
+      <div><strong>Revoke, and it refuses</strong>Revoke the mandate and the same action turns <span class="mono">prohibido</span> &mdash; the refusal is sealed as faithfully as an execution.</div>
+      <div><strong>Authority stays explicit</strong>The situation board flips to Revoked in real time; the model never had a path to authority, only the deterministic engine did.</div>
     </div>
   </section>
 
